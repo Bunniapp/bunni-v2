@@ -1,9 +1,9 @@
-// SPDX-License-Identifier: Unlicense
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.4;
 
 import "forge-std/Test.sol";
 
-contract ContractTest is Test {
+contract BunniHookTest is Test {
     function setUp() public {}
 
     function testExample() public {
