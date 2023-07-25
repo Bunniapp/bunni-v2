@@ -13,16 +13,8 @@ import {IBunniToken} from "./interfaces/IBunniToken.sol";
 contract BunniToken is IBunniToken, ERC20 {
     IBunniHub public immutable override hub;
 
-    constructor(IBunniHub hub_, BunniKey memory key_)
-        ERC20(
-            string(
-                abi.encodePacked(
-                    "Bunni ", IERC20(key_.pool.token0()).symbol(), "/", IERC20(key_.pool.token1()).symbol(), " LP"
-                )
-            ),
-            "BUNNI-LP",
-            18
-        )
+    constructor(IBunniHub hub_, IERC20 token0, IERC20 token1)
+        ERC20(string(abi.encodePacked("Bunni ", token0.symbol(), "/", token1.symbol(), " LP")), "BUNNI-LP", 18)
     {
         hub = hub_;
     }

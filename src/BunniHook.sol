@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity =0.8.19;
+pragma solidity ^0.8.19;
 
-import {IPoolManager} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/libraries/PoolId.sol";
+import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 
 import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
-import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
+
+import {BaseHook} from "./lib/BaseHook.sol";
 
 /// @notice Bunni Hook
 contract BunniHook is BaseHook {
     using Oracle for Oracle.Observation[65535];
-    using PoolIdLibrary for IPoolManager.PoolKey;
+    using PoolIdLibrary for PoolKey;
 
     /// @member index The index of the last written observation for the pool
     /// @member cardinality The cardinality of the observations array for the pool
@@ -29,7 +30,7 @@ contract BunniHook is BaseHook {
     mapping(PoolId => ObservationState) public states;
 
     /// @notice Returns the observation for the given pool key and observation index
-    function getObservation(IPoolManager.PoolKey calldata key, uint256 index)
+    function getObservation(PoolKey calldata key, uint256 index)
         external
         view
         returns (Oracle.Observation memory observation)
@@ -38,7 +39,7 @@ contract BunniHook is BaseHook {
     }
 
     /// @notice Returns the state for the given pool key
-    function getState(IPoolManager.PoolKey calldata key) external view returns (ObservationState memory state) {
+    function getState(PoolKey calldata key) external view returns (ObservationState memory state) {
         state = states[PoolId.wrap(keccak256(abi.encode(key)))];
     }
 
@@ -62,7 +63,7 @@ contract BunniHook is BaseHook {
         });
     }
 
-    function beforeInitialize(address, IPoolManager.PoolKey calldata key, uint160)
+    function beforeInitialize(address, PoolKey calldata key, uint160)
         external
         view
         override
@@ -72,7 +73,7 @@ contract BunniHook is BaseHook {
         return BunniHook.beforeInitialize.selector;
     }
 
-    function afterInitialize(address, IPoolManager.PoolKey calldata key, uint160, int24)
+    function afterInitialize(address, PoolKey calldata key, uint160, int24)
         external
         override
         poolManagerOnly
@@ -84,7 +85,7 @@ contract BunniHook is BaseHook {
     }
 
     /// @dev Called before any action that potentially modifies pool price or liquidity, such as swap or modify position
-    function _updatePool(IPoolManager.PoolKey calldata key) private {
+    function _updatePool(PoolKey calldata key) private {
         PoolId id = key.toId();
         (, int24 tick,,,,) = poolManager.getSlot0(id);
 
@@ -95,16 +96,17 @@ contract BunniHook is BaseHook {
         );
     }
 
-    function beforeModifyPosition(
-        address,
-        IPoolManager.PoolKey calldata key,
-        IPoolManager.ModifyPositionParams calldata params
-    ) external override poolManagerOnly returns (bytes4) {
+    function beforeModifyPosition(address, PoolKey calldata key, IPoolManager.ModifyPositionParams calldata params)
+        external
+        override
+        poolManagerOnly
+        returns (bytes4)
+    {
         _updatePool(key);
         return BunniHook.beforeModifyPosition.selector;
     }
 
-    function beforeSwap(address, IPoolManager.PoolKey calldata key, IPoolManager.SwapParams calldata)
+    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata)
         external
         override
         poolManagerOnly
@@ -115,7 +117,7 @@ contract BunniHook is BaseHook {
     }
 
     /// @notice Observe the given pool for the timestamps
-    function observe(IPoolManager.PoolKey calldata key, uint32[] calldata secondsAgos)
+    function observe(PoolKey calldata key, uint32[] calldata secondsAgos)
         external
         view
         returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s)
@@ -132,7 +134,7 @@ contract BunniHook is BaseHook {
     }
 
     /// @notice Increase the cardinality target for the given pool
-    function increaseCardinalityNext(IPoolManager.PoolKey calldata key, uint16 cardinalityNext)
+    function increaseCardinalityNext(PoolKey calldata key, uint16 cardinalityNext)
         external
         returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew)
     {

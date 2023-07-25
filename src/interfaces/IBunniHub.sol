@@ -3,6 +3,10 @@
 pragma solidity >=0.6.0;
 pragma abicoder v2;
 
+import {PoolId} from "@uniswap/v4-core/contracts/types/PoolId.sol";
+import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
+import {IPoolManager} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
 
 import {IERC20} from "./IERC20.sol";
@@ -17,6 +21,13 @@ import {IBunniToken} from "./IBunniToken.sol";
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
 interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
+    enum ShiftMode {
+        STATIC,
+        LEFT,
+        RIGHT,
+        BOTH
+    }
+
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
@@ -58,20 +69,15 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
     /// @param amount0 The amount of token0 added to the liquidity position
     /// @param amount1 The amount of token1 added to the liquidity position
     event Compound(
-        address indexed sender, bytes32 indexed bunniKeyHash, uint128 liquidity, uint256 amount0, uint256 amount1
+        address indexed sender, IBunniToken indexed bunniToken, uint128 liquidity, uint256 amount0, uint256 amount1
     );
     /// @notice Emitted when a new IBunniToken is created
-    /// @param bunniKeyHash The hash of the Bunni position's key
-    /// @param pool The Uniswap V3 pool
-    /// @param tickLower The lower tick of the Bunni's UniV3 LP position
-    /// @param tickUpper The upper tick of the Bunni's UniV3 LP position
-    event NewBunni(
-        IBunniToken indexed token,
-        bytes32 indexed bunniKeyHash,
-        IUniswapV3Pool indexed pool,
-        int24 tickLower,
-        int24 tickUpper
-    );
+    /// @param bunniToken The BunniToken associated with the call
+    /// @param poolId The Uniswap V4 pool's ID
+    /// @param tickLower The lower tick of the Bunni's UniV4 LP position
+    /// @param tickUpper The upper tick of the Bunni's UniV4 LP position
+    /// @param mode The mode in which the position shifts when price shifts
+    event NewBunni(IBunniToken indexed token, PoolId indexed poolId, int24 tickLower, int24 tickUpper, ShiftMode mode);
 
     /// @param bunniToken The BunniToken associated with the call
     /// @param amount0Desired The desired amount of token0 to be spent,
@@ -151,21 +157,24 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         returns (uint128 addedLiquidity, uint256 amount0, uint256 amount1);
 
     /// @notice Deploys the BunniToken contract for a Bunni position. This token
-    /// represents a user's share in the Uniswap V3 LP position.
-    /// @param key The Bunni position's key
+    /// represents a user's share in the Uniswap V4 LP position.
     /// @return token The deployed BunniToken
-    function deployBunniToken(BunniKey calldata key) external returns (IBunniToken token);
-
-    /// @notice Returns the BunniToken contract for a Bunni position. This token
-    /// represents a user's share in the Uniswap V3 LP position.
-    /// If the contract hasn't been created yet, returns 0.
-    /// @param key The Bunni position's key
-    /// @return token The BunniToken contract
-    function getBunniToken(BunniKey calldata key) external view returns (IBunniToken token);
+    function deployBunniToken(
+        Currency currency0,
+        Currency currency1,
+        int24 tickSpacing,
+        int24 tickLower,
+        int24 tickUpper,
+        ShiftMode mode,
+        uint160 sqrtPriceX96
+    ) external returns (IBunniToken token);
 
     /// @notice Sweeps ERC20 token balances to a recipient. Mainly used for extracting protocol fees.
     /// Only callable by the owner.
     /// @param tokenList The list of ERC20 tokens to sweep
     /// @param recipient The token recipient address
     function sweepTokens(IERC20[] calldata tokenList, address recipient) external;
+
+    function poolManager() external view returns (IPoolManager);
+    function hooks() external view returns (IHooks);
 }
