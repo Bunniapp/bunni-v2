@@ -12,7 +12,6 @@ import {Currency, CurrencyLibrary} from "@uniswap/v4-core/contracts/types/Curren
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 
-import {Ownable} from "solady/src/auth/Ownable.sol";
 import {CREATE3} from "solady/src/utils/CREATE3.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
@@ -31,7 +30,7 @@ import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
+contract BunniHub is IBunniHub, Multicall, SelfPermit {
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for IERC20;
     using CurrencyLibrary for Currency;
@@ -75,11 +74,9 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
     /// Constructor
     /// -----------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, address owner_, IHooks hooks_) {
+    constructor(IPoolManager poolManager_, IHooks hooks_) {
         poolManager = poolManager_;
         hooks = hooks_;
-
-        _initializeOwner(owner_);
     }
 
     /// -----------------------------------------------------------
@@ -100,6 +97,7 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         (addedLiquidity, amount0, amount1) = _addLiquidity(
             AddLiquidityParams({
                 state: state,
+                bunniToken: params.bunniToken,
                 poolId: poolId,
                 payer: msg.sender,
                 amount0Desired: params.amount0Desired,
@@ -138,6 +136,7 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         (amount0, amount1) = _removeLiquidity(
             RemoveLiquidityParams({
                 state: state,
+                bunniToken: params.bunniToken,
                 poolId: poolId,
                 recipient: params.recipient,
                 liquidity: removedLiquidity,
@@ -163,10 +162,10 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(state.tickLower);
         uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(state.tickUpper);
 
-        LockCallbackReturnData memory returnData = abi.decode(
+        ModifyLiquidityReturnData memory returnData = abi.decode(
             poolManager.lock(
                 abi.encode(
-                    LockCallbackInputData({
+                    ModifyLiquidityInputData({
                         state: state,
                         liquidityDelta: 0,
                         user: msg.sender,
@@ -176,7 +175,7 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
                     })
                 )
             ),
-            (LockCallbackReturnData)
+            (ModifyLiquidityReturnData)
         );
         (addedLiquidity, amount0, amount1) = (returnData.compoundLiquidity, returnData.amount0, returnData.amount1);
 
@@ -193,6 +192,10 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         ShiftMode mode,
         uint160 sqrtPriceX96
     ) external override returns (IBunniToken token) {
+        /// -----------------------------------------------------------------------
+        /// Verification
+        /// -----------------------------------------------------------------------
+
         // each Uniswap v4 pool corresponds to a single BunniToken
         // since Univ4 pool key is deterministic based on poolKey, we use dynamic fee so that the lower 20 bits of `poolKey.fee` is used
         // as nonce to differentiate the BunniTokens
@@ -202,15 +205,9 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         uint24 nonce_ = nonce[bunniSubspace];
         require(nonce_ + 1 <= MAX_NONCE, "FULL");
 
-        // initialize Uniswap v4 pool
-        PoolKey memory key = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: uint24(0xC00000) + nonce_, // top nibble is 1100 to enable dynamic fee & hook swap fee, bottom 20 bits are the nonce
-            tickSpacing: tickSpacing,
-            hooks: hooks
-        });
-        poolManager.initialize(key, sqrtPriceX96);
+        /// -----------------------------------------------------------------------
+        /// State updates
+        /// -----------------------------------------------------------------------
 
         // deploy BunniToken
         token = IBunniToken(
@@ -225,6 +222,13 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         );
 
         // update BunniToken state
+        PoolKey memory key = PoolKey({
+            currency0: currency0,
+            currency1: currency1,
+            fee: uint24(0xC00000) + nonce_, // top nibble is 1100 to enable dynamic fee & hook swap fee, bottom 20 bits are the nonce
+            tickSpacing: tickSpacing,
+            hooks: hooks
+        });
         bunniTokenState[token] =
             BunniTokenState({poolKey: key, tickLower: tickLower, tickUpper: tickUpper, mode: mode, initialized: true});
         PoolId poolId = key.toId();
@@ -233,17 +237,126 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         // increment nonce
         nonce[bunniSubspace] = nonce_ + 1;
 
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        // initialize Uniswap v4 pool
+        poolManager.initialize(key, sqrtPriceX96);
+
         emit NewBunni(token, poolId, tickLower, tickUpper, mode);
+    }
+
+    function hookShiftPosition(PoolKey calldata poolKey, int24 tick, uint128 liquidity, uint160 sqrtPriceX96)
+        external
+    {
+        /// -----------------------------------------------------------------------
+        /// Validation
+        /// -----------------------------------------------------------------------
+
+        // only hooks contract can call this
+        require(msg.sender == address(hooks), "WHO");
+
+        // load BunniToken state
+        IBunniToken bunniToken = bunniTokenOfPool[poolKey.toId()];
+        BunniTokenState memory state = bunniTokenState[bunniToken];
+        require(state.initialized, "WHAT");
+
+        /// -----------------------------------------------------------------------
+        /// State updates
+        /// -----------------------------------------------------------------------
+
+        // update BunniToken's tick range to match spot price
+        int24 shift;
+        if (tick + state.poolKey.tickSpacing < state.tickLower) {
+            // shift left (negative shift)
+            // such that newTickLower = tickLower + shift = tick + tickSpacing
+
+            // ensure we're shifting in the right direction
+            // require(state.mode == ShiftMode.LEFT || state.mode == ShiftMode.BOTH, "WHY");
+            require(uint8(state.mode) % 2 == 1, "WHY");
+
+            shift = (tick + state.poolKey.tickSpacing) - state.tickLower;
+        } else if (tick > state.tickUpper) {
+            // shift right (positive shift)
+            // such that newTickUpper = tickUpper + shift = tick
+
+            // ensure we're shifting in the right direction
+            // require(state.mode == ShiftMode.RIGHT || state.mode == ShiftMode.BOTH, "WHY");
+            require(uint8(state.mode) >= 2, "WHY");
+
+            shift = tick - state.tickUpper;
+        } else {
+            // position still in range, no need to shift
+            revert("WHY");
+        }
+        bunniTokenState[bunniToken] = BunniTokenState({
+            poolKey: poolKey,
+            tickLower: state.tickLower + shift,
+            tickUpper: state.tickUpper + shift,
+            mode: state.mode,
+            initialized: true
+        });
+
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        // get lock from pool manager
+        ShiftReturnData memory returnData = abi.decode(
+            poolManager.lock(
+                abi.encode(
+                    LockCallbackType.SHIFT,
+                    ShiftInputData({state: state, liquidity: liquidity, shift: shift, sqrtPriceX96: sqrtPriceX96})
+                )
+            ),
+            (ShiftReturnData)
+        );
+
+        // emit compound event
+        if (returnData.compoundLiquidity != 0) {
+            emit Compound(
+                msg.sender,
+                bunniToken,
+                returnData.compoundLiquidity,
+                returnData.compoundAmount0,
+                returnData.compoundAmount1
+            );
+        }
     }
 
     /// -----------------------------------------------------------------------
     /// Uniswap callback
     /// -----------------------------------------------------------------------
 
+    enum LockCallbackType {
+        MODIFY_LIQUIDITY,
+        SHIFT
+    }
+
+    function lockAcquired(bytes calldata data) external override returns (bytes memory) {
+        // verify sender
+        require(msg.sender == address(poolManager), "WHO");
+
+        // decode input
+        (LockCallbackType t, bytes memory callbackData) = abi.decode(data, (LockCallbackType, bytes));
+
+        // redirect to respective callback
+        if (t == LockCallbackType.MODIFY_LIQUIDITY) {
+            return abi.encode(_modifyLiquidityLockCallback(abi.decode(callbackData, (ModifyLiquidityInputData))));
+        } else {
+            return abi.encode(_shiftLockCallback(abi.decode(callbackData, (ShiftInputData))));
+        }
+    }
+
+    /// -----------------------------------------------------------
+    /// Internal functions
+    /// -----------------------------------------------------------
+
     /// @param state The state associated with the Bunni token
     /// @param liquidityDelta The amount of liquidity to add/subtract
     /// @param user The address to pay/receive the tokens
-    struct LockCallbackInputData {
+    struct ModifyLiquidityInputData {
         BunniTokenState state;
         int256 liquidityDelta;
         address user;
@@ -252,7 +365,7 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         uint160 sqrtRatioBX96;
     }
 
-    struct LockCallbackReturnData {
+    struct ModifyLiquidityReturnData {
         uint256 amount0;
         uint256 amount1;
         uint256 compoundAmount0;
@@ -260,18 +373,14 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         uint128 compoundLiquidity;
     }
 
-    function lockAcquired(bytes calldata data) external override returns (bytes memory) {
-        // verify sender
-        require(msg.sender == address(poolManager), "WHO");
-
-        // decode input
-        LockCallbackInputData memory input = abi.decode(data, (LockCallbackInputData));
-
+    function _modifyLiquidityLockCallback(ModifyLiquidityInputData memory input)
+        internal
+        returns (ModifyLiquidityReturnData memory returnData)
+    {
         int128 amount0;
         int128 amount1;
         uint256 donateAmount0;
         uint256 donateAmount1;
-        LockCallbackReturnData memory returnData;
         {
             // claim accrued fees and compound
             uint256 feeToAdd0;
@@ -377,28 +486,103 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         }
 
         (returnData.amount0, returnData.amount1) = (result0, result1);
-        return abi.encode(returnData);
     }
 
-    /// -----------------------------------------------------------------------
-    /// Owner functions
-    /// -----------------------------------------------------------------------
+    struct ShiftInputData {
+        BunniTokenState state;
+        uint128 liquidity;
+        uint160 sqrtPriceX96;
+        int24 shift;
+    }
 
-    /// @inheritdoc IBunniHub
-    function sweepTokens(IERC20[] calldata tokenList, address recipient) external override onlyOwner {
-        uint256 tokenListLength = tokenList.length;
-        for (uint256 i; i < tokenListLength;) {
-            SafeTransferLib.safeTransfer(tokenList[i], recipient, tokenList[i].balanceOf(address(this)));
+    struct ShiftReturnData {
+        uint256 compoundAmount0;
+        uint256 compoundAmount1;
+        uint128 compoundLiquidity;
+    }
 
-            unchecked {
-                ++i;
+    function _shiftLockCallback(ShiftInputData memory input) internal returns (ShiftReturnData memory returnData) {
+        uint256 donateAmount0;
+        uint256 donateAmount1;
+
+        // claim accrued fees and compound
+        {
+            uint256 feeAmount0;
+            uint256 feeAmount1;
+
+            // trigger an update of the position fees owed snapshots
+            {
+                BalanceDelta feeDelta = poolManager.modifyPosition(
+                    input.state.poolKey,
+                    IPoolManager.ModifyPositionParams({
+                        tickLower: input.state.tickLower,
+                        tickUpper: input.state.tickUpper,
+                        liquidityDelta: 0
+                    })
+                );
+
+                // negate values to get fees owed
+                (feeAmount0, feeAmount1) =
+                    (uint256(uint128(-feeDelta.amount0())), uint256(uint128(-feeDelta.amount1())));
+            }
+
+            if (feeAmount0 != 0 || feeAmount1 != 0) {
+                // the fee is likely not balanced (i.e. tokens will be left over after adding liquidity)
+                // so here we compute which token to fully claim and which token to partially claim
+                // so that we only claim the amounts we need
+
+                uint256 feeToAdd0;
+                uint256 feeToAdd1;
+
+                {
+                    uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(input.state.tickLower);
+                    uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(input.state.tickUpper);
+
+                    // compute the maximum liquidity addable using the accrued fees
+                    uint128 maxAddLiquidity = LiquidityAmounts.getLiquidityForAmounts(
+                        input.sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, feeAmount0, feeAmount1
+                    );
+
+                    // compute the token amounts corresponding to the max addable liquidity
+                    (feeToAdd0, feeToAdd1) = LiquidityAmounts.getAmountsForLiquidity(
+                        input.sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, maxAddLiquidity
+                    );
+
+                    // update return values
+                    (returnData.compoundAmount0, returnData.compoundAmount1, returnData.compoundLiquidity) =
+                        (feeToAdd0, feeToAdd1, maxAddLiquidity);
+                }
+
+                // the first modifyPosition() call already added all accrued fees to our balance
+                // so we donate the difference
+                (donateAmount0, donateAmount1) = (feeAmount0 - feeToAdd0, feeAmount1 - feeToAdd1);
             }
         }
-    }
 
-    /// -----------------------------------------------------------
-    /// Internal functions
-    /// -----------------------------------------------------------
+        // remove existing liquidity and add to new range
+        poolManager.modifyPosition(
+            input.state.poolKey,
+            IPoolManager.ModifyPositionParams({
+                tickLower: input.state.tickLower,
+                tickUpper: input.state.tickUpper,
+                liquidityDelta: -uint256(input.liquidity).toInt256()
+            })
+        );
+        poolManager.modifyPosition(
+            input.state.poolKey,
+            IPoolManager.ModifyPositionParams({
+                tickLower: input.state.tickLower + input.shift,
+                tickUpper: input.state.tickUpper + input.shift,
+                liquidityDelta: uint256(input.liquidity + returnData.compoundLiquidity).toInt256()
+            })
+        );
+
+        // donate leftover fees back to LPs
+        // must be after the last modifyPosition() call to avoid claiming donated amount
+        if (donateAmount0 != 0 || donateAmount1 != 0) {
+            poolManager.donate(input.state.poolKey, donateAmount0, donateAmount1);
+        }
+    }
 
     /// @notice Mints share tokens to the recipient based on the amount of liquidity added.
     /// @param shareToken The BunniToken to mint
@@ -436,6 +620,7 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
     /// @param amount1Min The minimum token1 amount to use
     struct AddLiquidityParams {
         BunniTokenState state;
+        IBunniToken bunniToken;
         PoolId poolId;
         address payer;
         uint256 amount0Desired;
@@ -458,10 +643,11 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
             sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, params.amount0Desired, params.amount1Desired
         );
 
-        LockCallbackReturnData memory returnData = abi.decode(
+        ModifyLiquidityReturnData memory returnData = abi.decode(
             poolManager.lock(
                 abi.encode(
-                    LockCallbackInputData({
+                    LockCallbackType.MODIFY_LIQUIDITY,
+                    ModifyLiquidityInputData({
                         state: params.state,
                         liquidityDelta: uint256(liquidity).toInt256(),
                         user: params.payer,
@@ -471,11 +657,21 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
                     })
                 )
             ),
-            (LockCallbackReturnData)
+            (ModifyLiquidityReturnData)
         );
 
         require(returnData.amount0 >= params.amount0Min && returnData.amount1 >= params.amount1Min, "SLIP");
         (amount0, amount1) = (returnData.amount0, returnData.amount1);
+
+        if (returnData.compoundLiquidity != 0) {
+            emit Compound(
+                msg.sender,
+                params.bunniToken,
+                returnData.compoundLiquidity,
+                returnData.compoundAmount0,
+                returnData.compoundAmount1
+            );
+        }
     }
 
     /// @param state The state of the BunniToken
@@ -486,6 +682,7 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
     /// @param amount1Min The minimum token1 amount to use
     struct RemoveLiquidityParams {
         BunniTokenState state;
+        IBunniToken bunniToken;
         PoolId poolId;
         address recipient;
         uint128 liquidity;
@@ -503,10 +700,11 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
         uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(params.state.tickLower);
         uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(params.state.tickUpper);
 
-        LockCallbackReturnData memory returnData = abi.decode(
+        ModifyLiquidityReturnData memory returnData = abi.decode(
             poolManager.lock(
                 abi.encode(
-                    LockCallbackInputData({
+                    LockCallbackType.MODIFY_LIQUIDITY,
+                    ModifyLiquidityInputData({
                         state: params.state,
                         liquidityDelta: -uint256(params.liquidity).toInt256(),
                         user: params.recipient,
@@ -516,11 +714,21 @@ contract BunniHub is IBunniHub, Ownable, Multicall, SelfPermit {
                     })
                 )
             ),
-            (LockCallbackReturnData)
+            (ModifyLiquidityReturnData)
         );
 
         require(returnData.amount0 >= params.amount0Min && returnData.amount1 >= params.amount1Min, "SLIP");
         (amount0, amount1) = (returnData.amount0, returnData.amount1);
+
+        if (returnData.compoundLiquidity != 0) {
+            emit Compound(
+                msg.sender,
+                params.bunniToken,
+                returnData.compoundLiquidity,
+                returnData.compoundAmount0,
+                returnData.compoundAmount1
+            );
+        }
     }
 
     /// @param token The token to pay

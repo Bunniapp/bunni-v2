@@ -77,7 +77,9 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
     /// @param tickLower The lower tick of the Bunni's UniV4 LP position
     /// @param tickUpper The upper tick of the Bunni's UniV4 LP position
     /// @param mode The mode in which the position shifts when price shifts
-    event NewBunni(IBunniToken indexed token, PoolId indexed poolId, int24 tickLower, int24 tickUpper, ShiftMode mode);
+    event NewBunni(
+        IBunniToken indexed bunniToken, PoolId indexed poolId, int24 tickLower, int24 tickUpper, ShiftMode mode
+    );
 
     /// @param bunniToken The BunniToken associated with the call
     /// @param amount0Desired The desired amount of token0 to be spent,
@@ -168,12 +170,6 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         ShiftMode mode,
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token);
-
-    /// @notice Sweeps ERC20 token balances to a recipient. Mainly used for extracting protocol fees.
-    /// Only callable by the owner.
-    /// @param tokenList The list of ERC20 tokens to sweep
-    /// @param recipient The token recipient address
-    function sweepTokens(IERC20[] calldata tokenList, address recipient) external;
 
     function poolManager() external view returns (IPoolManager);
     function hooks() external view returns (IHooks);
