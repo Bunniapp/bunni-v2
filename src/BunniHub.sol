@@ -31,12 +31,21 @@ import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
 contract BunniHub is IBunniHub, Multicall, SelfPermit {
+    using SafeCastLib for int256;
+    using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for IERC20;
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
-    using SafeCastLib for uint256;
-    using SafeCastLib for int256;
+
+    error BunniHub__ZeroInput();
+    error BunniHub__PastDeadline();
+    error BunniHub__Unauthorized();
+    error BunniHub__InvalidShift();
+    error BunniHub__MaxNonceReached();
+    error BunniHub__SlippageTooHigh();
+    error BunniHub__ZeroSharesMinted();
+    error BunniHub__BunniTokenNotInitialized();
 
     uint256 internal constant WAD = 1e18;
     uint256 internal constant MAX_NONCE = 0x0FFFFF;
@@ -66,7 +75,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     /// -----------------------------------------------------------
 
     modifier checkDeadline(uint256 deadline) {
-        require(block.timestamp <= deadline, "OLD");
+        if (block.timestamp > deadline) revert BunniHub__PastDeadline();
         _;
     }
 
@@ -134,12 +143,13 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         checkDeadline(params.deadline)
         returns (uint128 removedLiquidity, uint256 amount0, uint256 amount1)
     {
+        if (params.shares == 0) revert BunniHub__ZeroInput();
+
         (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(params.bunniToken);
         uint256 currentTotalSupply = params.bunniToken.totalSupply();
         uint128 existingLiquidity = poolManager.getLiquidity(poolId, address(this), state.tickLower, state.tickUpper);
 
         // burn shares
-        require(params.shares > 0, "0");
         params.bunniToken.burn(msg.sender, params.shares);
         // at this point of execution we know params.shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
@@ -173,7 +183,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         returns (uint128 addedLiquidity, uint256 amount0, uint256 amount1)
     {
         BunniTokenState memory state = bunniTokenState[bunniToken];
-        require(state.initialized, "WHAT");
+        if (!state.initialized) revert BunniHub__BunniTokenNotInitialized();
 
         ModifyLiquidityReturnData memory returnData = abi.decode(
             poolManager.lock(abi.encode(ModifyLiquidityInputData({state: state, liquidityDelta: 0, user: msg.sender}))),
@@ -205,7 +215,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         // nonce can be at most 2^20 - 1 = 1048575 after which the deployment will fail
         bytes32 bunniSubspace = keccak256(abi.encode(currency0, currency1, tickSpacing));
         uint24 nonce_ = nonce[bunniSubspace];
-        require(nonce_ + 1 <= MAX_NONCE, "FULL");
+        if (nonce_ + 1 > MAX_NONCE) revert BunniHub__MaxNonceReached();
 
         /// -----------------------------------------------------------------------
         /// State updates
@@ -257,12 +267,12 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         /// -----------------------------------------------------------------------
 
         // only hooks contract can call this
-        require(msg.sender == address(hooks), "WHO");
+        if (msg.sender != address(hooks)) revert BunniHub__Unauthorized();
 
         // load BunniToken state
         IBunniToken bunniToken = bunniTokenOfPool[poolKey.toId()];
         BunniTokenState memory state = bunniTokenState[bunniToken];
-        require(state.initialized, "WHAT");
+        if (!state.initialized) revert BunniHub__BunniTokenNotInitialized();
 
         /// -----------------------------------------------------------------------
         /// State updates
@@ -276,7 +286,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
 
             // ensure we're shifting in the right direction
             // require(state.mode == ShiftMode.LEFT || state.mode == ShiftMode.BOTH, "WHY");
-            require(uint8(state.mode) % 2 == 1, "WHY");
+            if (uint8(state.mode) % 2 != 1) revert BunniHub__InvalidShift();
 
             shift = (tick + state.poolKey.tickSpacing) - state.tickLower;
         } else if (tick > state.tickUpper) {
@@ -285,12 +295,12 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
 
             // ensure we're shifting in the right direction
             // require(state.mode == ShiftMode.RIGHT || state.mode == ShiftMode.BOTH, "WHY");
-            require(uint8(state.mode) >= 2, "WHY");
+            if (uint8(state.mode) < 2) revert BunniHub__InvalidShift();
 
             shift = tick - state.tickUpper;
         } else {
             // position still in range, no need to shift
-            revert("WHY");
+            revert BunniHub__InvalidShift();
         }
         bunniTokenState[bunniToken] = BunniTokenState({
             poolKey: poolKey,
@@ -338,7 +348,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
 
     function lockAcquired(bytes calldata data) external override returns (bytes memory) {
         // verify sender
-        require(msg.sender == address(poolManager), "WHO");
+        if (msg.sender != address(poolManager)) revert BunniHub__Unauthorized();
 
         // decode input
         (LockCallbackType t, bytes memory callbackData) = abi.decode(data, (LockCallbackType, bytes));
@@ -570,7 +580,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         } else {
             // shares = existingShareSupply * addedLiquidity / existingLiquidity;
             shares = FullMath.mulDiv(existingShareSupply, addedLiquidity, existingLiquidity);
-            require(shares != 0, "0");
+            if (shares == 0) revert BunniHub__ZeroSharesMinted();
         }
 
         // mint shares to sender
@@ -605,7 +615,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
             (ModifyLiquidityReturnData)
         );
 
-        require(returnData.amount0 >= params.amount0Min && returnData.amount1 >= params.amount1Min, "SLIP");
+        if (returnData.amount0 < params.amount0Min || returnData.amount1 < params.amount1Min) {
+            revert BunniHub__SlippageTooHigh();
+        }
         (amount0, amount1) = (returnData.amount0, returnData.amount1);
 
         if (returnData.compoundLiquidity != 0) {
@@ -639,7 +651,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         returns (BunniTokenState memory state, PoolId poolId)
     {
         state = bunniTokenState[bunniToken];
-        require(state.initialized, "WHAT");
+        if (!state.initialized) revert BunniHub__BunniTokenNotInitialized();
         poolId = state.poolKey.toId();
     }
 }

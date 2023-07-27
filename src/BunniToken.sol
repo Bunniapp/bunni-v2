@@ -13,6 +13,8 @@ import {IBunniToken} from "./interfaces/IBunniToken.sol";
 contract BunniToken is IBunniToken, ERC20 {
     IBunniHub public immutable override hub;
 
+    error BunniToken__NotBunniHub();
+
     constructor(IBunniHub hub_, IERC20 token0, IERC20 token1)
         ERC20(string(abi.encodePacked("Bunni ", token0.symbol(), "/", token1.symbol(), " LP")), "BUNNI-LP", 18)
     {
@@ -20,13 +22,13 @@ contract BunniToken is IBunniToken, ERC20 {
     }
 
     function mint(address to, uint256 amount) external override {
-        require(msg.sender == address(hub), "WHO");
+        if (msg.sender != address(hub)) revert BunniToken__NotBunniHub();
 
         _mint(to, amount);
     }
 
     function burn(address from, uint256 amount) external override {
-        require(msg.sender == address(hub), "WHO");
+        if (msg.sender != address(hub)) revert BunniToken__NotBunniHub();
 
         _burn(from, amount);
     }
