@@ -94,18 +94,33 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     {
         (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(params.bunniToken);
         uint128 existingLiquidity = poolManager.getLiquidity(poolId, address(this), state.tickLower, state.tickUpper);
-        (addedLiquidity, amount0, amount1) = _addLiquidity(
-            AddLiquidityParams({
+
+        // compute the liquidity amount
+        {
+            (uint160 sqrtPriceX96,,,,,) = poolManager.getSlot0(poolId);
+            addedLiquidity = LiquidityAmounts.getLiquidityForAmounts(
+                sqrtPriceX96,
+                TickMath.getSqrtRatioAtTick(state.tickLower),
+                TickMath.getSqrtRatioAtTick(state.tickUpper),
+                params.amount0Desired,
+                params.amount1Desired
+            );
+        }
+
+        // add liquidity
+        (amount0, amount1) = _modifyLiquidity(
+            ModifyLiquidityParams({
                 state: state,
                 bunniToken: params.bunniToken,
                 poolId: poolId,
-                payer: msg.sender,
-                amount0Desired: params.amount0Desired,
-                amount1Desired: params.amount1Desired,
+                user: msg.sender,
+                liquidityDelta: uint256(addedLiquidity).toInt256(),
                 amount0Min: params.amount0Min,
                 amount1Min: params.amount1Min
             })
         );
+
+        // mint shares
         shares = _mintShares(params.bunniToken, params.recipient, addedLiquidity, existingLiquidity);
 
         emit Deposit(msg.sender, params.recipient, params.bunniToken, addedLiquidity, amount0, amount1, shares);
@@ -133,13 +148,13 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         // type cast is safe because we know removedLiquidity <= existingLiquidity
         removedLiquidity = uint128(FullMath.mulDiv(existingLiquidity, params.shares, currentTotalSupply));
         // burn liquidity
-        (amount0, amount1) = _removeLiquidity(
-            RemoveLiquidityParams({
+        (amount0, amount1) = _modifyLiquidity(
+            ModifyLiquidityParams({
                 state: state,
                 bunniToken: params.bunniToken,
                 poolId: poolId,
-                recipient: params.recipient,
-                liquidity: removedLiquidity,
+                user: params.recipient,
+                liquidityDelta: -uint256(removedLiquidity).toInt256(),
                 amount0Min: params.amount0Min,
                 amount1Min: params.amount1Min
             })
@@ -157,24 +172,11 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         override
         returns (uint128 addedLiquidity, uint256 amount0, uint256 amount1)
     {
-        (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(bunniToken);
-        (uint160 sqrtPriceX96,,,,,) = poolManager.getSlot0(poolId);
-        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(state.tickLower);
-        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(state.tickUpper);
+        BunniTokenState memory state = bunniTokenState[bunniToken];
+        require(state.initialized, "WHAT");
 
         ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(
-                abi.encode(
-                    ModifyLiquidityInputData({
-                        state: state,
-                        liquidityDelta: 0,
-                        user: msg.sender,
-                        sqrtPriceX96: sqrtPriceX96,
-                        sqrtRatioAX96: sqrtRatioAX96,
-                        sqrtRatioBX96: sqrtRatioBX96
-                    })
-                )
-            ),
+            poolManager.lock(abi.encode(ModifyLiquidityInputData({state: state, liquidityDelta: 0, user: msg.sender}))),
             (ModifyLiquidityReturnData)
         );
         (addedLiquidity, amount0, amount1) = (returnData.compoundLiquidity, returnData.amount0, returnData.amount1);
@@ -353,6 +355,59 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     /// Internal functions
     /// -----------------------------------------------------------
 
+    function _compoundLogic(BunniTokenState memory state)
+        internal
+        returns (
+            uint256 feeToAdd0,
+            uint256 feeToAdd1,
+            uint128 liquidityToAdd,
+            uint256 donateAmount0,
+            uint256 donateAmount1
+        )
+    {
+        // claim accrued fees and compound
+        uint256 feeAmount0;
+        uint256 feeAmount1;
+
+        // trigger an update of the position fees owed snapshots
+        {
+            BalanceDelta feeDelta = poolManager.modifyPosition(
+                state.poolKey,
+                IPoolManager.ModifyPositionParams({
+                    tickLower: state.tickLower,
+                    tickUpper: state.tickUpper,
+                    liquidityDelta: 0
+                })
+            );
+
+            // negate values to get fees owed
+            (feeAmount0, feeAmount1) = (uint256(uint128(-feeDelta.amount0())), uint256(uint128(-feeDelta.amount1())));
+        }
+
+        if (feeAmount0 != 0 || feeAmount1 != 0) {
+            // the fee is likely not balanced (i.e. tokens will be left over after adding liquidity)
+            // so here we compute which token to fully claim and which token to partially claim
+            // so that we only claim the amounts we need
+
+            (uint160 sqrtPriceX96,,,,,) = poolManager.getSlot0(state.poolKey.toId());
+            uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(state.tickLower);
+            uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(state.tickUpper);
+
+            // compute the maximum liquidity addable using the accrued fees
+            liquidityToAdd = LiquidityAmounts.getLiquidityForAmounts(
+                sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, feeAmount0, feeAmount1
+            );
+
+            // compute the token amounts corresponding to the max addable liquidity
+            (feeToAdd0, feeToAdd1) =
+                LiquidityAmounts.getAmountsForLiquidity(sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, liquidityToAdd);
+
+            // the first modifyPosition() call already added all accrued fees to our balance
+            // so we donate the difference
+            (donateAmount0, donateAmount1) = (feeAmount0 - feeToAdd0, feeAmount1 - feeToAdd1);
+        }
+    }
+
     /// @param state The state associated with the Bunni token
     /// @param liquidityDelta The amount of liquidity to add/subtract
     /// @param user The address to pay/receive the tokens
@@ -360,9 +415,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         BunniTokenState state;
         int256 liquidityDelta;
         address user;
-        uint160 sqrtPriceX96;
-        uint160 sqrtRatioAX96;
-        uint160 sqrtRatioBX96;
     }
 
     struct ModifyLiquidityReturnData {
@@ -382,58 +434,14 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         uint256 donateAmount0;
         uint256 donateAmount1;
         {
-            // claim accrued fees and compound
-            uint256 feeToAdd0;
-            uint256 feeToAdd1;
-            {
-                uint256 feeAmount0;
-                uint256 feeAmount1;
-
-                // trigger an update of the position fees owed snapshots
-                {
-                    BalanceDelta feeDelta = poolManager.modifyPosition(
-                        input.state.poolKey,
-                        IPoolManager.ModifyPositionParams({
-                            tickLower: input.state.tickLower,
-                            tickUpper: input.state.tickUpper,
-                            liquidityDelta: 0
-                        })
-                    );
-
-                    // negate values to get fees owed
-                    (feeAmount0, feeAmount1) =
-                        (uint256(uint128(-feeDelta.amount0())), uint256(uint128(-feeDelta.amount1())));
-                }
-
-                if (feeAmount0 != 0 || feeAmount1 != 0) {
-                    // the fee is likely not balanced (i.e. tokens will be left over after adding liquidity)
-                    // so here we compute which token to fully claim and which token to partially claim
-                    // so that we only claim the amounts we need
-
-                    {
-                        // compute the maximum liquidity addable using the accrued fees
-                        uint128 maxAddLiquidity = LiquidityAmounts.getLiquidityForAmounts(
-                            input.sqrtPriceX96, input.sqrtRatioAX96, input.sqrtRatioBX96, feeAmount0, feeAmount1
-                        );
-
-                        // compute the token amounts corresponding to the max addable liquidity
-                        (feeToAdd0, feeToAdd1) = LiquidityAmounts.getAmountsForLiquidity(
-                            input.sqrtPriceX96, input.sqrtRatioAX96, input.sqrtRatioBX96, maxAddLiquidity
-                        );
-
-                        // add the liquidity to compound to the liquidity delta of the second modifyPosition() call
-                        input.liquidityDelta += uint256(maxAddLiquidity).toInt256();
-
-                        // update return values
-                        (returnData.compoundAmount0, returnData.compoundAmount1, returnData.compoundLiquidity) =
-                            (feeToAdd0, feeToAdd1, maxAddLiquidity);
-                    }
-
-                    // the first modifyPosition() call already added all accrued fees to our balance
-                    // so we donate the difference
-                    (donateAmount0, donateAmount1) = (feeAmount0 - feeToAdd0, feeAmount1 - feeToAdd1);
-                }
-            }
+            // compute compound amounts
+            (
+                returnData.compoundAmount0,
+                returnData.compoundAmount1,
+                returnData.compoundLiquidity,
+                donateAmount0,
+                donateAmount1
+            ) = _compoundLogic(input.state);
 
             // update liquidity
             BalanceDelta delta = poolManager.modifyPosition(
@@ -441,13 +449,15 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
                 IPoolManager.ModifyPositionParams({
                     tickLower: input.state.tickLower,
                     tickUpper: input.state.tickUpper,
-                    liquidityDelta: input.liquidityDelta
+                    liquidityDelta: input.liquidityDelta + uint256(returnData.compoundLiquidity).toInt256()
                 })
             );
 
             // deduct compounded fee amount to get the user token amounts
-            (amount0, amount1) =
-                (delta.amount0() - feeToAdd0.toInt256().toInt128(), delta.amount1() - feeToAdd1.toInt256().toInt128());
+            (amount0, amount1) = (
+                delta.amount0() - returnData.compoundAmount0.toInt256().toInt128(),
+                delta.amount1() - returnData.compoundAmount1.toInt256().toInt128()
+            );
 
             // donate leftover fees back to LPs
             // must be after the last modifyPosition() call to avoid claiming donated amount
@@ -505,59 +515,14 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         uint256 donateAmount0;
         uint256 donateAmount1;
 
-        // claim accrued fees and compound
-        {
-            uint256 feeAmount0;
-            uint256 feeAmount1;
-
-            // trigger an update of the position fees owed snapshots
-            {
-                BalanceDelta feeDelta = poolManager.modifyPosition(
-                    input.state.poolKey,
-                    IPoolManager.ModifyPositionParams({
-                        tickLower: input.state.tickLower,
-                        tickUpper: input.state.tickUpper,
-                        liquidityDelta: 0
-                    })
-                );
-
-                // negate values to get fees owed
-                (feeAmount0, feeAmount1) =
-                    (uint256(uint128(-feeDelta.amount0())), uint256(uint128(-feeDelta.amount1())));
-            }
-
-            if (feeAmount0 != 0 || feeAmount1 != 0) {
-                // the fee is likely not balanced (i.e. tokens will be left over after adding liquidity)
-                // so here we compute which token to fully claim and which token to partially claim
-                // so that we only claim the amounts we need
-
-                uint256 feeToAdd0;
-                uint256 feeToAdd1;
-
-                {
-                    uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(input.state.tickLower);
-                    uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(input.state.tickUpper);
-
-                    // compute the maximum liquidity addable using the accrued fees
-                    uint128 maxAddLiquidity = LiquidityAmounts.getLiquidityForAmounts(
-                        input.sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, feeAmount0, feeAmount1
-                    );
-
-                    // compute the token amounts corresponding to the max addable liquidity
-                    (feeToAdd0, feeToAdd1) = LiquidityAmounts.getAmountsForLiquidity(
-                        input.sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, maxAddLiquidity
-                    );
-
-                    // update return values
-                    (returnData.compoundAmount0, returnData.compoundAmount1, returnData.compoundLiquidity) =
-                        (feeToAdd0, feeToAdd1, maxAddLiquidity);
-                }
-
-                // the first modifyPosition() call already added all accrued fees to our balance
-                // so we donate the difference
-                (donateAmount0, donateAmount1) = (feeAmount0 - feeToAdd0, feeAmount1 - feeToAdd1);
-            }
-        }
+        // compute compound amounts
+        (
+            returnData.compoundAmount0,
+            returnData.compoundAmount1,
+            returnData.compoundLiquidity,
+            donateAmount0,
+            donateAmount1
+        ) = _compoundLogic(input.state);
 
         // remove existing liquidity and add to new range
         poolManager.modifyPosition(
@@ -612,105 +577,28 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         shareToken.mint(recipient, shares);
     }
 
-    /// @param state The state of the BunniToken
-    /// @param payer The address that will pay the tokens
-    /// @param amount0Desired The token0 amount to use
-    /// @param amount1Desired The token1 amount to use
-    /// @param amount0Min The minimum token0 amount to use
-    /// @param amount1Min The minimum token1 amount to use
-    struct AddLiquidityParams {
+    struct ModifyLiquidityParams {
         BunniTokenState state;
         IBunniToken bunniToken;
         PoolId poolId;
-        address payer;
-        uint256 amount0Desired;
-        uint256 amount1Desired;
+        address user;
+        int256 liquidityDelta;
         uint256 amount0Min;
         uint256 amount1Min;
     }
 
-    /// @notice Add liquidity to an initialized pool
-    function _addLiquidity(AddLiquidityParams memory params)
-        internal
-        returns (uint128 liquidity, uint256 amount0, uint256 amount1)
-    {
-        // compute the liquidity amount
-        (uint160 sqrtPriceX96,,,,,) = poolManager.getSlot0(params.poolId);
-        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(params.state.tickLower);
-        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(params.state.tickUpper);
-
-        liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            sqrtPriceX96, sqrtRatioAX96, sqrtRatioBX96, params.amount0Desired, params.amount1Desired
-        );
-
-        ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(
-                abi.encode(
-                    LockCallbackType.MODIFY_LIQUIDITY,
-                    ModifyLiquidityInputData({
-                        state: params.state,
-                        liquidityDelta: uint256(liquidity).toInt256(),
-                        user: params.payer,
-                        sqrtPriceX96: sqrtPriceX96,
-                        sqrtRatioAX96: sqrtRatioAX96,
-                        sqrtRatioBX96: sqrtRatioBX96
-                    })
-                )
-            ),
-            (ModifyLiquidityReturnData)
-        );
-
-        require(returnData.amount0 >= params.amount0Min && returnData.amount1 >= params.amount1Min, "SLIP");
-        (amount0, amount1) = (returnData.amount0, returnData.amount1);
-
-        if (returnData.compoundLiquidity != 0) {
-            emit Compound(
-                msg.sender,
-                params.bunniToken,
-                returnData.compoundLiquidity,
-                returnData.compoundAmount0,
-                returnData.compoundAmount1
-            );
-        }
-    }
-
-    /// @param state The state of the BunniToken
-    /// @param payer The address that will pay the tokens
-    /// @param amount0Desired The token0 amount to use
-    /// @param amount1Desired The token1 amount to use
-    /// @param amount0Min The minimum token0 amount to use
-    /// @param amount1Min The minimum token1 amount to use
-    struct RemoveLiquidityParams {
-        BunniTokenState state;
-        IBunniToken bunniToken;
-        PoolId poolId;
-        address recipient;
-        uint128 liquidity;
-        uint256 amount0Min;
-        uint256 amount1Min;
-    }
-
-    /// @notice Add liquidity to an initialized pool
-    function _removeLiquidity(RemoveLiquidityParams memory params)
+    function _modifyLiquidity(ModifyLiquidityParams memory params)
         internal
         returns (uint256 amount0, uint256 amount1)
     {
-        // compute the liquidity amount
-        (uint160 sqrtPriceX96,,,,,) = poolManager.getSlot0(params.poolId);
-        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(params.state.tickLower);
-        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(params.state.tickUpper);
-
         ModifyLiquidityReturnData memory returnData = abi.decode(
             poolManager.lock(
                 abi.encode(
                     LockCallbackType.MODIFY_LIQUIDITY,
                     ModifyLiquidityInputData({
                         state: params.state,
-                        liquidityDelta: -uint256(params.liquidity).toInt256(),
-                        user: params.recipient,
-                        sqrtPriceX96: sqrtPriceX96,
-                        sqrtRatioAX96: sqrtRatioAX96,
-                        sqrtRatioBX96: sqrtRatioBX96
+                        liquidityDelta: params.liquidityDelta,
+                        user: params.user
                     })
                 )
             ),
