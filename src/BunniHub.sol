@@ -19,10 +19,10 @@ import {BunniToken} from "./BunniToken.sol";
 import {Multicall} from "./lib/Multicall.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {SelfPermit} from "./lib/SelfPermit.sol";
-import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
+import {IBunniHub, BunniTokenState, ShiftMode} from "./interfaces/IBunniHub.sol";
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -58,17 +58,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     /// Storage variables
     /// -----------------------------------------------------------
 
-    struct BunniTokenState {
-        PoolKey poolKey;
-        int24 tickLower;
-        int24 tickUpper;
-        ShiftMode mode;
-        bool initialized;
-    }
-
-    mapping(IBunniToken bunniToken => BunniTokenState) public bunniTokenState;
-    mapping(bytes32 bunniSubspace => uint24) public nonce;
-    mapping(PoolId poolId => IBunniToken) public bunniTokenOfPool;
+    mapping(IBunniToken bunniToken => BunniTokenState) internal _bunniTokenState;
+    mapping(bytes32 bunniSubspace => uint24) public override nonce;
+    mapping(PoolId poolId => IBunniToken) public override bunniTokenOfPool;
 
     /// -----------------------------------------------------------
     /// Modifiers
@@ -182,7 +174,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         override
         returns (uint128 addedLiquidity, uint256 amount0, uint256 amount1)
     {
-        BunniTokenState memory state = bunniTokenState[bunniToken];
+        BunniTokenState memory state = _bunniTokenState[bunniToken];
         if (!state.initialized) revert BunniHub__BunniTokenNotInitialized();
 
         ModifyLiquidityReturnData memory returnData = abi.decode(
@@ -202,6 +194,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         int24 tickLower,
         int24 tickUpper,
         ShiftMode mode,
+        uint32 twapSecondsAgo,
         uint160 sqrtPriceX96
     ) external override returns (IBunniToken token) {
         /// -----------------------------------------------------------------------
@@ -241,8 +234,14 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
             tickSpacing: tickSpacing,
             hooks: hooks
         });
-        bunniTokenState[token] =
-            BunniTokenState({poolKey: key, tickLower: tickLower, tickUpper: tickUpper, mode: mode, initialized: true});
+        _bunniTokenState[token] = BunniTokenState({
+            poolKey: key,
+            tickLower: tickLower,
+            tickUpper: tickUpper,
+            mode: mode,
+            twapSecondsAgo: twapSecondsAgo,
+            initialized: true
+        });
         PoolId poolId = key.toId();
         bunniTokenOfPool[poolId] = token;
 
@@ -259,9 +258,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         emit NewBunni(token, poolId, tickLower, tickUpper, mode);
     }
 
-    function hookShiftPosition(PoolKey calldata poolKey, int24 tick, uint128 liquidity, uint160 sqrtPriceX96)
-        external
-    {
+    /// @inheritdoc IBunniHub
+    function hookShiftPosition(PoolKey calldata poolKey, int24 shift) external override {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
@@ -269,44 +267,27 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         // only hooks contract can call this
         if (msg.sender != address(hooks)) revert BunniHub__Unauthorized();
 
+        // no useless shifts
+        if (shift == 0) {
+            revert BunniHub__InvalidShift();
+        }
+
         // load BunniToken state
-        IBunniToken bunniToken = bunniTokenOfPool[poolKey.toId()];
-        BunniTokenState memory state = bunniTokenState[bunniToken];
+        PoolId poolId = poolKey.toId();
+        IBunniToken bunniToken = bunniTokenOfPool[poolId];
+        BunniTokenState memory state = _bunniTokenState[bunniToken];
         if (!state.initialized) revert BunniHub__BunniTokenNotInitialized();
 
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
 
-        // update BunniToken's tick range to match spot price
-        int24 shift;
-        if (tick + state.poolKey.tickSpacing < state.tickLower) {
-            // shift left (negative shift)
-            // such that newTickLower = tickLower + shift = tick + tickSpacing
-
-            // ensure we're shifting in the right direction
-            // require(state.mode == ShiftMode.LEFT || state.mode == ShiftMode.BOTH, "WHY");
-            if (uint8(state.mode) % 2 != 1) revert BunniHub__InvalidShift();
-
-            shift = (tick + state.poolKey.tickSpacing) - state.tickLower;
-        } else if (tick > state.tickUpper) {
-            // shift right (positive shift)
-            // such that newTickUpper = tickUpper + shift = tick
-
-            // ensure we're shifting in the right direction
-            // require(state.mode == ShiftMode.RIGHT || state.mode == ShiftMode.BOTH, "WHY");
-            if (uint8(state.mode) < 2) revert BunniHub__InvalidShift();
-
-            shift = tick - state.tickUpper;
-        } else {
-            // position still in range, no need to shift
-            revert BunniHub__InvalidShift();
-        }
-        bunniTokenState[bunniToken] = BunniTokenState({
+        _bunniTokenState[bunniToken] = BunniTokenState({
             poolKey: poolKey,
             tickLower: state.tickLower + shift,
             tickUpper: state.tickUpper + shift,
             mode: state.mode,
+            twapSecondsAgo: state.twapSecondsAgo,
             initialized: true
         });
 
@@ -314,13 +295,13 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         /// External calls
         /// -----------------------------------------------------------------------
 
+        // query existing liquidity
+        uint128 liquidity = poolManager.getLiquidity(poolId, address(this), state.tickLower, state.tickUpper);
+
         // get lock from pool manager
         ShiftReturnData memory returnData = abi.decode(
             poolManager.lock(
-                abi.encode(
-                    LockCallbackType.SHIFT,
-                    ShiftInputData({state: state, liquidity: liquidity, shift: shift, sqrtPriceX96: sqrtPriceX96})
-                )
+                abi.encode(LockCallbackType.SHIFT, ShiftInputData({state: state, liquidity: liquidity, shift: shift}))
             ),
             (ShiftReturnData)
         );
@@ -335,6 +316,11 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
                 returnData.compoundAmount1
             );
         }
+    }
+
+    /// @inheritdoc IBunniHub
+    function bunniTokenState(IBunniToken bunniToken) external view override returns (BunniTokenState memory) {
+        return _bunniTokenState[bunniToken];
     }
 
     /// -----------------------------------------------------------------------
@@ -511,7 +497,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     struct ShiftInputData {
         BunniTokenState state;
         uint128 liquidity;
-        uint160 sqrtPriceX96;
         int24 shift;
     }
 
@@ -650,7 +635,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         view
         returns (BunniTokenState memory state, PoolId poolId)
     {
-        state = bunniTokenState[bunniToken];
+        state = _bunniTokenState[bunniToken];
         if (!state.initialized) revert BunniHub__BunniTokenNotInitialized();
         poolId = state.poolKey.toId();
     }

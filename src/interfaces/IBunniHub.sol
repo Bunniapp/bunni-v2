@@ -6,13 +6,29 @@ pragma abicoder v2;
 import {PoolId} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
-import {IPoolManager} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
+import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
 
 import {IERC20} from "./IERC20.sol";
 import {IMulticall} from "./IMulticall.sol";
 import {ISelfPermit} from "./ISelfPermit.sol";
 import {IBunniToken} from "./IBunniToken.sol";
+
+enum ShiftMode {
+    STATIC,
+    LEFT,
+    RIGHT,
+    BOTH
+}
+
+struct BunniTokenState {
+    PoolKey poolKey;
+    int24 tickLower;
+    int24 tickUpper;
+    ShiftMode mode;
+    uint32 twapSecondsAgo;
+    bool initialized;
+}
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -21,13 +37,6 @@ import {IBunniToken} from "./IBunniToken.sol";
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
 interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
-    enum ShiftMode {
-        STATIC,
-        LEFT,
-        RIGHT,
-        BOTH
-    }
-
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
@@ -168,9 +177,15 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         int24 tickLower,
         int24 tickUpper,
         ShiftMode mode,
+        uint32 twapSecondsAgo,
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token);
 
+    function hookShiftPosition(PoolKey calldata poolKey, int24 shift) external;
+
     function poolManager() external view returns (IPoolManager);
     function hooks() external view returns (IHooks);
+    function bunniTokenState(IBunniToken bunniToken) external view returns (BunniTokenState memory);
+    function nonce(bytes32 bunniSubspace) external view returns (uint24);
+    function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken);
 }
