@@ -2,9 +2,11 @@
 pragma solidity ^0.8.19;
 
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
+import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
+import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
+import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamicFeeManager.sol";
 
 import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
 
@@ -12,7 +14,7 @@ import {BaseHook} from "./lib/BaseHook.sol";
 import {IBunniHub, BunniTokenState} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
-contract BunniHook is BaseHook {
+contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
 
@@ -108,6 +110,22 @@ contract BunniHook is BaseHook {
         });
     }
 
+    /// @inheritdoc IDynamicFeeManager
+    function getFee(PoolKey calldata key) external pure override returns (uint24) {
+        return 100; // TODO
+    }
+
+    /// @inheritdoc IHookFeeManager
+    function getHookSwapFee(PoolKey calldata key) external view override returns (uint8) {
+        return 100; // TODO
+    }
+
+    /// @inheritdoc IHookFeeManager
+    function getHookWithdrawFee(PoolKey calldata key) external view override returns (uint8) {
+        return 0;
+    }
+
+    /// @inheritdoc IHooks
     function afterInitialize(address, PoolKey calldata key, uint160, int24)
         external
         override
@@ -119,6 +137,7 @@ contract BunniHook is BaseHook {
         return BunniHook.afterInitialize.selector;
     }
 
+    /// @inheritdoc IHooks
     function beforeModifyPosition(address, PoolKey calldata key, IPoolManager.ModifyPositionParams calldata)
         external
         override
@@ -129,6 +148,7 @@ contract BunniHook is BaseHook {
         return BunniHook.beforeModifyPosition.selector;
     }
 
+    /// @inheritdoc IHooks
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata)
         external
         override
