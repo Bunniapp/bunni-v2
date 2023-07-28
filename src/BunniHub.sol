@@ -7,10 +7,10 @@ import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
 import {FeeLibrary} from "@uniswap/v4-core/contracts/libraries/FeeLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
-import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/contracts/types/Currency.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
+import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 
 import {CREATE3} from "solady/src/utils/CREATE3.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
@@ -52,7 +52,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
 
     IPoolManager public immutable override poolManager;
-    IHooks public immutable override hooks;
 
     /// -----------------------------------------------------------
     /// Storage variables
@@ -75,9 +74,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     /// Constructor
     /// -----------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, IHooks hooks_) {
+    constructor(IPoolManager poolManager_) {
         poolManager = poolManager_;
-        hooks = hooks_;
     }
 
     /// -----------------------------------------------------------
@@ -195,6 +193,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         int24 tickUpper,
         ShiftMode mode,
         uint32 twapSecondsAgo,
+        IHooks hooks,
         uint160 sqrtPriceX96
     ) external override returns (IBunniToken token) {
         /// -----------------------------------------------------------------------
@@ -204,9 +203,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         // each Uniswap v4 pool corresponds to a single BunniToken
         // since Univ4 pool key is deterministic based on poolKey, we use dynamic fee so that the lower 20 bits of `poolKey.fee` is used
         // as nonce to differentiate the BunniTokens
-        // each "subspace" has its own nonce that's incremented whenever a BunniToken is deployed with the same tokens & tick spacings
+        // each "subspace" has its own nonce that's incremented whenever a BunniToken is deployed with the same tokens & tick spacing & hooks
         // nonce can be at most 2^20 - 1 = 1048575 after which the deployment will fail
-        bytes32 bunniSubspace = keccak256(abi.encode(currency0, currency1, tickSpacing));
+        bytes32 bunniSubspace = keccak256(abi.encode(currency0, currency1, tickSpacing, hooks));
         uint24 nonce_ = nonce[bunniSubspace];
         if (nonce_ + 1 > MAX_NONCE) revert BunniHub__MaxNonceReached();
 
@@ -264,13 +263,13 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         /// Validation
         /// -----------------------------------------------------------------------
 
-        // only hooks contract can call this
-        if (msg.sender != address(hooks)) revert BunniHub__Unauthorized();
-
         // no useless shifts
         if (shift == 0) {
             revert BunniHub__InvalidShift();
         }
+
+        // only hooks contract can call this
+        if (msg.sender != address(poolKey.hooks)) revert BunniHub__Unauthorized();
 
         // load BunniToken state
         PoolId poolId = poolKey.toId();

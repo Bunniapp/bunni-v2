@@ -178,13 +178,13 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         int24 tickUpper,
         ShiftMode mode,
         uint32 twapSecondsAgo,
+        IHooks hooks,
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token);
 
     function hookShiftPosition(PoolKey calldata poolKey, int24 shift) external;
 
     function poolManager() external view returns (IPoolManager);
-    function hooks() external view returns (IHooks);
     function bunniTokenState(IBunniToken bunniToken) external view returns (BunniTokenState memory);
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
     function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken);
