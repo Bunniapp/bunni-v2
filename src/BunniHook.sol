@@ -8,9 +8,9 @@ import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeMan
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamicFeeManager.sol";
 
+import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
 import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
 
-import {BaseHook} from "./lib/BaseHook.sol";
 import {IBunniHub, BunniTokenState} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
