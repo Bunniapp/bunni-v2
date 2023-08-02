@@ -4,7 +4,6 @@ verbosity = 1
 remappings = [
   "@uniswap/v4-core/=lib/v4-core/",
   "@uniswap/v4-periphery/=lib/v4-periphery/",
-  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
 ]
 solc_version = "0.8.20"
 via_ir = true
