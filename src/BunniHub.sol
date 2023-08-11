@@ -85,7 +85,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     /// @inheritdoc IBunniHub
     function deposit(DepositParams calldata params)
         external
-        payable
         virtual
         override
         checkDeadline(params.deadline)
@@ -184,6 +183,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
                     abi.encode(
                         ModifyLiquidityInputData({
                             state: state,
+                            bunniToken: bunniToken,
                             liquidityDelta: 0,
                             user: msg.sender,
                             existingLiquidity: existingLiquidity
@@ -207,6 +207,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
         int24 tickUpper,
         ShiftMode mode,
         uint32 twapSecondsAgo,
+        uint24 minCompoundInterval,
         IHooks hooks,
         uint160 sqrtPriceX96
     ) external override returns (IBunniToken token) {
@@ -253,6 +254,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
             tickUpper: tickUpper,
             mode: mode,
             twapSecondsAgo: twapSecondsAgo,
+            minCompoundInterval: minCompoundInterval,
+            lastCompoundTimestamp: 0,
             initialized: true
         });
         PoolId poolId = key.toId();
@@ -301,6 +304,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
             tickUpper: state.tickUpper + shift,
             mode: state.mode,
             twapSecondsAgo: state.twapSecondsAgo,
+            minCompoundInterval: state.minCompoundInterval,
+            lastCompoundTimestamp: state.lastCompoundTimestamp,
             initialized: true
         });
 
@@ -316,7 +321,13 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
             poolManager.lock(
                 abi.encode(
                     LockCallbackType.SHIFT,
-                    ShiftInputData({state: state, liquidity: liquidity, shift: shift, existingLiquidity: liquidity})
+                    ShiftInputData({
+                        state: state,
+                        bunniToken: bunniToken,
+                        liquidity: liquidity,
+                        shift: shift,
+                        existingLiquidity: liquidity
+                    })
                 )
             ),
             (ShiftReturnData)
@@ -367,7 +378,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     /// Internal functions
     /// -----------------------------------------------------------
 
-    function _compoundLogic(BunniTokenState memory state, uint128 existingLiquidity)
+    function _compoundLogic(BunniTokenState memory state, uint128 existingLiquidity, IBunniToken bunniToken)
         internal
         returns (
             uint256 feeToAdd0,
@@ -377,7 +388,15 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
             uint256 donateAmount1
         )
     {
-        if (existingLiquidity == 0) return (0, 0, 0, 0, 0);
+        // enforce min interval between compound calls
+        // to prevent stealing accumulated lopsided fees
+        // via flashloan
+        if (existingLiquidity == 0 || (block.timestamp - state.lastCompoundTimestamp < state.minCompoundInterval)) {
+            return (0, 0, 0, 0, 0);
+        }
+
+        // update last compound timestamp
+        _bunniTokenState[bunniToken].lastCompoundTimestamp = block.timestamp.toUint56();
 
         // claim accrued fees and compound
         uint256 feeAmount0;
@@ -427,6 +446,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
     /// @param user The address to pay/receive the tokens
     struct ModifyLiquidityInputData {
         BunniTokenState state;
+        IBunniToken bunniToken;
         int256 liquidityDelta;
         address user;
         uint128 existingLiquidity;
@@ -456,7 +476,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
                 returnData.compoundLiquidity,
                 donateAmount0,
                 donateAmount1
-            ) = _compoundLogic(input.state, input.existingLiquidity);
+            ) = _compoundLogic(input.state, input.existingLiquidity, input.bunniToken);
 
             // update liquidity
             BalanceDelta delta = poolManager.modifyPosition(
@@ -515,6 +535,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
 
     struct ShiftInputData {
         BunniTokenState state;
+        IBunniToken bunniToken;
         uint128 liquidity;
         int24 shift;
         uint128 existingLiquidity;
@@ -537,7 +558,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
             returnData.compoundLiquidity,
             donateAmount0,
             donateAmount1
-        ) = _compoundLogic(input.state, input.existingLiquidity);
+        ) = _compoundLogic(input.state, input.existingLiquidity, input.bunniToken);
 
         // remove existing liquidity and add to new range
         poolManager.modifyPosition(
@@ -614,6 +635,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit {
                     abi.encode(
                         ModifyLiquidityInputData({
                             state: params.state,
+                            bunniToken: params.bunniToken,
                             liquidityDelta: params.liquidityDelta,
                             user: params.user,
                             existingLiquidity: params.existingLiquidity

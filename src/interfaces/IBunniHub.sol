@@ -27,6 +27,8 @@ struct BunniTokenState {
     int24 tickUpper;
     ShiftMode mode;
     uint32 twapSecondsAgo;
+    uint24 minCompoundInterval;
+    uint56 lastCompoundTimestamp;
     bool initialized;
 }
 
@@ -122,7 +124,6 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
     /// @return amount1 The amount of token1 to acheive resulting liquidity
     function deposit(DepositParams calldata params)
         external
-        payable
         returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1);
 
     /// @param bunniToken The BunniToken associated with the call
@@ -178,6 +179,7 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         int24 tickUpper,
         ShiftMode mode,
         uint32 twapSecondsAgo,
+        uint24 minCompoundInterval,
         IHooks hooks,
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token);

@@ -18,17 +18,17 @@ import {IBunniHub, BunniTokenState, ShiftMode} from "../src/interfaces/IBunniHub
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 
 contract BunniHubTest is Test {
-    uint256 constant PRECISION = 10 ** 18;
-    uint8 constant DECIMALS = 18;
-    int24 constant TICK_SPACING = 10;
+    uint256 internal constant PRECISION = 10 ** 18;
+    uint8 internal constant DECIMALS = 18;
+    int24 internal constant TICK_SPACING = 10;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
 
-    IPoolManager poolManager;
-    ERC20Mock token0;
-    ERC20Mock token1;
-    IBunniHub hub;
-    IBunniToken bunniToken;
-    BunniHook constant bunniHook = BunniHook(
+    IPoolManager internal poolManager;
+    ERC20Mock internal token0;
+    ERC20Mock internal token1;
+    IBunniHub internal hub;
+    IBunniToken internal bunniToken;
+    BunniHook internal constant bunniHook = BunniHook(
         address(uint160(Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_MODIFY_POSITION_FLAG + Hooks.BEFORE_SWAP_FLAG))
     );
 
@@ -56,6 +56,7 @@ contract BunniHubTest is Test {
             100,
             ShiftMode.BOTH,
             3600,
+            1 days,
             bunniHook,
             TickMath.getSqrtRatioAtTick(0)
         );
