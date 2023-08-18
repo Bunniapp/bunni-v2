@@ -13,6 +13,7 @@ import {IERC20} from "./IERC20.sol";
 import {IMulticall} from "./IMulticall.sol";
 import {ISelfPermit} from "./ISelfPermit.sol";
 import {IBunniToken} from "./IBunniToken.sol";
+import {ITokenDensityFunction} from "./ITokenDensityFunction.sol";
 
 enum ShiftMode {
     STATIC,
@@ -23,12 +24,8 @@ enum ShiftMode {
 
 struct BunniTokenState {
     PoolKey poolKey;
-    int24 tickLower;
-    int24 tickUpper;
-    ShiftMode mode;
+    ITokenDensityFunction tokenDensityFunction;
     uint32 twapSecondsAgo;
-    uint24 minCompoundInterval;
-    uint56 lastCompoundTimestamp;
     bool initialized;
 }
 
@@ -184,7 +181,7 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token);
 
-    function hookShiftPosition(PoolKey calldata poolKey, int24 shift) external;
+    // function hookShiftPosition(PoolKey calldata poolKey, int24 shift) external;
 
     function poolManager() external view returns (IPoolManager);
     function bunniTokenState(IBunniToken bunniToken) external view returns (BunniTokenState memory);
