@@ -27,6 +27,8 @@ struct BunniTokenState {
     ITokenDensityFunction tokenDensityFunction;
     uint32 twapSecondsAgo;
     bool initialized;
+    uint128 reserve0;
+    uint128 reserve1;
 }
 
 /// @title BunniHub

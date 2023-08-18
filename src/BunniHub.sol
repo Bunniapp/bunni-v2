@@ -109,7 +109,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(state.twapSecondsAgo)));
         }
         uint256 currentTickSqrtRatio = TickMath.getSqrtRatioAtTick(currentTick);
-        uint256 nextTickSqrtRatio = TickMath.getSqrtRatioAtTick(currentTick + state.tickSpacing);
+        int24 nextTick = currentTick + state.tickSpacing;
+        uint256 nextTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextTick);
         uint256 currentTickDensity =
             state.tokenDensityFunction.tokenDensityOfTick(currentTick, currentTick, arithmeticMeanTick);
         uint256 adjustedCurrentTickToken0Density = currentTickDensity.mulDivDown(
@@ -122,30 +123,56 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         );
         uint256 cumulativeDensity =
             state.tokenDensityFunction.cumulativeTokenDensity(currentTick, currentTick, arithmeticMeanTick);
+        uint256 currentTickAmount0 =
+            params.amount0Desired.mulDivDown(adjustedCurrentTickToken0Density, cumulativeDensity);
+        uint256 currentTickAmount1 = params.amount1Desired.mulDivDown(
+            adjustedCurrentTickToken1Density, WAD - cumulativeDensity + currentTickDensity
+        );
 
-        {
-            uint256 currentTickAmount0 =
-                params.amount0Desired.mulDivDown(adjustedCurrentTickToken0Density, cumulativeDensity);
-            uint256 currentTickAmount1 = params.amount1Desired.mulDivDown(
-                adjustedCurrentTickToken1Density, WAD - cumulativeDensity + currentTickDensity
-            );
-
-            // compute how much liquidity we'd get from the tokens
-            // tokens are likely imbalanced
-            addedLiquidity = LiquidityAmounts.getLiquidityForAmounts(
-                sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, currentTickAmount0, currentTickAmount1
-            );
-        }
+        // compute how much liquidity we'd get from the tokens
+        // tokens are likely imbalanced
+        addedLiquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, currentTickAmount0, currentTickAmount1
+        );
 
         // compute tokens outside of current tick to pull from user
-        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
+        (currentTickAmount0, currentTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, addedLiquidity
         );
-        uint256 totalAmount0 = amount0.mulDivUp(cumulativeDensity, adjustedCurrentTickToken0Density);
-        uint256 totalAmount1 = amount1.mulDivUp(cumulativeDensity, adjustedCurrentTickToken1Density);
+        amount0 = currentTickAmount0.mulDivUp(cumulativeDensity, adjustedCurrentTickToken0Density);
+        amount1 = currentTickAmount1.mulDivUp(cumulativeDensity, adjustedCurrentTickToken1Density);
 
-        // add liquidity
-        (amount0, amount1) = _modifyLiquidity(
+        /// -----------------------------------------------------------------------
+        /// State updates
+        /// -----------------------------------------------------------------------
+
+        // mint shares
+        (uint256 existingAmount0, uint256 existingAmount1) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96,
+            currentTickSqrtRatio,
+            nextTickSqrtRatio,
+            poolManager.getLiquidity(poolId, address(this), currentTick, nextTick)
+        );
+        shares = _mintShares(
+            params.bunniToken,
+            params.recipient,
+            amount0,
+            existingAmount0 + state.reserve0, // current tick tokens + reserve tokens
+            amount1,
+            existingAmount1 + state.reserve1 // current tick tokens + reserve tokens
+        );
+
+        // update reserves
+        // reserves represent the amount of tokens not in the current tick
+        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + (amount0 - currentTickAmount0).toUint128();
+        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + (amount1 - currentTickAmount1).toUint128();
+
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        // add liquidity and reserves
+        _modifyLiquidity(
             ModifyLiquidityParams({
                 poolKey: state.poolKey,
                 tickLower: currentTick,
@@ -156,14 +183,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
                 liquidityDelta: uint256(addedLiquidity).toInt256(),
                 amount0Min: params.amount0Min,
                 amount1Min: params.amount1Min,
-                depositAmount0: totalAmount0 - amount0,
-                depositAmount1: totalAmount1 - amount1
+                depositAmount0: (amount0 - currentTickAmount0).toInt256(),
+                depositAmount1: (amount1 - currentTickAmount1).toInt256()
             })
-        );
-
-        // mint shares
-        shares = _mintShares(
-            params.bunniToken, params.recipient, totalAmount0, existingAmount0, totalAmount1, existingAmount1
         );
 
         // emit event
@@ -182,7 +204,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(params.bunniToken);
         uint256 currentTotalSupply = params.bunniToken.totalSupply();
-        uint128 existingLiquidity = poolManager.getLiquidity(poolId, address(this), state.tickLower, state.tickUpper);
+        (, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
+        int24 nextTick = currentTick + state.tickSpacing;
+        uint128 existingLiquidity = poolManager.getLiquidity(poolId, address(this), currentTick, nextTick);
 
         // burn shares
         params.bunniToken.burn(msg.sender, params.shares);
@@ -192,17 +216,20 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // burn liquidity from pool
         // type cast is safe because we know removedLiquidity <= existingLiquidity
         removedLiquidity = uint128(FullMath.mulDiv(existingLiquidity, params.shares, currentTotalSupply));
-        // burn liquidity
+        // burn liquidity and withdraw reserves
         (amount0, amount1) = _modifyLiquidity(
             ModifyLiquidityParams({
-                state: state,
+                poolKey: state.poolKey,
+                tickLower: currentTick,
+                tickUpper: currentTick + state.tickSpacing,
                 bunniToken: params.bunniToken,
                 poolId: poolId,
                 user: params.recipient,
                 liquidityDelta: -uint256(removedLiquidity).toInt256(),
                 amount0Min: params.amount0Min,
                 amount1Min: params.amount1Min,
-                existingLiquidity: existingLiquidity
+                depositAmount0: -FullMath.mulDiv(state.reserve0, params.shares, currentTotalSupply).toInt256(),
+                depositAmount1: -FullMath.mulDiv(state.reserve1, params.shares, currentTotalSupply).toInt256()
             })
         );
 
@@ -293,7 +320,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             poolKey: key,
             tokenDensityFunction: tokenDensityFunction,
             twapSecondsAgo: twapSecondsAgo,
-            initialized: true
+            initialized: true,
+            reserve0: 0,
+            reserve1: 0
         });
         PoolId poolId = key.toId();
         bunniTokenOfPool[poolId] = token;
@@ -409,8 +438,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         int24 tickLower;
         int24 tickUpper;
         int256 liquidityDelta;
-        uint256 depositAmount0;
-        uint256 depositAmount1;
+        int256 depositAmount0;
+        int256 depositAmount1;
         address user;
     }
 
@@ -480,7 +509,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             poolManager.take(input.poolKey.currency0, input.user, result0);
         }
 
-        if (input.depositAmount0 != 0) {
+        if (input.depositAmount0 > 0) {
+            // deposit tokens into PoolManager
             _pay(Currency.unwrap(input.poolKey.currency0), input.user, address(poolManager), input.depositAmount0);
             poolManager.mint(input.poolKey.currency0, address(this), input.depositAmount0);
         }
@@ -497,9 +527,39 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             poolManager.take(input.poolKey.currency1, input.user, result1);
         }
 
-        if (input.depositAmount1 != 0) {
+        if (input.depositAmount1 > 0) {
+            // deposit tokens into PoolManager
             _pay(Currency.unwrap(input.poolKey.currency1), input.user, address(poolManager), input.depositAmount1);
             poolManager.mint(input.poolKey.currency1, address(this), input.depositAmount1);
+        }
+
+        // withdraw tokens from PoolManager
+        if (input.depositAmount0 < 0 && input.depositAmount1 < 0) {
+            uint256[] memory ids = new uint256[](2);
+            ids[0] = input.poolKey.currency0.toId();
+            ids[1] = input.poolKey.currency1.toId();
+            uint256[] memory amounts = new uint256[](2);
+            ids[0] = uint256(-input.depositAmount0);
+            ids[1] = uint256(-input.depositAmount1);
+            poolManager.safeBatchTransferFrom(address(this), address(poolManager), ids, amounts, bytes(""));
+            poolManager.take(input.poolKey.currency0, input.user, amounts[0]);
+            poolManager.take(input.poolKey.currency1, input.user, amounts[1]);
+        } else if (input.depositAmount0 < 0) {
+            poolManager.safeTransferFrom(
+                address(this),
+                address(poolManager),
+                input.poolKey.currency0.toId(),
+                uint256(-input.depositAmount0),
+                bytes("")
+            );
+        } else if (input.depositAmount1 < 0) {
+            poolManager.safeTransferFrom(
+                address(this),
+                address(poolManager),
+                input.poolKey.currency1.toId(),
+                uint256(-input.depositAmount1),
+                bytes("")
+            );
         }
 
         (returnData.amount0, returnData.amount1) = (result0, result1);
@@ -598,8 +658,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         int256 liquidityDelta;
         uint256 amount0Min;
         uint256 amount1Min;
-        uint256 depositAmount0;
-        uint256 depositAmount1;
+        int256 depositAmount0;
+        int256 depositAmount1;
     }
 
     function _modifyLiquidity(ModifyLiquidityParams memory params)
