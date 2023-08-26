@@ -81,9 +81,7 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
     /// @notice Emitted when a new IBunniToken is created
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
-    event NewBunni(
-        IBunniToken indexed bunniToken, PoolId indexed poolId
-    );
+    event NewBunni(IBunniToken indexed bunniToken, PoolId indexed poolId);
 
     /// @param bunniToken The BunniToken associated with the call
     /// @param amount0Desired The desired amount of token0 to be spent,

@@ -3,6 +3,8 @@ pragma solidity ^0.8.19;
 
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
+import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
+import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
@@ -11,14 +13,21 @@ import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamic
 import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
 import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
 
+import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
+
+import "./lib/Math.sol";
+import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {IBunniHub, BunniTokenState} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
 contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
+    using SafeCastLib for uint256;
 
     error BunniHook__BunniTokenNotInitialized();
+
+    uint256 internal constant WAD = 1e18;
 
     IBunniHub public immutable hub;
 
@@ -171,56 +180,73 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
     /// @dev Called before any action that potentially modifies pool price or liquidity, such as swap or modify position
     function _updatePool(PoolKey calldata key, bool shiftPosition) private {
         PoolId id = key.toId();
-        (, int24 tick,,,,) = poolManager.getSlot0(id);
+        (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(id);
         uint128 liquidity = poolManager.getLiquidity(id);
 
         // update TWAP oracle
         (states[id].index, states[id].cardinality) = observations[id].write(
-            states[id].index, _blockTimestamp(), tick, liquidity, states[id].cardinality, states[id].cardinalityNext
+            states[id].index,
+            _blockTimestamp(),
+            currentTick,
+            liquidity,
+            states[id].cardinality,
+            states[id].cardinalityNext
         );
 
         if (shiftPosition) {
-            // shift position if:
-            // 1) spot price is out of range
-            // 2) TWAP is out of range
-            // shift next to the nearest of spot price & TWAP
+            // get current tick token balances & reserves
+            BunniTokenState memory bunniState = hub.bunniTokenState(hub.bunniTokenOfPool(id));
+            if (!bunniState.initialized) revert BunniHook__BunniTokenNotInitialized();
+            int24 nextTick = currentTick + key.tickSpacing;
+            uint128 currentTickLiquidity = poolManager.getLiquidity(id, address(poolManager), currentTick, nextTick);
+            uint160 currentTickSqrtRatio = TickMath.getSqrtRatioAtTick(currentTick);
+            uint160 nextTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextTick);
+            (uint256 currentTickBalance0, uint256 currentTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
+                sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, currentTickLiquidity
+            );
+            (uint256 balance0, uint256 balance1) =
+                (currentTickBalance0 + bunniState.reserve0, currentTickBalance1 + bunniState.reserve1);
 
+            // get densities
             // query TWAP value
             int24 arithmeticMeanTick;
-            BunniTokenState memory bunniState;
             {
-                bunniState = hub.bunniTokenState(hub.bunniTokenOfPool(id));
-                if (!bunniState.initialized) revert BunniHook__BunniTokenNotInitialized();
-
                 ObservationState memory state = states[id];
                 uint32[] memory secondsAgos = new uint32[](2);
                 secondsAgos[0] = bunniState.twapSecondsAgo;
                 secondsAgos[1] = 0;
                 (int56[] memory tickCumulatives,) = observations[id].observe(
-                    _blockTimestamp(), secondsAgos, tick, state.index, liquidity, state.cardinality
+                    _blockTimestamp(), secondsAgos, currentTick, state.index, liquidity, state.cardinality
                 );
                 int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
                 arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(bunniState.twapSecondsAgo)));
             }
 
-            int24 tickLowerBoundary = bunniState.tickLower - key.tickSpacing;
-            if (tick < tickLowerBoundary && arithmeticMeanTick < tickLowerBoundary && uint8(bunniState.mode) % 2 == 1) {
-                // shift left
-                // shift values are negative
-                int24 twapShift = (arithmeticMeanTick - bunniState.tickLower) / key.tickSpacing * key.tickSpacing;
-                int24 spotShift = tick - bunniState.tickLower;
-                // use the minimum absolute shift (maximum negative shift)
-                hub.hookShiftPosition(key, twapShift > spotShift ? twapShift : spotShift);
-            } else if (
-                tick > bunniState.tickUpper && arithmeticMeanTick > bunniState.tickUpper && uint8(bunniState.mode) >= 2
-            ) {
-                // shift right
-                // shift values are positive
-                int24 twapShift = (arithmeticMeanTick - bunniState.tickUpper) / key.tickSpacing * key.tickSpacing;
-                int24 spotShift = tick - bunniState.tickUpper;
-                // use the minimum absolute shift (minimum positive shift)
-                hub.hookShiftPosition(key, twapShift < spotShift ? twapShift : spotShift);
-            }
+            uint256 density0LeftOfCurrentTick = bunniState.liquidityDensityFunction.cumulativeAmount0Density(
+                currentTick - key.tickSpacing, currentTick, arithmeticMeanTick
+            );
+            uint256 density1RightOfCurrentTick =
+                bunniState.liquidityDensityFunction.cumulativeAmount1Density(nextTick, currentTick, arithmeticMeanTick);
+            uint256 liquidityDensityOfCurrentTick =
+                bunniState.liquidityDensityFunction.liquidityDensity(currentTick, currentTick, arithmeticMeanTick);
+            (uint256 density0OfCurrentTick, uint256 density1OfCurrentTick) = LiquidityAmounts.getAmountsForLiquidity(
+                sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, liquidityDensityOfCurrentTick.toUint128()
+            );
+
+            // compute total liquidity
+            uint256 totalLiquidity = max(
+                FullMath.mulDiv(balance0, WAD, density0LeftOfCurrentTick + density0OfCurrentTick),
+                FullMath.mulDiv(balance1, WAD, density1RightOfCurrentTick + density1OfCurrentTick)
+            );
+
+            // compute updated current tick liquidity
+            uint256 updatedCurrentTickLiquidity = FullMath.mulDiv(totalLiquidity, liquidityDensityOfCurrentTick, WAD);
+
+            // update current tick liquidity if necessary
+            // TODO
+
+            // simulate swap to see if it crosses ticks
+            // TODO
         }
     }
 }
