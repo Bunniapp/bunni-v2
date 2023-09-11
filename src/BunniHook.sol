@@ -207,10 +207,11 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
             (uint256 balance0, uint256 balance1) =
                 (currentTickBalance0 + bunniState.reserve0, currentTickBalance1 + bunniState.reserve1);
 
-            // get densities
-            // query TWAP value
+            // (optional) get TWAP value
             int24 arithmeticMeanTick;
-            {
+            if (bunniState.twapSecondsAgo != 0) {
+                // LDF uses TWAP
+                // compute TWAP value
                 ObservationState memory state = states[id];
                 uint32[] memory secondsAgos = new uint32[](2);
                 secondsAgos[0] = bunniState.twapSecondsAgo;
@@ -222,13 +223,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
                 arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(bunniState.twapSecondsAgo)));
             }
 
-            uint256 density0LeftOfCurrentTick = bunniState.liquidityDensityFunction.cumulativeAmount0Density(
-                currentTick - key.tickSpacing, currentTick, arithmeticMeanTick
-            );
-            uint256 density1RightOfCurrentTick =
-                bunniState.liquidityDensityFunction.cumulativeAmount1Density(nextTick, currentTick, arithmeticMeanTick);
-            uint256 liquidityDensityOfCurrentTick =
-                bunniState.liquidityDensityFunction.liquidityDensity(currentTick, currentTick, arithmeticMeanTick);
+            // get densities
+            (
+                uint256 liquidityDensityOfCurrentTick,
+                uint256 density0LeftOfCurrentTick,
+                uint256 density1RightOfCurrentTick
+            ) = bunniState.liquidityDensityFunction.query(currentTick, arithmeticMeanTick, key.tickSpacing);
             (uint256 density0OfCurrentTick, uint256 density1OfCurrentTick) = LiquidityAmounts.getAmountsForLiquidity(
                 sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, liquidityDensityOfCurrentTick.toUint128()
             );

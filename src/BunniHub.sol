@@ -99,7 +99,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // fetch values from pool
         (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
         int24 arithmeticMeanTick;
-        {
+        if (state.twapSecondsAgo != 0) {
+            // LDF uses TWAP
+            // compute TWAP value
             uint32[] memory secondsAgos = new uint32[](2);
             secondsAgos[0] = state.twapSecondsAgo;
             secondsAgos[1] = 0;
@@ -113,13 +115,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         uint160 nextTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextTick);
 
         // compute density
-        uint256 density0LeftOfCurrentTick = state.liquidityDensityFunction.cumulativeAmount0Density(
-            currentTick - state.poolKey.tickSpacing, currentTick, arithmeticMeanTick
-        );
-        uint256 density1RightOfCurrentTick =
-            state.liquidityDensityFunction.cumulativeAmount1Density(nextTick, currentTick, arithmeticMeanTick);
-        uint256 liquidityDensityOfCurrentTick =
-            state.liquidityDensityFunction.liquidityDensity(currentTick, currentTick, arithmeticMeanTick);
+        (uint256 liquidityDensityOfCurrentTick, uint256 density0LeftOfCurrentTick, uint256 density1RightOfCurrentTick) =
+            state.liquidityDensityFunction.query(currentTick, arithmeticMeanTick, state.poolKey.tickSpacing);
         (uint256 density0OfCurrentTick, uint256 density1OfCurrentTick) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, liquidityDensityOfCurrentTick.toUint128()
         );

@@ -4,15 +4,8 @@ pragma solidity >=0.6.0;
 pragma abicoder v2;
 
 interface ILiquidityDensityFunction {
-    function liquidityDensity(int24 tick, int24 currentTick, int24 twapTick) external view returns (uint256 density);
-
-    function cumulativeAmount0Density(int24 tick, int24 currentTick, int24 twapTick)
+    function query(int24 currentTick, int24 twapTick, int24 tickSpacing)
         external
         view
-        returns (uint256 cumulativeDensity);
-
-    function cumulativeAmount1Density(int24 tick, int24 currentTick, int24 twapTick)
-        external
-        view
-        returns (uint256 cumulativeDensity);
+        returns (uint256 liquidityDensity, uint256 cumulativeAmount0Density, uint256 cumulativeAmount1Density);
 }
