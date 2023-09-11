@@ -13,6 +13,7 @@ import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamic
 import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
 import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
 
+import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
 import "./lib/Math.sol";
@@ -20,12 +21,14 @@ import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {IBunniHub, BunniTokenState} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
-contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
+contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
     using SafeCastLib for uint256;
 
     error BunniHook__BunniTokenNotInitialized();
+
+    event SetHookSwapFee(uint8 newFee);
 
     uint256 internal constant WAD = 1e18;
 
@@ -45,8 +48,14 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) public states;
 
-    constructor(IPoolManager _poolManager, IBunniHub hub_) BaseHook(_poolManager) {
+    uint8 public hookSwapFee;
+
+    constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, uint8 hookSwapFee_) BaseHook(_poolManager) {
         hub = hub_;
+        hookSwapFee = hookSwapFee_;
+        _initializeOwner(owner_);
+
+        emit SetHookSwapFee(hookSwapFee_);
     }
 
     /// -----------------------------------------------------------------------
@@ -65,6 +74,15 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
         cardinalityNextOld = state.cardinalityNext;
         cardinalityNextNew = observations[id].grow(cardinalityNextOld, cardinalityNext);
         state.cardinalityNext = cardinalityNextNew;
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Owner functions
+    /// -----------------------------------------------------------------------
+
+    function setHookSwapFee(uint8 newFee) external onlyOwner {
+        hookSwapFee = newFee;
+        emit SetHookSwapFee(newFee);
     }
 
     /// -----------------------------------------------------------------------
@@ -125,12 +143,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager {
     }
 
     /// @inheritdoc IHookFeeManager
-    function getHookSwapFee(PoolKey calldata key) external view override returns (uint8) {
-        return 100; // TODO
+    function getHookSwapFee(PoolKey calldata) external view override returns (uint8) {
+        return hookSwapFee;
     }
 
     /// @inheritdoc IHookFeeManager
-    function getHookWithdrawFee(PoolKey calldata key) external view override returns (uint8) {
+    function getHookWithdrawFee(PoolKey calldata) external pure override returns (uint8) {
         return 0;
     }
 
