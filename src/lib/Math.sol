@@ -9,3 +9,10 @@ function min(uint256 a, uint256 b) pure returns (uint256) {
 function max(uint256 a, uint256 b) pure returns (uint256) {
     return a > b ? a : b;
 }
+
+function roundTick(int24 currentTick, int24 tickSpacing) pure returns (int24 roundedTick, int24 nextRoundedTick) {
+    int24 compressed = currentTick / tickSpacing;
+    if (currentTick < 0 && currentTick % tickSpacing != 0) compressed--; // round towards negative infinity
+    roundedTick = compressed * tickSpacing;
+    nextRoundedTick = roundedTick + tickSpacing;
+}

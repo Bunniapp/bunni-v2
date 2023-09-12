@@ -5,6 +5,7 @@ import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
+import {SwapMath} from "@uniswap/v4-core/contracts/libraries/SwapMath.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
@@ -139,7 +140,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
     /// @inheritdoc IDynamicFeeManager
     function getFee(PoolKey calldata key) external pure override returns (uint24) {
-        return 100; // TODO
+        return _getFee(key);
     }
 
     /// @inheritdoc IHookFeeManager
@@ -171,18 +172,18 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         poolManagerOnly
         returns (bytes4)
     {
-        _updatePool(key, false);
+        _beforeModifyPositionUpdatePool(key);
         return BunniHook.beforeModifyPosition.selector;
     }
 
     /// @inheritdoc IHooks
-    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata)
+    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params)
         external
         override
         poolManagerOnly
         returns (bytes4)
     {
-        _updatePool(key, true);
+        _beforeSwapUpdatePool(key, params);
         return BunniHook.beforeSwap.selector;
     }
 
@@ -195,10 +196,9 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         return uint32(block.timestamp);
     }
 
-    /// @dev Called before any action that potentially modifies pool price or liquidity, such as swap or modify position
-    function _updatePool(PoolKey calldata key, bool shiftPosition) private {
+    function _beforeModifyPositionUpdatePool(PoolKey calldata key) private {
         PoolId id = key.toId();
-        (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(id);
+        (, int24 currentTick,,,,) = poolManager.getSlot0(id);
         uint128 liquidity = poolManager.getLiquidity(id);
 
         // update TWAP oracle
@@ -210,61 +210,151 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             states[id].cardinality,
             states[id].cardinalityNext
         );
+    }
 
-        if (shiftPosition) {
-            // get current tick token balances & reserves
-            BunniTokenState memory bunniState = hub.bunniTokenState(hub.bunniTokenOfPool(id));
-            if (!bunniState.initialized) revert BunniHook__BunniTokenNotInitialized();
-            int24 nextTick = currentTick + key.tickSpacing;
-            uint128 currentTickLiquidity = poolManager.getLiquidity(id, address(poolManager), currentTick, nextTick);
-            uint160 currentTickSqrtRatio = TickMath.getSqrtRatioAtTick(currentTick);
-            uint160 nextTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextTick);
-            (uint256 currentTickBalance0, uint256 currentTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, currentTickLiquidity
+    function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
+        PoolId id = key.toId();
+        (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(id);
+
+        // get current tick token balances & reserves
+        BunniTokenState memory bunniState = hub.bunniTokenState(hub.bunniTokenOfPool(id));
+        if (!bunniState.initialized) revert BunniHook__BunniTokenNotInitialized();
+        (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
+        uint128 liquidity = poolManager.getLiquidity(id);
+        uint160 roundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(roundedTick);
+        uint160 nextRoundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextRoundedTick);
+        (uint256 balance0, uint256 balance1) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidity
+        );
+        (balance0, balance1) = (balance0 + bunniState.reserve0, balance1 + bunniState.reserve1);
+
+        // (optional) get TWAP value
+        int24 arithmeticMeanTick;
+        if (bunniState.twapSecondsAgo != 0) {
+            // LDF uses TWAP
+            // compute TWAP value
+            ObservationState memory state = states[id];
+            uint32[] memory secondsAgos = new uint32[](2);
+            secondsAgos[0] = bunniState.twapSecondsAgo;
+            secondsAgos[1] = 0;
+            (int56[] memory tickCumulatives,) = observations[id].observe(
+                _blockTimestamp(), secondsAgos, currentTick, state.index, liquidity, state.cardinality
             );
-            (uint256 balance0, uint256 balance1) =
-                (currentTickBalance0 + bunniState.reserve0, currentTickBalance1 + bunniState.reserve1);
+            int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
+            arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(bunniState.twapSecondsAgo)));
+        }
 
-            // (optional) get TWAP value
-            int24 arithmeticMeanTick;
-            if (bunniState.twapSecondsAgo != 0) {
-                // LDF uses TWAP
-                // compute TWAP value
-                ObservationState memory state = states[id];
-                uint32[] memory secondsAgos = new uint32[](2);
-                secondsAgos[0] = bunniState.twapSecondsAgo;
-                secondsAgos[1] = 0;
-                (int56[] memory tickCumulatives,) = observations[id].observe(
-                    _blockTimestamp(), secondsAgos, currentTick, state.index, liquidity, state.cardinality
-                );
-                int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-                arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(bunniState.twapSecondsAgo)));
+        // get densities
+        (uint256 liquidityDensityOfRoundedTick, uint256 density0RightOfRoundedTick, uint256 density1LeftOfRoundedTick) =
+            bunniState.liquidityDensityFunction.query(currentTick, arithmeticMeanTick, key.tickSpacing);
+        (uint256 density0OfRoundedTick, uint256 density1OfRoundedTick) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTick.toUint128()
+        );
+
+        // compute total liquidity
+        uint256 totalLiquidity = max(
+            FullMath.mulDiv(balance0, WAD, density0RightOfRoundedTick + density0OfRoundedTick),
+            FullMath.mulDiv(balance1, WAD, density1LeftOfRoundedTick + density1OfRoundedTick)
+        );
+
+        // compute updated current tick liquidity
+        uint128 updatedRoundedTickLiquidity =
+            FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTick, WAD).toUint128();
+
+        // update current tick liquidity if necessary
+        // TODO
+
+        // simulate swap to see if current tick liquidity is sufficient
+        uint256 amountIn;
+        uint256 amountOut;
+        uint256 feeAmount;
+        uint24 swapFee = _getFee(key);
+        bool exactInput = params.amountSpecified > 0;
+        uint160 sqrtPriceStartX96 = sqrtPriceX96;
+        int24 tickNext = params.zeroForOne ? roundedTick : nextRoundedTick;
+        if (tickNext < TickMath.MIN_TICK) {
+            tickNext = TickMath.MIN_TICK;
+        } else if (tickNext > TickMath.MAX_TICK) {
+            tickNext = TickMath.MAX_TICK;
+        }
+        uint160 sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
+        (sqrtPriceX96, amountIn, amountOut, feeAmount) = SwapMath.computeSwapStep(
+            sqrtPriceX96,
+            (
+                params.zeroForOne
+                    ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
+                    : sqrtPriceNextX96 > params.sqrtPriceLimitX96
+            ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
+            updatedRoundedTickLiquidity,
+            params.amountSpecified,
+            swapFee
+        );
+        int256 amountSpecifiedRemaining;
+        unchecked {
+            if (exactInput) {
+                amountSpecifiedRemaining -= (amountIn + feeAmount).toInt256();
+            } else {
+                amountSpecifiedRemaining += amountOut.toInt256();
+            }
+        }
+        // if insufficient, add liquidity to the next tick and repeat
+        int24 stateTick;
+        while (amountSpecifiedRemaining != 0 && sqrtPriceX96 != params.sqrtPriceLimitX96) {
+            // shift tick if we reached the next price
+            if (sqrtPriceX96 == sqrtPriceNextX96) {
+                unchecked {
+                    stateTick = params.zeroForOne ? tickNext - 1 : tickNext;
+                }
+            } else if (sqrtPriceX96 != sqrtPriceStartX96) {
+                // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
+                stateTick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
             }
 
-            // get densities
-            (
-                uint256 liquidityDensityOfCurrentTick,
-                uint256 density0LeftOfCurrentTick,
-                uint256 density1RightOfCurrentTick
-            ) = bunniState.liquidityDensityFunction.query(currentTick, arithmeticMeanTick, key.tickSpacing);
-            (uint256 density0OfCurrentTick, uint256 density1OfCurrentTick) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96, currentTickSqrtRatio, nextTickSqrtRatio, liquidityDensityOfCurrentTick.toUint128()
-            );
-
-            // compute total liquidity
-            uint256 totalLiquidity = max(
-                FullMath.mulDiv(balance0, WAD, density0LeftOfCurrentTick + density0OfCurrentTick),
-                FullMath.mulDiv(balance1, WAD, density1RightOfCurrentTick + density1OfCurrentTick)
-            );
-
-            // compute updated current tick liquidity
-            uint256 updatedCurrentTickLiquidity = FullMath.mulDiv(totalLiquidity, liquidityDensityOfCurrentTick, WAD);
-
-            // update current tick liquidity if necessary
+            // add liquidity to tickNext
             // TODO
+            tickNext = params.zeroForOne ? tickNext - key.tickSpacing : tickNext + key.tickSpacing;
+            if (tickNext < TickMath.MIN_TICK) {
+                tickNext = TickMath.MIN_TICK;
+            } else if (tickNext > TickMath.MAX_TICK) {
+                tickNext = TickMath.MAX_TICK;
+            }
 
-            // simulate swap to see if it crosses ticks
-            // TODO
+            // recompute sqrtPriceX96 and amountSpecifiedRemaining
+            sqrtPriceStartX96 = sqrtPriceX96;
+            sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
+            (sqrtPriceX96, amountIn, amountOut, feeAmount) = SwapMath.computeSwapStep(
+                sqrtPriceX96,
+                (
+                    params.zeroForOne
+                        ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
+                        : sqrtPriceNextX96 > params.sqrtPriceLimitX96
+                ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
+                updatedRoundedTickLiquidity,
+                params.amountSpecified,
+                swapFee
+            );
+            unchecked {
+                if (exactInput) {
+                    amountSpecifiedRemaining -= (amountIn + feeAmount).toInt256();
+                } else {
+                    amountSpecifiedRemaining += amountOut.toInt256();
+                }
+            }
         }
+
+        // update TWAP oracle
+        // do it at the end since we likely updated liquidity
+        (states[id].index, states[id].cardinality) = observations[id].write(
+            states[id].index,
+            _blockTimestamp(),
+            currentTick,
+            poolManager.getLiquidity(id),
+            states[id].cardinality,
+            states[id].cardinalityNext
+        );
+    }
+
+    function _getFee(PoolKey calldata key) internal pure returns (uint24) {
+        return 100; // TODO
     }
 }
