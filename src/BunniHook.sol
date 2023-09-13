@@ -27,6 +27,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     using PoolIdLibrary for PoolKey;
     using SafeCastLib for uint256;
 
+    error BunniHook__NotBunniHubOrHook();
     error BunniHook__BunniTokenNotInitialized();
 
     event SetHookSwapFee(uint8 newFee);
@@ -166,12 +167,13 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @inheritdoc IHooks
-    function beforeModifyPosition(address, PoolKey calldata key, IPoolManager.ModifyPositionParams calldata)
+    function beforeModifyPosition(address caller, PoolKey calldata key, IPoolManager.ModifyPositionParams calldata)
         external
         override
         poolManagerOnly
         returns (bytes4)
     {
+        if (caller != address(hub) && caller != address(this)) revert BunniHook__NotBunniHubOrHook();
         _beforeModifyPositionUpdatePool(key);
         return BunniHook.beforeModifyPosition.selector;
     }
