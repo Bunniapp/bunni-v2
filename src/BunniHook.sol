@@ -289,7 +289,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             params.amountSpecified,
             swapFee
         );
-        int256 amountSpecifiedRemaining;
+        int256 amountSpecifiedRemaining = params.amountSpecified;
         unchecked {
             if (exactInput) {
                 amountSpecifiedRemaining -= (amountIn + feeAmount).toInt256();
@@ -298,18 +298,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             }
         }
         // if insufficient, add liquidity to the next tick and repeat
-        int24 stateTick;
         while (amountSpecifiedRemaining != 0 && sqrtPriceX96 != params.sqrtPriceLimitX96) {
-            // shift tick if we reached the next price
-            if (sqrtPriceX96 == sqrtPriceNextX96) {
-                unchecked {
-                    stateTick = params.zeroForOne ? tickNext - 1 : tickNext;
-                }
-            } else if (sqrtPriceX96 != sqrtPriceStartX96) {
-                // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
-                stateTick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
-            }
-
             // add liquidity to tickNext
             // TODO
             tickNext = params.zeroForOne ? tickNext - key.tickSpacing : tickNext + key.tickSpacing;
