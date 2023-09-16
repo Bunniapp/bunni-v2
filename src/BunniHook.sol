@@ -19,6 +19,8 @@ import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {DynamicBufferLib} from "solady/src/utils/DynamicBufferLib.sol";
 
+import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+
 import "./lib/Math.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {IBunniHub, IBunniToken, BunniTokenState, LiquidityDelta} from "./interfaces/IBunniHub.sol";
@@ -27,6 +29,7 @@ import {IBunniHub, IBunniToken, BunniTokenState, LiquidityDelta} from "./interfa
 contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
+    using FixedPointMathLib for uint256;
     using BalanceDeltaLibrary for BalanceDelta;
     using Oracle for Oracle.Observation[65535];
     using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
@@ -330,13 +333,16 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         }
         // if insufficient, add liquidity to the next tick and repeat
         while (amountSpecifiedRemaining != 0 && sqrtPriceX96 != params.sqrtPriceLimitX96) {
-            // TODO: compute tickNext liquidity and store in updatedRoundedTickLiquidity
+            // compute tickNext liquidity and store in updatedRoundedTickLiquidity
             tickNext = params.zeroForOne ? tickNext - key.tickSpacing : tickNext + key.tickSpacing;
             if (tickNext < TickMath.MIN_TICK) {
                 tickNext = TickMath.MIN_TICK;
             } else if (tickNext > TickMath.MAX_TICK) {
                 tickNext = TickMath.MAX_TICK;
             }
+            updatedRoundedTickLiquidity = bunniState.liquidityDensityFunction.liquidityDensity(
+                tickNext, currentTick, arithmeticMeanTick
+            ).mulWadDown(totalLiquidity).toUint128();
 
             // buffer add liquidity to tickNext
             buffer = buffer.append(

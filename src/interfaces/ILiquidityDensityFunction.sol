@@ -8,4 +8,6 @@ interface ILiquidityDensityFunction {
         external
         view
         returns (uint256 liquidityDensity, uint256 cumulativeAmount0Density, uint256 cumulativeAmount1Density);
+
+    function liquidityDensity(int24 roundedTick, int24 currentTick, int24 twapTick) external view returns (uint256);
 }
