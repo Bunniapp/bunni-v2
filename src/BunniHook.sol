@@ -35,6 +35,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
 
     error BunniHook__NotBunniHub();
+    error BunniHook__SwapAlreadyInProgress();
     error BunniHook__BunniTokenNotInitialized();
 
     event SetHookSwapFee(uint8 newFee);
@@ -58,6 +59,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     mapping(PoolId => ObservationState) public states;
 
     uint8 public hookSwapFee;
+    uint24 private numTicksToRemove;
 
     constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, uint8 hookSwapFee_) BaseHook(_poolManager) {
         hub = hub_;
@@ -196,13 +198,52 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         return BunniHook.beforeSwap.selector;
     }
 
-    function afterSwap(
-        address sender,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        BalanceDelta delta
-    ) external override poolManagerOnly returns (bytes4) {
-        // TODO
+    function afterSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, BalanceDelta)
+        external
+        override
+        poolManagerOnly
+        returns (bytes4)
+    {
+        // withdraw liquidity from inactive ticks
+        uint24 numTicksToRemove_ = numTicksToRemove;
+        delete numTicksToRemove;
+
+        PoolId id = key.toId();
+        (, int24 currentTick,,,,) = poolManager.getSlot0(id);
+        (int24 roundedTick,) = roundTick(currentTick, key.tickSpacing);
+
+        if (numTicksToRemove_ != 0) {
+            LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
+            for (uint256 i; i < numTicksToRemove_;) {
+                unchecked {
+                    roundedTick = params.zeroForOne ? roundedTick + key.tickSpacing : roundedTick - key.tickSpacing;
+                    if (roundedTick < TickMath.MIN_TICK) {
+                        roundedTick = TickMath.MIN_TICK;
+                    } else if (roundedTick > TickMath.MAX_TICK) {
+                        roundedTick = TickMath.MAX_TICK;
+                    }
+                }
+
+                // buffer remove liquidity
+                liquidityDeltas[i] = LiquidityDelta({
+                    tickLower: roundedTick,
+                    delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256(
+                    )
+                });
+
+                unchecked {
+                    ++i;
+                }
+            }
+
+            // call BunniHub to remove liquidity
+            hub.hookModifyLiquidity({
+                bunniToken: hub.bunniTokenOfPool(id),
+                liquidityDeltas: liquidityDeltas,
+                compound: true
+            });
+        }
+
         return BunniHook.afterSwap.selector;
     }
 
@@ -232,6 +273,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
+        if (numTicksToRemove != 0) revert BunniHook__SwapAlreadyInProgress();
         PoolId id = key.toId();
         (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(id);
 
@@ -332,6 +374,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             }
         }
         // if insufficient, add liquidity to the next tick and repeat
+        uint24 numTicksToRemove_;
         while (amountSpecifiedRemaining != 0 && sqrtPriceX96 != params.sqrtPriceLimitX96) {
             // compute tickNext liquidity and store in updatedRoundedTickLiquidity
             tickNext = params.zeroForOne ? tickNext - key.tickSpacing : tickNext + key.tickSpacing;
@@ -374,8 +417,10 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 } else {
                     amountSpecifiedRemaining += amountOut.toInt256();
                 }
+                ++numTicksToRemove_;
             }
         }
+        numTicksToRemove = numTicksToRemove_;
 
         // call BunniHub to add liquidity
         hub.hookModifyLiquidity({
