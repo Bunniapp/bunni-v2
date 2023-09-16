@@ -10,24 +10,28 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol
 import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamicFeeManager.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 
 import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
 import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
 
 import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
+import {DynamicBufferLib} from "solady/src/utils/DynamicBufferLib.sol";
 
 import "./lib/Math.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
-import {IBunniHub, BunniTokenState} from "./interfaces/IBunniHub.sol";
+import {IBunniHub, IBunniToken, BunniTokenState, LiquidityDelta} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
 contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
-    using Oracle for Oracle.Observation[65535];
-    using PoolIdLibrary for PoolKey;
     using SafeCastLib for uint256;
+    using PoolIdLibrary for PoolKey;
+    using BalanceDeltaLibrary for BalanceDelta;
+    using Oracle for Oracle.Observation[65535];
+    using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
 
-    error BunniHook__NotBunniHubOrHook();
+    error BunniHook__NotBunniHub();
     error BunniHook__BunniTokenNotInitialized();
 
     event SetHookSwapFee(uint8 newFee);
@@ -133,7 +137,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             beforeModifyPosition: true,
             afterModifyPosition: false,
             beforeSwap: true,
-            afterSwap: false,
+            afterSwap: true,
             beforeDonate: false,
             afterDonate: false
         });
@@ -173,7 +177,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         poolManagerOnly
         returns (bytes4)
     {
-        if (caller != address(hub) && caller != address(this)) revert BunniHook__NotBunniHubOrHook();
+        if (caller != address(hub)) revert BunniHook__NotBunniHub();
         _beforeModifyPositionUpdatePool(key);
         return BunniHook.beforeModifyPosition.selector;
     }
@@ -187,6 +191,16 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     {
         _beforeSwapUpdatePool(key, params);
         return BunniHook.beforeSwap.selector;
+    }
+
+    function afterSwap(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        BalanceDelta delta
+    ) external override poolManagerOnly returns (bytes4) {
+        // TODO
+        return BunniHook.afterSwap.selector;
     }
 
     /// -----------------------------------------------------------------------
@@ -219,7 +233,8 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(id);
 
         // get current tick token balances & reserves
-        BunniTokenState memory bunniState = hub.bunniTokenState(hub.bunniTokenOfPool(id));
+        IBunniToken bunniToken = hub.bunniTokenOfPool(id);
+        BunniTokenState memory bunniState = hub.bunniTokenState(bunniToken);
         if (!bunniState.initialized) revert BunniHook__BunniTokenNotInitialized();
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
         uint128 liquidity = poolManager.getLiquidity(id);
@@ -264,7 +279,21 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTick, WAD).toUint128();
 
         // update current tick liquidity if necessary
-        // TODO
+        DynamicBufferLib.DynamicBuffer memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
+        uint256 bufferLength;
+        if (updatedRoundedTickLiquidity != liquidity) {
+            buffer = buffer.append(
+                abi.encode(
+                    LiquidityDelta({
+                        tickLower: roundedTick,
+                        delta: uint256(updatedRoundedTickLiquidity).toInt256() - uint256(liquidity).toInt256()
+                    })
+                )
+            );
+            unchecked {
+                ++bufferLength;
+            }
+        }
 
         // simulate swap to see if current tick liquidity is sufficient
         uint256 amountIn;
@@ -301,13 +330,22 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         }
         // if insufficient, add liquidity to the next tick and repeat
         while (amountSpecifiedRemaining != 0 && sqrtPriceX96 != params.sqrtPriceLimitX96) {
-            // add liquidity to tickNext
-            // TODO
+            // TODO: compute tickNext liquidity and store in updatedRoundedTickLiquidity
             tickNext = params.zeroForOne ? tickNext - key.tickSpacing : tickNext + key.tickSpacing;
             if (tickNext < TickMath.MIN_TICK) {
                 tickNext = TickMath.MIN_TICK;
             } else if (tickNext > TickMath.MAX_TICK) {
                 tickNext = TickMath.MAX_TICK;
+            }
+
+            // buffer add liquidity to tickNext
+            buffer = buffer.append(
+                abi.encode(
+                    LiquidityDelta({tickLower: tickNext, delta: uint256(updatedRoundedTickLiquidity).toInt256()})
+                )
+            );
+            unchecked {
+                ++bufferLength;
             }
 
             // recompute sqrtPriceX96 and amountSpecifiedRemaining
@@ -332,6 +370,13 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 }
             }
         }
+
+        // call BunniHub to add liquidity
+        hub.hookModifyLiquidity({
+            bunniToken: bunniToken,
+            liquidityDeltas: abi.decode(abi.encodePacked(bufferLength, buffer.data), (LiquidityDelta[])),
+            compound: false
+        });
 
         // update TWAP oracle
         // do it at the end since we likely updated liquidity

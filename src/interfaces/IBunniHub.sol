@@ -15,13 +15,6 @@ import {ISelfPermit} from "./ISelfPermit.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 
-enum ShiftMode {
-    STATIC,
-    LEFT,
-    RIGHT,
-    BOTH
-}
-
 struct BunniTokenState {
     PoolKey poolKey;
     ILiquidityDensityFunction liquidityDensityFunction;
@@ -29,6 +22,11 @@ struct BunniTokenState {
     bool initialized;
     uint128 reserve0;
     uint128 reserve1;
+}
+
+struct LiquidityDelta {
+    int24 tickLower;
+    int256 delta;
 }
 
 /// @title BunniHub
@@ -73,11 +71,10 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         uint256 shares
     );
     /// @notice Emitted when fees are compounded back into liquidity
-    /// @param sender The msg.sender address
     /// @param bunniToken The BunniToken associated with the call
     /// @param amount0 The amount of token0 added to the liquidity position
     /// @param amount1 The amount of token1 added to the liquidity position
-    event Compound(address indexed sender, IBunniToken indexed bunniToken, uint256 amount0, uint256 amount1);
+    event Compound(IBunniToken indexed bunniToken, uint256 amount0, uint256 amount1);
     /// @notice Emitted when a new IBunniToken is created
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
@@ -149,13 +146,6 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         external
         returns (uint128 removedLiquidity, uint256 amount0, uint256 amount1);
 
-    /// @notice Claims the trading fees earned and uses it to add liquidity.
-    /// @dev Must be called after the BunniToken has been deployed via deployBunniToken()
-    /// @param bunniToken The BunniToken of the position
-    /// @return amount0 The amount of token0 added to the liquidity position
-    /// @return amount1 The amount of token1 added to the liquidity position
-    function compound(IBunniToken bunniToken) external returns (uint256 amount0, uint256 amount1);
-
     /// @notice Deploys the BunniToken contract for a Bunni position. This token
     /// represents a user's share in the Uniswap V4 LP position.
     /// @return token The deployed BunniToken
@@ -168,6 +158,9 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         IHooks hooks,
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token);
+
+    function hookModifyLiquidity(IBunniToken bunniToken, LiquidityDelta[] calldata liquidityDeltas, bool compound)
+        external;
 
     function poolManager() external view returns (IPoolManager);
     function bunniTokenState(IBunniToken bunniToken) external view returns (BunniTokenState memory);

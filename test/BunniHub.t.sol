@@ -29,7 +29,12 @@ contract BunniHubTest is Test {
     IBunniHub internal hub;
     IBunniToken internal bunniToken;
     BunniHook internal constant bunniHook = BunniHook(
-        address(uint160(Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_MODIFY_POSITION_FLAG + Hooks.BEFORE_SWAP_FLAG))
+        address(
+            uint160(
+                Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_MODIFY_POSITION_FLAG + Hooks.BEFORE_SWAP_FLAG
+                    + Hooks.AFTER_SWAP_FLAG
+            )
+        )
     );
 
     function setUp() public {

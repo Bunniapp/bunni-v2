@@ -26,7 +26,7 @@ import {SelfPermit} from "./lib/SelfPermit.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
-import {IBunniHub, BunniTokenState, ShiftMode, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
+import {IBunniHub, BunniTokenState, ILiquidityDensityFunction, LiquidityDelta} from "./interfaces/IBunniHub.sol";
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -46,6 +46,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     error BunniHub__PastDeadline();
     error BunniHub__Unauthorized();
     error BunniHub__InvalidShift();
+    error BunniHub__AmountMismatch();
     error BunniHub__MaxNonceReached();
     error BunniHub__SlippageTooHigh();
     error BunniHub__ZeroSharesMinted();
@@ -151,31 +152,42 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             existingAmount1 + state.reserve1 // current tick tokens + reserve tokens
         );
 
-        // update reserves
-        // reserves represent the amount of tokens not in the current tick
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + (amount0 - roundedTickAmount0).toUint128();
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + (amount1 - roundedTickAmount1).toUint128();
-
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
 
         // add liquidity and reserves
-        _modifyLiquidity(
-            ModifyLiquidityParams({
-                poolKey: state.poolKey,
-                tickLower: roundedTick,
-                tickUpper: nextRoundedTick,
-                bunniToken: params.bunniToken,
-                poolId: poolId,
-                user: msg.sender,
-                liquidityDelta: uint256(addedLiquidity).toInt256(),
-                amount0Min: params.amount0Min,
-                amount1Min: params.amount1Min,
-                depositAmount0: (amount0 - roundedTickAmount0).toInt256(),
-                depositAmount1: (amount1 - roundedTickAmount1).toInt256()
-            })
+        ModifyLiquidityReturnData memory returnData = abi.decode(
+            poolManager.lock(
+                abi.encode(
+                    LockCallbackType.MODIFY_LIQUIDITY,
+                    abi.encode(
+                        ModifyLiquidityInputData({
+                            poolKey: state.poolKey,
+                            tickLower: roundedTick,
+                            tickUpper: nextRoundedTick,
+                            liquidityDelta: uint256(addedLiquidity).toInt256(),
+                            user: msg.sender,
+                            depositAmount0: (amount0 - roundedTickAmount0).toInt256(),
+                            depositAmount1: (amount1 - roundedTickAmount1).toInt256()
+                        })
+                    )
+                )
+            ),
+            (ModifyLiquidityReturnData)
         );
+        if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
+            revert BunniHub__SlippageTooHigh();
+        }
+        if (roundedTickAmount0 != returnData.amount0 || roundedTickAmount1 != returnData.amount1) {
+            // this should never happen but better safe than sorry
+            revert BunniHub__AmountMismatch();
+        }
+
+        // update reserves
+        // reserves represent the amount of tokens not in the current tick
+        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + (amount0 - roundedTickAmount0).toUint128();
+        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + (amount1 - roundedTickAmount1).toUint128();
 
         // emit event
         emit Deposit(msg.sender, params.recipient, params.bunniToken, addedLiquidity, amount0, amount1, shares);
@@ -209,13 +221,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // at this point of execution we know params.shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 
-        // update reserves
-        // reserves represent the amount of tokens not in the current tick
-        uint256 removedReserve0 = FullMath.mulDiv(state.reserve0, params.shares, currentTotalSupply);
-        uint256 removedReserve1 = FullMath.mulDiv(state.reserve1, params.shares, currentTotalSupply);
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 - removedReserve0.toUint128();
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 - removedReserve1.toUint128();
-
         // burn liquidity from pool
         // type cast is safe because we know removedLiquidity <= existingLiquidity
         removedLiquidity = uint128(FullMath.mulDiv(existingLiquidity, params.shares, currentTotalSupply));
@@ -225,36 +230,41 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         /// -----------------------------------------------------------------------
 
         // burn liquidity and withdraw reserves
+        uint256 removedReserve0 = FullMath.mulDiv(state.reserve0, params.shares, currentTotalSupply);
+        uint256 removedReserve1 = FullMath.mulDiv(state.reserve1, params.shares, currentTotalSupply);
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, state.poolKey.tickSpacing);
-        (amount0, amount1) = _modifyLiquidity(
-            ModifyLiquidityParams({
-                poolKey: state.poolKey,
-                tickLower: roundedTick,
-                tickUpper: nextRoundedTick,
-                bunniToken: params.bunniToken,
-                poolId: poolId,
-                user: params.recipient,
-                liquidityDelta: -uint256(removedLiquidity).toInt256(),
-                amount0Min: params.amount0Min,
-                amount1Min: params.amount1Min,
-                depositAmount0: -removedReserve0.toInt256(),
-                depositAmount1: -removedReserve1.toInt256()
-            })
+        ModifyLiquidityReturnData memory returnData = abi.decode(
+            poolManager.lock(
+                abi.encode(
+                    LockCallbackType.MODIFY_LIQUIDITY,
+                    abi.encode(
+                        ModifyLiquidityInputData({
+                            poolKey: state.poolKey,
+                            tickLower: roundedTick,
+                            tickUpper: nextRoundedTick,
+                            liquidityDelta: -uint256(removedLiquidity).toInt256(),
+                            user: msg.sender,
+                            depositAmount0: -removedReserve0.toInt256(),
+                            depositAmount1: -removedReserve1.toInt256()
+                        })
+                    )
+                )
+            ),
+            (ModifyLiquidityReturnData)
         );
+        (amount0, amount1) = (returnData.amount0 + removedReserve0, returnData.amount1 + removedReserve1);
+        if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
+            revert BunniHub__SlippageTooHigh();
+        }
+
+        // update reserves
+        // reserves represent the amount of tokens not in the current tick
+        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 - removedReserve0.toUint128();
+        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 - removedReserve1.toUint128();
 
         emit Withdraw(
             msg.sender, params.recipient, params.bunniToken, removedLiquidity, amount0, amount1, params.shares
         );
-    }
-
-    /// @inheritdoc IBunniHub
-    function compound(IBunniToken bunniToken) external virtual override returns (uint256 amount0, uint256 amount1) {
-        (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(bunniToken);
-        (, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
-        (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, state.poolKey.tickSpacing);
-        (amount0, amount1) = _compound(state.poolKey, roundedTick, nextRoundedTick);
-
-        emit Compound(msg.sender, bunniToken, amount0, amount1);
     }
 
     /// @inheritdoc IBunniHub
@@ -329,6 +339,34 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     }
 
     /// @inheritdoc IBunniHub
+    function hookModifyLiquidity(IBunniToken bunniToken, LiquidityDelta[] calldata liquidityDeltas, bool compound)
+        external
+        override
+    {
+        (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(bunniToken);
+        if (msg.sender != address(state.poolKey.hooks)) revert BunniHub__Unauthorized(); // only hook
+
+        poolManager.lock(
+            abi.encode(
+                LockCallbackType.HOOK_MODIFY_LIQUIDITY,
+                abi.encode(
+                    HookCallbackInputData({
+                        bunniToken: bunniToken,
+                        state: state,
+                        poolId: poolId,
+                        compound: compound,
+                        liquidityDeltas: liquidityDeltas
+                    })
+                )
+            )
+        );
+    }
+
+    /// -----------------------------------------------------------------------
+    /// View functions
+    /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IBunniHub
     function bunniTokenState(IBunniToken bunniToken) external view override returns (BunniTokenState memory) {
         return _bunniTokenState[bunniToken];
     }
@@ -337,7 +375,10 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     /// Uniswap callback
     /// -----------------------------------------------------------------------
 
-    enum LockCallbackType {MODIFY_LIQUIDITY}
+    enum LockCallbackType {
+        MODIFY_LIQUIDITY,
+        HOOK_MODIFY_LIQUIDITY
+    }
 
     function lockAcquired(bytes calldata data) external override returns (bytes memory) {
         // verify sender
@@ -349,7 +390,11 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // redirect to respective callback
         if (t == LockCallbackType.MODIFY_LIQUIDITY) {
             return abi.encode(_modifyLiquidityLockCallback(abi.decode(callbackData, (ModifyLiquidityInputData))));
+        } else if (t == LockCallbackType.HOOK_MODIFY_LIQUIDITY) {
+            _hookModifyLiquidityLockCallback(abi.decode(callbackData, (HookCallbackInputData)));
         }
+        // fallback
+        return bytes("");
     }
 
     /// -----------------------------------------------------------
@@ -361,7 +406,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         returns (uint256 feeToAdd0, uint256 feeToAdd1)
     {
         // trigger an update of the position fees owed snapshots
-
         BalanceDelta feeDelta = poolManager.modifyPosition(
             poolKey, IPoolManager.ModifyPositionParams({tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: 0})
         );
@@ -386,18 +430,12 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     struct ModifyLiquidityReturnData {
         uint256 amount0;
         uint256 amount1;
-        uint256 compoundAmount0;
-        uint256 compoundAmount1;
     }
 
     function _modifyLiquidityLockCallback(ModifyLiquidityInputData memory input)
         internal
         returns (ModifyLiquidityReturnData memory returnData)
     {
-        // compute compound amounts
-        (returnData.compoundAmount0, returnData.compoundAmount1) =
-            _compound(input.poolKey, input.tickLower, input.tickUpper);
-
         int128 amount0;
         int128 amount1;
         {
@@ -527,48 +565,99 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         shareToken.mint(recipient, shares);
     }
 
-    struct ModifyLiquidityParams {
-        PoolKey poolKey;
-        int24 tickLower;
-        int24 tickUpper;
+    struct HookCallbackInputData {
         IBunniToken bunniToken;
+        BunniTokenState state;
         PoolId poolId;
-        address user;
-        int256 liquidityDelta;
-        uint256 amount0Min;
-        uint256 amount1Min;
-        int256 depositAmount0;
-        int256 depositAmount1;
+        bool compound;
+        LiquidityDelta[] liquidityDeltas;
     }
 
-    function _modifyLiquidity(ModifyLiquidityParams memory params)
-        internal
-        returns (uint256 amount0, uint256 amount1)
-    {
-        ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(
-                abi.encode(
-                    LockCallbackType.MODIFY_LIQUIDITY,
-                    abi.encode(
-                        ModifyLiquidityInputData({
-                            poolKey: params.poolKey,
-                            tickLower: params.tickLower,
-                            tickUpper: params.tickUpper,
-                            liquidityDelta: params.liquidityDelta,
-                            user: params.user,
-                            depositAmount0: params.depositAmount0,
-                            depositAmount1: params.depositAmount1
-                        })
-                    )
-                )
-            ),
-            (ModifyLiquidityReturnData)
-        );
+    /// @dev Adds liquidity using a pool's reserves. Expected to be called by the pool's hook.
+    function _hookModifyLiquidityLockCallback(HookCallbackInputData memory data) internal {
+        // compound fees
+        // we do this after every swap (assuming hook is honest)
+        // which means it's not necessary to compound before/after depositing/withdrawing
+        if (data.compound) {
+            (, int24 currentTick,,,,) = poolManager.getSlot0(data.poolId);
+            (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, data.state.poolKey.tickSpacing);
+            (uint256 compoundAmount0, uint256 compoundAmount1) =
+                _compound(data.state.poolKey, roundedTick, nextRoundedTick);
 
-        if (returnData.amount0 < params.amount0Min || returnData.amount1 < params.amount1Min) {
-            revert BunniHub__SlippageTooHigh();
+            // emit event
+            emit Compound(data.bunniToken, compoundAmount0, compoundAmount1);
         }
-        (amount0, amount1) = (returnData.amount0, returnData.amount1);
+
+        // modify the liquidity of all specified ticks
+        uint256 numTicks = data.liquidityDeltas.length;
+        (uint128 initialReserve0, uint128 initialReserve1) = (data.state.reserve0, data.state.reserve1);
+        for (uint256 i; i < numTicks;) {
+            BalanceDelta balanceDelta = poolManager.modifyPosition(
+                data.state.poolKey,
+                IPoolManager.ModifyPositionParams({
+                    tickLower: data.liquidityDeltas[i].tickLower,
+                    tickUpper: data.liquidityDeltas[i].tickLower + data.state.poolKey.tickSpacing,
+                    liquidityDelta: data.liquidityDeltas[i].delta
+                })
+            );
+
+            // update pool reserves
+            // this prevents malicious hooks from adding liquidity using other pools' reserves
+            if (data.liquidityDeltas[i].delta > 0) {
+                data.state.reserve0 -= int256(balanceDelta.amount0()).toUint256().toUint128();
+                data.state.reserve1 -= int256(balanceDelta.amount1()).toUint256().toUint128();
+            } else if (data.liquidityDeltas[i].delta < 0) {
+                data.state.reserve0 += int256(balanceDelta.amount0()).toUint256().toUint128();
+                data.state.reserve1 += int256(balanceDelta.amount1()).toUint256().toUint128();
+            }
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        // store updated pool reserves
+        _bunniTokenState[data.bunniToken].reserve0 = data.state.reserve0;
+        _bunniTokenState[data.bunniToken].reserve1 = data.state.reserve1;
+
+        // cannot have positive balance of one currency and negative balance of the other
+        // since we either add or remove liquidity
+        if (initialReserve0 > data.state.reserve0 && initialReserve1 > data.state.reserve1) {
+            // batch transfer ERC1155 tokens to PoolManager to settle debts
+            uint256[] memory ids = new uint256[](2);
+            ids[0] = data.state.poolKey.currency0.toId();
+            ids[1] = data.state.poolKey.currency1.toId();
+            uint256[] memory amounts = new uint256[](2);
+            amounts[0] = initialReserve0 - data.state.reserve0;
+            amounts[1] = initialReserve1 - data.state.reserve1;
+            poolManager.safeBatchTransferFrom(address(this), address(poolManager), ids, amounts, bytes(""));
+        } else if (initialReserve0 > data.state.reserve0) {
+            // transfer ERC1155 tokens to PoolManager to settle debts
+            poolManager.safeTransferFrom(
+                address(this),
+                address(poolManager),
+                data.state.poolKey.currency0.toId(),
+                initialReserve0 - data.state.reserve0,
+                bytes("")
+            );
+        } else if (initialReserve1 > data.state.reserve1) {
+            // transfer ERC1155 tokens to PoolManager to settle debts
+            poolManager.safeTransferFrom(
+                address(this),
+                address(poolManager),
+                data.state.poolKey.currency1.toId(),
+                initialReserve1 - data.state.reserve1,
+                bytes("")
+            );
+        } else {
+            // mint ERC1155 tokens for new reserves
+            if (initialReserve0 < data.state.reserve0) {
+                poolManager.mint(data.state.poolKey.currency0, address(this), data.state.reserve0 - initialReserve0);
+            }
+            if (initialReserve1 < data.state.reserve1) {
+                poolManager.mint(data.state.poolKey.currency1, address(this), data.state.reserve1 - initialReserve1);
+            }
+        }
     }
 
     /// @param token The token to pay
