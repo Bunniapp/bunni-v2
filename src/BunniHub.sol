@@ -18,6 +18,8 @@ import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {ERC1155TokenReceiver} from "solmate/tokens/ERC1155.sol";
 
 import "./lib/Math.sol";
+import "./lib/Structs.sol";
+import "./lib/LDFParams.sol";
 import {BunniHook} from "./BunniHook.sol";
 import {BunniToken} from "./BunniToken.sol";
 import {Multicall} from "./lib/Multicall.sol";
@@ -26,7 +28,7 @@ import {SelfPermit} from "./lib/SelfPermit.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
-import {IBunniHub, BunniTokenState, ILiquidityDensityFunction, LiquidityDelta} from "./interfaces/IBunniHub.sol";
+import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -45,7 +47,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     error BunniHub__ZeroInput();
     error BunniHub__PastDeadline();
     error BunniHub__Unauthorized();
-    error BunniHub__InvalidShift();
+    error BunniHub__LDFCannotBeZero();
     error BunniHub__AmountMismatch();
     error BunniHub__MaxNonceReached();
     error BunniHub__SlippageTooHigh();
@@ -100,16 +102,17 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // fetch values from pool
         (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
         int24 arithmeticMeanTick;
-        if (state.twapSecondsAgo != 0) {
+        (uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
+        if (twapSecondsAgo != 0) {
             // LDF uses TWAP
             // compute TWAP value
             uint32[] memory secondsAgos = new uint32[](2);
-            secondsAgos[0] = state.twapSecondsAgo;
+            secondsAgos[0] = twapSecondsAgo;
             secondsAgos[1] = 0;
             BunniHook hook = BunniHook(address(state.poolKey.hooks));
             (int56[] memory tickCumulatives,) = hook.observe(state.poolKey, secondsAgos);
             int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-            arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(state.twapSecondsAgo)));
+            arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
         }
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, state.poolKey.tickSpacing);
         uint160 roundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(roundedTick);
@@ -117,7 +120,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         // compute density
         (uint256 liquidityDensityOfRoundedTick, uint256 density0RightOfRoundedTick, uint256 density1LeftOfRoundedTick) =
-            state.liquidityDensityFunction.query(currentTick, arithmeticMeanTick, state.poolKey.tickSpacing);
+        state.liquidityDensityFunction.query(
+            currentTick, arithmeticMeanTick, state.poolKey.tickSpacing, decodedLDFParams
+        );
         (uint256 density0OfRoundedTick, uint256 density1OfRoundedTick) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTick.toUint128()
         );
@@ -273,7 +278,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         Currency currency1,
         int24 tickSpacing,
         ILiquidityDensityFunction liquidityDensityFunction,
-        uint32 twapSecondsAgo,
+        bytes12 ldfParams,
         IHooks hooks,
         uint160 sqrtPriceX96
     ) external override returns (IBunniToken token) {
@@ -289,6 +294,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         bytes32 bunniSubspace = keccak256(abi.encode(currency0, currency1, tickSpacing, hooks));
         uint24 nonce_ = nonce[bunniSubspace];
         if (nonce_ + 1 > MAX_NONCE) revert BunniHub__MaxNonceReached();
+
+        // we also use ldf to check if the state is initialized so we ensure the ldf is nonzero
+        if (address(liquidityDensityFunction) == address(0)) revert BunniHub__LDFCannotBeZero();
 
         /// -----------------------------------------------------------------------
         /// State updates
@@ -317,8 +325,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         _bunniTokenState[token] = BunniTokenState({
             poolKey: key,
             liquidityDensityFunction: liquidityDensityFunction,
-            twapSecondsAgo: twapSecondsAgo,
-            initialized: true,
+            ldfParams: ldfParams,
             reserve0: 0,
             reserve1: 0
         });
@@ -680,7 +687,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         returns (BunniTokenState memory state, PoolId poolId)
     {
         state = _bunniTokenState[bunniToken];
-        if (!state.initialized) revert BunniHub__BunniTokenNotInitialized();
+        if (address(state.liquidityDensityFunction) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         poolId = state.poolKey.toId();
     }
 }

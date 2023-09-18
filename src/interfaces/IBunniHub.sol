@@ -9,25 +9,12 @@ import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
 
+import "../lib/Structs.sol";
 import {IERC20} from "./IERC20.sol";
 import {IMulticall} from "./IMulticall.sol";
 import {ISelfPermit} from "./ISelfPermit.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
-
-struct BunniTokenState {
-    PoolKey poolKey;
-    ILiquidityDensityFunction liquidityDensityFunction;
-    uint32 twapSecondsAgo;
-    bool initialized;
-    uint128 reserve0;
-    uint128 reserve1;
-}
-
-struct LiquidityDelta {
-    int24 tickLower;
-    int256 delta;
-}
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -154,7 +141,7 @@ interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
         Currency currency1,
         int24 tickSpacing,
         ILiquidityDensityFunction liquidityDensityFunction,
-        uint32 twapSecondsAgo,
+        bytes12 ldfParams,
         IHooks hooks,
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token);

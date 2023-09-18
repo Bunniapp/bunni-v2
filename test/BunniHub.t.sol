@@ -14,7 +14,7 @@ import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
-import {IBunniHub, BunniTokenState, ShiftMode} from "../src/interfaces/IBunniHub.sol";
+import {IBunniHub, BunniTokenState} from "../src/interfaces/IBunniHub.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 
 contract BunniHubTest is Test {
