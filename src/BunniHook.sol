@@ -7,6 +7,7 @@ import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
 import {SwapMath} from "@uniswap/v4-core/contracts/libraries/SwapMath.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
+import {FixedPoint96} from "@uniswap/v4-core/contracts/libraries/FixedPoint96.sol";
 import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamicFeeManager.sol";
@@ -294,8 +295,8 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
-        (uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(bunniState.ldfParams);
-        if (twapSecondsAgo != 0) {
+        (bool useTwap, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(bunniState.ldfParams);
+        if (useTwap) {
             // LDF uses TWAP
             // compute TWAP value
             ObservationState memory state = states[id];
@@ -310,16 +311,21 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         }
 
         // get densities
-        (uint256 liquidityDensityOfRoundedTick, uint256 density0RightOfRoundedTick, uint256 density1LeftOfRoundedTick) =
-        bunniState.liquidityDensityFunction.query(currentTick, arithmeticMeanTick, key.tickSpacing, decodedLDFParams);
+        (
+            uint256 liquidityDensityOfRoundedTick,
+            uint256 density0RightOfRoundedTickX96,
+            uint256 density1LeftOfRoundedTickX96
+        ) = bunniState.liquidityDensityFunction.query(
+            roundedTick, currentTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
+        );
         (uint256 density0OfRoundedTick, uint256 density1OfRoundedTick) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTick.toUint128()
         );
 
         // compute total liquidity
         uint256 totalLiquidity = max(
-            FullMath.mulDiv(balance0, WAD, density0RightOfRoundedTick + density0OfRoundedTick),
-            FullMath.mulDiv(balance1, WAD, density1LeftOfRoundedTick + density1OfRoundedTick)
+            FullMath.mulDiv(balance0, FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTick),
+            FullMath.mulDiv(balance1, FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTick)
         );
 
         // compute updated current tick liquidity
@@ -387,7 +393,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 tickNext = TickMath.MAX_TICK;
             }
             updatedRoundedTickLiquidity = bunniState.liquidityDensityFunction.liquidityDensity(
-                tickNext, currentTick, arithmeticMeanTick, decodedLDFParams
+                tickNext, currentTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
             ).mulWadDown(totalLiquidity).toUint128();
 
             // buffer add liquidity to tickNext

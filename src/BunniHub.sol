@@ -7,6 +7,7 @@ import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
 import {FeeLibrary} from "@uniswap/v4-core/contracts/libraries/FeeLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
+import {FixedPoint96} from "@uniswap/v4-core/contracts/libraries/FixedPoint96.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/contracts/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
@@ -102,8 +103,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // fetch values from pool
         (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
         int24 arithmeticMeanTick;
-        (uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
-        if (twapSecondsAgo != 0) {
+        (bool useTwap, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
+        if (useTwap) {
             // LDF uses TWAP
             // compute TWAP value
             uint32[] memory secondsAgos = new uint32[](2);
@@ -119,9 +120,12 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         uint160 nextRoundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextRoundedTick);
 
         // compute density
-        (uint256 liquidityDensityOfRoundedTick, uint256 density0RightOfRoundedTick, uint256 density1LeftOfRoundedTick) =
-        state.liquidityDensityFunction.query(
-            currentTick, arithmeticMeanTick, state.poolKey.tickSpacing, decodedLDFParams
+        (
+            uint256 liquidityDensityOfRoundedTick,
+            uint256 density0RightOfRoundedTickX96,
+            uint256 density1LeftOfRoundedTickX96
+        ) = state.liquidityDensityFunction.query(
+            roundedTick, currentTick, arithmeticMeanTick, state.poolKey.tickSpacing, useTwap, decodedLDFParams
         );
         (uint256 density0OfRoundedTick, uint256 density1OfRoundedTick) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTick.toUint128()
@@ -129,16 +133,22 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         // compute how much liquidity we'd get from the desired token amounts
         uint256 totalLiquidity = min(
-            FullMath.mulDiv(params.amount0Desired, WAD, density0RightOfRoundedTick + density0OfRoundedTick),
-            FullMath.mulDiv(params.amount1Desired, WAD, density1LeftOfRoundedTick + density1OfRoundedTick)
+            FullMath.mulDiv(
+                params.amount0Desired, FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTick
+            ),
+            FullMath.mulDiv(
+                params.amount1Desired, FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTick
+            )
         );
         addedLiquidity = FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTick, WAD).toUint128();
 
         // compute token amounts
         uint256 roundedTickAmount0 = FullMath.mulDiv(totalLiquidity, density0OfRoundedTick, WAD);
         uint256 roundedTickAmount1 = FullMath.mulDiv(totalLiquidity, density1OfRoundedTick, WAD);
-        amount0 = FullMath.mulDiv(totalLiquidity, density0RightOfRoundedTick + density0OfRoundedTick, WAD);
-        amount1 = FullMath.mulDiv(totalLiquidity, density1LeftOfRoundedTick + density1OfRoundedTick, WAD);
+        amount0 =
+            FullMath.mulDiv(totalLiquidity, density0RightOfRoundedTickX96 + density0OfRoundedTick, FixedPoint96.Q96);
+        amount1 =
+            FullMath.mulDiv(totalLiquidity, density1LeftOfRoundedTickX96 + density1OfRoundedTick, FixedPoint96.Q96);
 
         /// -----------------------------------------------------------------------
         /// State updates
