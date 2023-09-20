@@ -20,3 +20,9 @@ function roundTick(int24 currentTick, int24 tickSpacing) pure returns (int24 rou
     roundedTick = compressed * tickSpacing;
     nextRoundedTick = roundedTick + tickSpacing;
 }
+
+function roundTickSingle(int24 currentTick, int24 tickSpacing) pure returns (int24 roundedTick) {
+    int24 compressed = currentTick / tickSpacing;
+    if (currentTick < 0 && currentTick % tickSpacing != 0) compressed--; // round towards negative infinity
+    roundedTick = compressed * tickSpacing;
+}

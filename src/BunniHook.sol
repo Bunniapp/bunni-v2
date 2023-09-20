@@ -316,7 +316,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96
         ) = bunniState.liquidityDensityFunction.query(
-            roundedTick, currentTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
+            roundedTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
         );
         (uint256 density0OfRoundedTick, uint256 density1OfRoundedTick) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTick.toUint128()
@@ -393,7 +393,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 tickNext = TickMath.MAX_TICK;
             }
             updatedRoundedTickLiquidity = bunniState.liquidityDensityFunction.liquidityDensity(
-                tickNext, currentTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
+                tickNext, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
             ).mulWadDown(totalLiquidity).toUint128();
 
             // buffer add liquidity to tickNext
