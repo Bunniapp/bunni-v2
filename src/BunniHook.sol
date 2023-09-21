@@ -30,6 +30,7 @@ import {IBunniHub, IBunniToken} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
 contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
+    using FullMath for uint256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint256;
@@ -324,13 +325,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // compute total liquidity
         uint256 totalLiquidity = max(
-            FullMath.mulDiv(balance0, FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
-            FullMath.mulDiv(balance1, FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+            balance0.mulDiv(FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
+            balance1.mulDiv(FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
 
         // compute updated current tick liquidity
-        uint128 updatedRoundedTickLiquidity =
-            FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTickX96, Q96).toUint128();
+        uint128 updatedRoundedTickLiquidity = totalLiquidity.mulDiv(liquidityDensityOfRoundedTickX96, Q96).toUint128();
 
         // update current tick liquidity if necessary
         DynamicBufferLib.DynamicBuffer memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs

@@ -38,6 +38,8 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
 contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
+    using FullMath for uint128;
+    using FullMath for uint256;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
@@ -134,16 +136,16 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         // compute how much liquidity we'd get from the desired token amounts
         uint256 totalLiquidity = min(
-            FullMath.mulDiv(params.amount0Desired, Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
-            FullMath.mulDiv(params.amount1Desired, Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+            params.amount0Desired.mulDiv(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
+            params.amount1Desired.mulDiv(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
-        addedLiquidity = FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTickX96, Q96).toUint128();
+        addedLiquidity = totalLiquidity.mulDiv(liquidityDensityOfRoundedTickX96, Q96).toUint128();
 
         // compute token amounts
-        uint256 roundedTickAmount0 = FullMath.mulDiv(totalLiquidity, density0OfRoundedTickX96, Q96);
-        uint256 roundedTickAmount1 = FullMath.mulDiv(totalLiquidity, density1OfRoundedTickX96, Q96);
-        amount0 = FullMath.mulDiv(totalLiquidity, density0RightOfRoundedTickX96 + density0OfRoundedTickX96, Q96);
-        amount1 = FullMath.mulDiv(totalLiquidity, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96, Q96);
+        uint256 roundedTickAmount0 = totalLiquidity.mulDiv(density0OfRoundedTickX96, Q96);
+        uint256 roundedTickAmount1 = totalLiquidity.mulDiv(density1OfRoundedTickX96, Q96);
+        amount0 = totalLiquidity.mulDiv(density0RightOfRoundedTickX96 + density0OfRoundedTickX96, Q96);
+        amount1 = totalLiquidity.mulDiv(density1LeftOfRoundedTickX96 + density1OfRoundedTickX96, Q96);
 
         /// -----------------------------------------------------------------------
         /// State updates
@@ -233,15 +235,15 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         // burn liquidity from pool
         // type cast is safe because we know removedLiquidity <= existingLiquidity
-        removedLiquidity = uint128(FullMath.mulDiv(existingLiquidity, params.shares, currentTotalSupply));
+        removedLiquidity = uint128(existingLiquidity.mulDiv(params.shares, currentTotalSupply));
 
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
 
         // burn liquidity and withdraw reserves
-        uint256 removedReserve0 = FullMath.mulDiv(state.reserve0, params.shares, currentTotalSupply);
-        uint256 removedReserve1 = FullMath.mulDiv(state.reserve1, params.shares, currentTotalSupply);
+        uint256 removedReserve0 = state.reserve0.mulDiv(params.shares, currentTotalSupply);
+        uint256 removedReserve1 = state.reserve1.mulDiv(params.shares, currentTotalSupply);
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, state.poolKey.tickSpacing);
         ModifyLiquidityReturnData memory returnData = abi.decode(
             poolManager.lock(
@@ -567,8 +569,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             shareToken.mint(address(0), MIN_INITIAL_SHARES);
         } else {
             shares = min(
-                FullMath.mulDiv(existingShareSupply, addedAmount0, existingAmount0),
-                FullMath.mulDiv(existingShareSupply, addedAmount1, existingAmount1)
+                existingShareSupply.mulDiv(addedAmount0, existingAmount0),
+                existingShareSupply.mulDiv(addedAmount1, existingAmount1)
             );
             if (shares == 0) revert BunniHub__ZeroSharesMinted();
         }
