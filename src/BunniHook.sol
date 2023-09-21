@@ -43,7 +43,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
     event SetHookSwapFee(uint8 newFee);
 
-    uint256 internal constant WAD = 1e18;
+    uint256 internal constant Q96 = 0x1000000000000000000000000;
 
     IBunniHub public immutable hub;
 
@@ -312,25 +312,25 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // get densities
         (
-            uint256 liquidityDensityOfRoundedTick,
+            uint256 liquidityDensityOfRoundedTickX96,
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96
         ) = bunniState.liquidityDensityFunction.query(
             roundedTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
         );
-        (uint256 density0OfRoundedTick, uint256 density1OfRoundedTick) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTick.toUint128()
+        (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTickX96.toUint128()
         );
 
         // compute total liquidity
         uint256 totalLiquidity = max(
-            FullMath.mulDiv(balance0, FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTick),
-            FullMath.mulDiv(balance1, FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTick)
+            FullMath.mulDiv(balance0, FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
+            FullMath.mulDiv(balance1, FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
 
         // compute updated current tick liquidity
         uint128 updatedRoundedTickLiquidity =
-            FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTick, WAD).toUint128();
+            FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTickX96, Q96).toUint128();
 
         // update current tick liquidity if necessary
         DynamicBufferLib.DynamicBuffer memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
@@ -392,9 +392,9 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             } else if (tickNext > TickMath.MAX_TICK) {
                 tickNext = TickMath.MAX_TICK;
             }
-            updatedRoundedTickLiquidity = bunniState.liquidityDensityFunction.liquidityDensity(
+            updatedRoundedTickLiquidity = bunniState.liquidityDensityFunction.liquidityDensityX96(
                 tickNext, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
-            ).mulWadDown(totalLiquidity).toUint128();
+            ).mulDivDown(totalLiquidity, Q96).toUint128();
 
             // buffer add liquidity to tickNext
             buffer = buffer.append(

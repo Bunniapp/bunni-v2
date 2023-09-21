@@ -56,6 +56,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     error BunniHub__BunniTokenNotInitialized();
 
     uint256 internal constant WAD = 1e18;
+    uint256 internal constant Q96 = 0x1000000000000000000000000;
     uint256 internal constant MAX_NONCE = 0x0FFFFF;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
 
@@ -121,34 +122,28 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         // compute density
         (
-            uint256 liquidityDensityOfRoundedTick,
+            uint256 liquidityDensityOfRoundedTickX96,
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96
         ) = state.liquidityDensityFunction.query(
             roundedTick, arithmeticMeanTick, state.poolKey.tickSpacing, useTwap, decodedLDFParams
         );
-        (uint256 density0OfRoundedTick, uint256 density1OfRoundedTick) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTick.toUint128()
+        (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTickX96.toUint128()
         );
 
         // compute how much liquidity we'd get from the desired token amounts
         uint256 totalLiquidity = min(
-            FullMath.mulDiv(
-                params.amount0Desired, FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTick
-            ),
-            FullMath.mulDiv(
-                params.amount1Desired, FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTick
-            )
+            FullMath.mulDiv(params.amount0Desired, Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
+            FullMath.mulDiv(params.amount1Desired, Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
-        addedLiquidity = FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTick, WAD).toUint128();
+        addedLiquidity = FullMath.mulDiv(totalLiquidity, liquidityDensityOfRoundedTickX96, Q96).toUint128();
 
         // compute token amounts
-        uint256 roundedTickAmount0 = FullMath.mulDiv(totalLiquidity, density0OfRoundedTick, WAD);
-        uint256 roundedTickAmount1 = FullMath.mulDiv(totalLiquidity, density1OfRoundedTick, WAD);
-        amount0 =
-            FullMath.mulDiv(totalLiquidity, density0RightOfRoundedTickX96 + density0OfRoundedTick, FixedPoint96.Q96);
-        amount1 =
-            FullMath.mulDiv(totalLiquidity, density1LeftOfRoundedTickX96 + density1OfRoundedTick, FixedPoint96.Q96);
+        uint256 roundedTickAmount0 = FullMath.mulDiv(totalLiquidity, density0OfRoundedTickX96, Q96);
+        uint256 roundedTickAmount1 = FullMath.mulDiv(totalLiquidity, density1OfRoundedTickX96, Q96);
+        amount0 = FullMath.mulDiv(totalLiquidity, density0RightOfRoundedTickX96 + density0OfRoundedTickX96, Q96);
+        amount1 = FullMath.mulDiv(totalLiquidity, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96, Q96);
 
         /// -----------------------------------------------------------------------
         /// State updates

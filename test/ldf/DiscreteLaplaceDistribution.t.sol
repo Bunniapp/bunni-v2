@@ -15,11 +15,12 @@ import {DiscreteLaplaceDistribution} from "../../src/ldf/DiscreteLaplaceDistribu
 contract DiscreteLaplaceDistributionTest is Test {
     using TickMath for int24;
 
-    uint256 internal constant MAX_ERROR = 1e16;
+    uint256 internal constant MAX_ERROR = 1e10;
     int24 internal constant MAX_TICK_SPACING = type(int16).max;
     int24 internal constant MIN_TICK_SPACING = 1000; // >1 to make brute forcing viable
     uint256 internal constant MIN_ALPHA = 1e14;
     uint256 internal constant MAX_ALPHA = 0.9e18;
+    uint256 internal constant MIN_ABS_ERROR = FixedPoint96.Q96 / 1e9;
 
     DiscreteLaplaceDistribution internal ldf;
 
@@ -37,11 +38,11 @@ contract DiscreteLaplaceDistributionTest is Test {
         uint256 cumulativeLiquidityDensity;
         for (int24 tick = minTick; tick <= maxTick; tick += tickSpacing) {
             cumulativeLiquidityDensity +=
-                ldf.liquidityDensity(tick, 0, tickSpacing, false, bytes11(abi.encodePacked(mu, uint64(alpha))));
+                ldf.liquidityDensityX96(tick, 0, tickSpacing, false, bytes11(abi.encodePacked(mu, uint64(alpha))));
         }
 
         assertApproxEqRel(
-            cumulativeLiquidityDensity, FixedPointMathLib.WAD, MAX_ERROR, "liquidity density doesn't add up to one"
+            cumulativeLiquidityDensity, FixedPoint96.Q96, MAX_ERROR, "liquidity density doesn't add up to one"
         );
     }
 
@@ -60,14 +61,15 @@ contract DiscreteLaplaceDistributionTest is Test {
         uint256 bruteForceAmount1X96 =
             _bruteForceCumulativeAmount1Density(roundedTick - tickSpacing, tickSpacing, mu, alpha);
 
-        uint256 minAbsoluteError = FixedPoint96.Q96 / 1e3;
-        if (_absoluteDiff(cumulativeAmount0DensityX96, bruteForceAmount0X96) > minAbsoluteError) {
+        (, uint256 error0) = absDiff(cumulativeAmount0DensityX96, bruteForceAmount0X96);
+        if (error0 > MIN_ABS_ERROR) {
             assertApproxEqRel(
                 cumulativeAmount0DensityX96, bruteForceAmount0X96, MAX_ERROR, "cumulativeAmount0DensityX96 incorrect"
             );
         }
 
-        if (_absoluteDiff(cumulativeAmount1DensityX96, bruteForceAmount1X96) > minAbsoluteError) {
+        (, uint256 error1) = absDiff(cumulativeAmount1DensityX96, bruteForceAmount1X96);
+        if (error1 > MIN_ABS_ERROR) {
             assertApproxEqRel(
                 cumulativeAmount1DensityX96, bruteForceAmount1X96, MAX_ERROR, "cumulativeAmount1DensityX96 incorrect"
             );
@@ -81,10 +83,10 @@ contract DiscreteLaplaceDistributionTest is Test {
     {
         int24 maxTick = TickMath.maxUsableTick(tickSpacing);
         for (int24 tick = roundedTick; tick <= maxTick; tick += tickSpacing) {
-            uint256 liquidityDensity =
-                ldf.liquidityDensity(tick, 0, tickSpacing, false, bytes11(abi.encodePacked(mu, uint64(alpha))));
+            uint256 liquidityDensityX96 =
+                ldf.liquidityDensityX96(tick, 0, tickSpacing, false, bytes11(abi.encodePacked(mu, uint64(alpha))));
             uint256 amount0DensityX96 = _amount0DensityX96(tick, tickSpacing);
-            cumulativeAmount0DensityX96 += FullMath.mulDiv(amount0DensityX96, liquidityDensity, FixedPointMathLib.WAD);
+            cumulativeAmount0DensityX96 += FullMath.mulDiv(amount0DensityX96, liquidityDensityX96, FixedPoint96.Q96);
         }
     }
 
@@ -111,10 +113,10 @@ contract DiscreteLaplaceDistributionTest is Test {
     {
         int24 minTick = TickMath.minUsableTick(tickSpacing);
         for (int24 tick = minTick; tick <= roundedTick; tick += tickSpacing) {
-            uint256 liquidityDensity =
-                ldf.liquidityDensity(tick, 0, tickSpacing, false, bytes11(abi.encodePacked(mu, uint64(alpha))));
+            uint256 liquidityDensityX96 =
+                ldf.liquidityDensityX96(tick, 0, tickSpacing, false, bytes11(abi.encodePacked(mu, uint64(alpha))));
             uint256 amount1DensityX96 = _amount1DensityX96(tick, tickSpacing);
-            cumulativeAmount1DensityX96 += FullMath.mulDiv(amount1DensityX96, liquidityDensity, FixedPointMathLib.WAD);
+            cumulativeAmount1DensityX96 += FullMath.mulDiv(amount1DensityX96, liquidityDensityX96, FixedPoint96.Q96);
         }
     }
 
@@ -126,9 +128,5 @@ contract DiscreteLaplaceDistributionTest is Test {
         return FullMath.mulDiv(
             tickSpacing.getSqrtRatioAtTick() - FixedPoint96.Q96, _getSqrtRatioAtTick(roundedTick), FixedPoint96.Q96
         );
-    }
-
-    function _absoluteDiff(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a > b ? a - b : b - a;
     }
 }

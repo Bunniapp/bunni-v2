@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
-import "forge-std/console2.sol";
-
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
 
 import "../lib/Math.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
@@ -16,8 +13,6 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
     using SafeCastLib for int256;
     using FixedPointMathLib for uint160;
     using FixedPointMathLib for uint256;
-    using FullMath for uint160;
-    using FullMath for uint256;
 
     uint256 internal constant MIN_ALPHA = 1e14;
     uint256 internal constant MAX_ALPHA = 0.9e18;
@@ -31,16 +26,15 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         external
         pure
         override
-        returns (uint256 liquidityDensity_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
+        returns (uint256 liquidityDensityX96_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
     {
-        (int24 mu, uint256 alpha) = _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
-        uint256 alphaX96 = alpha.mulDivDown(Q96, WAD);
-        uint256 totalDensity = _totalDensity(
-            alpha, mu, TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing), tickSpacing
-        );
+        (int24 mu, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
+        (int24 minTick, int24 maxTick) = (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        uint256 totalDensityX96 = _totalDensityX96(alphaX96, mu, minTick, maxTick, tickSpacing);
 
-        // compute liquidityDensity
-        liquidityDensity_ = alpha.rpow(abs((roundedTick - mu) / tickSpacing), WAD).divWadDown(totalDensity);
+        // compute liquidityDensityX96
+        liquidityDensityX96_ =
+            alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDivDown(Q96, totalDensityX96);
 
         // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
         {
@@ -49,45 +43,27 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
             int24 roundedTickRight = roundedTick + tickSpacing;
             if (roundedTick < mu) {
                 uint256 sqrtRatioNegMu = (-mu).getSqrtRatioAtTick();
-                uint256 tmp1 = (-roundedTickRight).getSqrtRatioAtTick().mulWadDown(
-                    alpha.rpow(uint256(int256((mu - roundedTickRight) / tickSpacing)) + 1, WAD)
+                (bool term1DenominatorIsPositive, uint256 term1Denominator) = absDiff(alphaX96, sqrtRatioNegTickSpacing);
+                uint256 x = (-roundedTickRight).getSqrtRatioAtTick().mulDivDown(
+                    alphaX96.rpow(uint256(int256((mu - roundedTickRight) / tickSpacing)) + 1, Q96), term1Denominator
                 );
-                uint256 tmp2 = sqrtRatioNegMu.mulWadDown(alpha);
-                if (alphaX96 > sqrtRatioNegTickSpacing) {
-                    if (tmp1 > tmp2) {
-                        cumulativeAmount0DensityX96 = c.mulDiv(
-                            (tmp1 - tmp2).mulDiv(WAD, alphaX96 - sqrtRatioNegTickSpacing)
-                                + sqrtRatioNegMu.mulDiv(WAD, Q96 - sqrtRatioNegTickSpacing.mulDiv(alpha, WAD)),
-                            totalDensity
-                        );
-                    } else {
-                        uint256 a = sqrtRatioNegMu.mulDiv(WAD, Q96 - sqrtRatioNegTickSpacing.mulDiv(alpha, WAD));
-                        uint256 b = (tmp2 - tmp1).mulDiv(WAD, alphaX96 - sqrtRatioNegTickSpacing);
-                        if (a > b) {
-                            cumulativeAmount0DensityX96 = c.mulDiv(a - b, totalDensity);
-                        }
-                    }
+                uint256 y = sqrtRatioNegMu.mulDivDown(alphaX96, term1Denominator);
+                (bool term1NumeratorIsPositive, uint256 term1) = absDiff(x, y);
+                uint256 term2 = sqrtRatioNegMu.mulDivDown(Q96, Q96 - sqrtRatioNegTickSpacing.mulDivDown(alphaX96, Q96));
+                if (
+                    (term1DenominatorIsPositive && term1NumeratorIsPositive)
+                        || (!term1DenominatorIsPositive && !term1NumeratorIsPositive)
+                ) {
+                    cumulativeAmount0DensityX96 = c.mulDivDown(term1 + term2, totalDensityX96);
                 } else {
-                    if (tmp2 > tmp1) {
-                        cumulativeAmount0DensityX96 = c.mulDiv(
-                            FullMath.mulDiv(tmp2 - tmp1, WAD, sqrtRatioNegTickSpacing - alphaX96)
-                                + sqrtRatioNegMu.divWadDown(Q96 - sqrtRatioNegTickSpacing.mulWadDown(alpha)),
-                            totalDensity
-                        );
-                    } else {
-                        cumulativeAmount0DensityX96 = c.mulDiv(
-                            sqrtRatioNegMu.divWadDown(Q96 - sqrtRatioNegTickSpacing.mulWadDown(alpha))
-                                - FullMath.mulDiv(tmp1 - tmp2, WAD, sqrtRatioNegTickSpacing - alphaX96),
-                            totalDensity
-                        );
-                    }
+                    cumulativeAmount0DensityX96 = c.mulDivDown(term2 - term1, totalDensityX96);
                 }
             } else {
                 uint256 numerator = _getSqrtRatioAtTick(-roundedTickRight).mulDivDown(
-                    alpha.rpow(uint256(int256((roundedTickRight - mu) / tickSpacing)), WAD), totalDensity
+                    alphaX96.rpow(uint256(int256((roundedTickRight - mu) / tickSpacing)), Q96), totalDensityX96
                 );
-                uint256 denominator = Q96 - sqrtRatioNegTickSpacing.mulWadDown(alpha);
-                cumulativeAmount0DensityX96 = FullMath.mulDiv(c, numerator, denominator);
+                uint256 denominator = Q96 - sqrtRatioNegTickSpacing.mulDivDown(alphaX96, Q96);
+                cumulativeAmount0DensityX96 = c.mulDivDown(numerator, denominator);
             }
         }
 
@@ -97,72 +73,65 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
             uint256 c = sqrtRatioTickSpacing - Q96;
             int24 roundedTickLeft = roundedTick - tickSpacing;
             if (roundedTickLeft < mu) {
-                uint256 term1 = roundedTick.getSqrtRatioAtTick().mulWadDown(
-                    alpha.rpow(uint256(int256((mu - roundedTickLeft) / tickSpacing)), WAD)
-                ).divWadDown(sqrtRatioTickSpacing - alphaX96);
-                cumulativeAmount1DensityX96 = c.mulDivDown(term1, totalDensity);
+                uint256 term1 = roundedTick.getSqrtRatioAtTick().mulDivDown(
+                    alphaX96.rpow(uint256(int256((mu - roundedTickLeft) / tickSpacing)), Q96),
+                    sqrtRatioTickSpacing - alphaX96
+                );
+                cumulativeAmount1DensityX96 = c.mulDivDown(term1, totalDensityX96);
             } else {
                 uint256 sqrtRatioMu = mu.getSqrtRatioAtTick();
-                uint256 tmp = sqrtRatioTickSpacing.mulWadDown(alpha);
-                if (Q96 > tmp) {
-                    cumulativeAmount1DensityX96 = c.mulDiv(
-                        FullMath.mulDiv(alpha, sqrtRatioMu, sqrtRatioTickSpacing - alphaX96)
-                            + (
-                                sqrtRatioMu
-                                    - roundedTick.getSqrtRatioAtTick().mulWadDown(
-                                        alpha.rpow(uint256(int256((roundedTick - mu) / tickSpacing)), WAD)
-                                    )
-                            ).divWadDown(Q96 - tmp),
-                        totalDensity
-                    );
+                uint256 denominatorSub = sqrtRatioTickSpacing.mulDivDown(alphaX96, Q96);
+                (bool denominatorIsPositive, uint256 denominator) = absDiff(Q96, denominatorSub);
+                uint256 x = alphaX96.mulDivDown(sqrtRatioMu, sqrtRatioTickSpacing - alphaX96);
+                uint256 y = sqrtRatioMu.mulDivDown(Q96, denominator);
+                uint256 z = roundedTick.getSqrtRatioAtTick().mulDivDown(
+                    alphaX96.rpow(uint256(int256((roundedTick - mu) / tickSpacing)), Q96), denominator
+                );
+                if (denominatorIsPositive) {
+                    cumulativeAmount1DensityX96 = c.mulDivDown(x + y - z, totalDensityX96);
                 } else {
-                    uint256 x = FullMath.mulDiv(alpha, sqrtRatioMu, sqrtRatioTickSpacing - alphaX96);
-                    uint256 y = sqrtRatioMu.divWadDown(tmp - Q96);
-                    uint256 z = roundedTick.getSqrtRatioAtTick().mulWadDown(
-                        alpha.rpow(uint256(int256((roundedTick - mu) / tickSpacing)), WAD)
-                    ).divWadDown(tmp - Q96);
-                    if (x + z > y) {
-                        cumulativeAmount1DensityX96 = c.mulDiv(x + z - y, totalDensity);
-                    }
+                    cumulativeAmount1DensityX96 = c.mulDivDown(x + z - y, totalDensityX96);
                 }
             }
         }
     }
 
-    function liquidityDensity(
+    function liquidityDensityX96(
         int24 roundedTick,
         int24 twapTick,
         int24 tickSpacing,
         bool useTwap,
         bytes11 decodedLDFParams
     ) external pure override returns (uint256) {
-        (int24 mu, uint256 alpha) = _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
-        uint256 totalDensity = _totalDensity(
-            alpha, mu, TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing), tickSpacing
+        (int24 mu, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
+        uint256 totalDensityX96 = _totalDensityX96(
+            alphaX96, mu, TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing), tickSpacing
         );
-        return alpha.rpow(abs((roundedTick - mu) / tickSpacing), WAD).divWadDown(totalDensity);
+        return alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDivDown(Q96, totalDensityX96);
     }
 
-    function _totalDensity(uint256 alpha, int24 mu, int24 minTick, int24 maxTick, int24 tickSpacing)
+    function _totalDensityX96(uint256 alphaX96, int24 mu, int24 minTick, int24 maxTick, int24 tickSpacing)
         internal
         pure
         returns (uint256)
     {
         return (
-            alpha.mulWadDown(
-                WAD + WAD.divWadDown(alpha) - alpha.rpow(uint256(int256((mu - minTick) / tickSpacing)), WAD)
-                    - alpha.rpow(uint256(int256((maxTick - mu) / tickSpacing)), WAD)
+            alphaX96.mulDivDown(
+                Q96 + Q96.mulDivDown(Q96, alphaX96) - alphaX96.rpow(uint256(int256((mu - minTick) / tickSpacing)), Q96)
+                    - alphaX96.rpow(uint256(int256((maxTick - mu) / tickSpacing)), Q96),
+                Q96
             )
-        ).divWadDown(WAD - alpha);
+        ).mulDivDown(Q96, Q96 - alphaX96);
     }
 
     /// @return mu Center of the distribution
-    /// @return alpha Parameter of the discrete laplace distribution, 18 decimals
+    /// @return alphaX96 Parameter of the discrete laplace distribution, FixedPoint96
     function _decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
         internal
         pure
-        returns (int24 mu, uint256 alpha)
+        returns (int24 mu, uint256 alphaX96)
     {
+        uint256 alpha;
         if (useTwap) {
             // use rounded TWAP value as mu
             // | alpha - 8 bytes |
@@ -176,6 +145,7 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
             alpha = uint256(uint64(bytes8(decodedLDFParams << 24)));
         }
         if (alpha < MIN_ALPHA || alpha > MAX_ALPHA) revert DiscreteLaplaceDistribution__InvalidAlpha(alpha);
+        alphaX96 = alpha.mulDivDown(Q96, WAD);
     }
 
     function _getSqrtRatioAtTick(int24 tick) internal pure returns (uint160) {
