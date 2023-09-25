@@ -69,7 +69,7 @@ contract BunniHubTest is Test {
             ldf,
             bytes12(abi.encodePacked(uint8(0), int24(0), ALPHA)),
             bunniHook,
-            TickMath.getSqrtRatioAtTick(0)
+            TickMath.getSqrtRatioAtTick(4)
         );
 
         // approve tokens

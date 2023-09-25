@@ -639,15 +639,18 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
     /// @dev Adds liquidity using a pool's reserves. Expected to be called by the pool's hook.
     function _hookModifyLiquidityLockCallback(HookCallbackInputData memory data) internal {
+        (uint128 initialReserve0, uint128 initialReserve1) = (data.state.reserve0, data.state.reserve1);
+
         // compound fees
         // we do this after every swap (assuming hook is honest)
         // which means it's not necessary to compound before/after depositing/withdrawing
         if (data.compound) {
             (, int24 currentTick,,,,) = poolManager.getSlot0(data.poolId);
             (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, data.state.poolKey.tickSpacing);
-            // TODO: settle compounded amounts by minting ERC-1155
             (uint256 compoundAmount0, uint256 compoundAmount1) =
                 _compound(data.state.poolKey, roundedTick, nextRoundedTick);
+            data.state.reserve0 += compoundAmount0.toUint128();
+            data.state.reserve1 += compoundAmount1.toUint128();
 
             // emit event
             emit Compound(data.bunniToken, compoundAmount0, compoundAmount1);
@@ -655,7 +658,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         // modify the liquidity of all specified ticks
         uint256 numTicks = data.liquidityDeltas.length;
-        (uint128 initialReserve0, uint128 initialReserve1) = (data.state.reserve0, data.state.reserve1);
         for (uint256 i; i < numTicks;) {
             BalanceDelta balanceDelta = poolManager.modifyPosition(
                 data.state.poolKey,
