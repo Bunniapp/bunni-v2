@@ -164,12 +164,10 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             (amount0, amount1, addedLiquidity) = (
                 min(params.amount0Desired, amount0.mulDiv(params.amount1Desired, amount1)),
                 min(params.amount1Desired, amount1.mulDiv(params.amount0Desired, amount0)),
-                uint128(
-                    min(
-                        addedLiquidity.mulDivDown(params.amount0Desired, amount0),
-                        addedLiquidity.mulDivDown(params.amount1Desired, amount1)
-                    )
-                    )
+                min(
+                    addedLiquidity.mulDivDown(params.amount0Desired, amount0),
+                    addedLiquidity.mulDivDown(params.amount1Desired, amount1)
+                    ).toUint128()
             );
 
             (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
@@ -181,7 +179,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             (amount0, amount1, addedLiquidity) = (
                 params.amount0Desired,
                 amount1.mulDiv(params.amount0Desired, amount0),
-                uint128(addedLiquidity.mulDivDown(params.amount0Desired, amount0))
+                addedLiquidity.mulDivDown(params.amount0Desired, amount0).toUint128()
             );
 
             (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
@@ -193,7 +191,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             (amount0, amount1, addedLiquidity) = (
                 amount0.mulDiv(params.amount1Desired, amount1),
                 params.amount1Desired,
-                uint128(addedLiquidity.mulDivDown(params.amount1Desired, amount1))
+                addedLiquidity.mulDivDown(params.amount1Desired, amount1).toUint128()
             );
 
             (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
@@ -224,25 +222,22 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         /// -----------------------------------------------------------------------
 
         // add liquidity and reserves
-        ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(
+        poolManager.lock(
+            abi.encode(
+                LockCallbackType.MODIFY_LIQUIDITY,
                 abi.encode(
-                    LockCallbackType.MODIFY_LIQUIDITY,
-                    abi.encode(
-                        ModifyLiquidityInputData({
-                            poolKey: state.poolKey,
-                            tickLower: roundedTick,
-                            tickUpper: nextRoundedTick,
-                            liquidityDelta: uint256(addedLiquidity).toInt256(),
-                            user: msg.sender,
-                            reserveAmount0: depositAmount0,
-                            reserveAmount1: depositAmount1,
-                            isDeposit: true
-                        })
-                    )
+                    ModifyLiquidityInputData({
+                        poolKey: state.poolKey,
+                        tickLower: roundedTick,
+                        tickUpper: nextRoundedTick,
+                        liquidityDelta: uint256(addedLiquidity).toInt256(),
+                        user: msg.sender,
+                        reserveAmount0: depositAmount0,
+                        reserveAmount1: depositAmount1,
+                        isDeposit: true
+                    })
                 )
-            ),
-            (ModifyLiquidityReturnData)
+            )
         );
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
             revert BunniHub__SlippageTooHigh();
