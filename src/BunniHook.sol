@@ -290,7 +290,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         uint160 roundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(roundedTick);
         uint160 nextRoundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextRoundedTick);
         (uint256 balance0, uint256 balance1) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidity
+            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidity, false
         );
         (balance0, balance1) = (balance0 + bunniState.reserve0, balance1 + bunniState.reserve1);
 
@@ -320,7 +320,11 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             roundedTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
         );
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidityDensityOfRoundedTickX96.toUint128()
+            sqrtPriceX96,
+            roundedTickSqrtRatio,
+            nextRoundedTickSqrtRatio,
+            liquidityDensityOfRoundedTickX96.toUint128(),
+            false
         );
 
         // compute total liquidity

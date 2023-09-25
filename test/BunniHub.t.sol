@@ -11,17 +11,22 @@ import {PoolManager} from "@uniswap/v4-core/contracts/PoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 
+import "../src/lib/Math.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {IBunniHub, BunniTokenState} from "../src/interfaces/IBunniHub.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
+import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 
 contract BunniHubTest is Test {
     uint256 internal constant PRECISION = 10 ** 18;
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
+    uint8 internal constant HOOK_SWAP_FEE = 0x88; // 12.5% in either direction
+    uint64 internal constant ALPHA = 0.7e18;
+    uint256 internal constant MAX_ERROR = 1e9;
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -36,6 +41,7 @@ contract BunniHubTest is Test {
             )
         )
     );
+    DiscreteLaplaceDistribution internal ldf;
 
     function setUp() public {
         // initialize uniswap
@@ -50,18 +56,18 @@ contract BunniHubTest is Test {
         hub = new BunniHub(poolManager);
 
         // initialize bunni hook
-        deployCodeTo("BunniHook.sol", abi.encode(poolManager, hub), address(bunniHook));
+        deployCodeTo("BunniHook.sol", abi.encode(poolManager, hub, address(this), HOOK_SWAP_FEE), address(bunniHook));
+
+        // initialize LDF
+        ldf = new DiscreteLaplaceDistribution();
 
         // initialize bunni
         bunniToken = hub.deployBunniToken(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
             TICK_SPACING,
-            -100,
-            100,
-            ShiftMode.BOTH,
-            3600,
-            1 days,
+            ldf,
+            bytes12(abi.encodePacked(uint8(0), int24(0), ALPHA)),
             bunniHook,
             TickMath.getSqrtRatioAtTick(0)
         );
@@ -75,32 +81,36 @@ contract BunniHubTest is Test {
         // make initial deposit to avoid accounting for MIN_INITIAL_SHARES
         uint256 depositAmount0 = PRECISION;
         uint256 depositAmount1 = PRECISION;
+        vm.startPrank(address(0x6969));
+        token0.approve(address(hub), type(uint256).max);
+        token0.approve(address(poolManager), type(uint256).max);
+        token1.approve(address(hub), type(uint256).max);
+        token1.approve(address(poolManager), type(uint256).max);
+        vm.stopPrank();
         _makeDeposit(depositAmount0, depositAmount1, address(0x6969));
     }
 
-    function test_deposit() public {
+    function test_deposit(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e3, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e3, type(uint64).max);
+
         // make deposit
-        uint256 depositAmount0 = PRECISION;
-        uint256 depositAmount1 = PRECISION;
-        (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1) =
-            _makeDeposit(depositAmount0, depositAmount1);
+        (uint256 shares,, uint256 amount0, uint256 amount1) = _makeDeposit(depositAmount0, depositAmount1);
+        uint256 actualDepositedAmount0 = depositAmount0 - token0.balanceOf(address(this));
+        uint256 actualDepositedAmount1 = depositAmount1 - token1.balanceOf(address(this));
 
         // check return values
-        assertEqDecimal(shares, newLiquidity, DECIMALS);
-        assertEqDecimal(amount0, depositAmount0, DECIMALS);
-        assertEqDecimal(amount1, depositAmount1, DECIMALS);
-
-        // check token balances
-        assertEqDecimal(token0.balanceOf(address(this)), 0, DECIMALS);
-        assertEqDecimal(token1.balanceOf(address(this)), 0, DECIMALS);
-        assertEqDecimal(bunniToken.balanceOf(address(this)), shares, DECIMALS);
+        assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS);
+        assertEqDecimal(amount1, actualDepositedAmount1, DECIMALS);
+        assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS);
     }
 
-    function test_withdraw() public {
+    function test_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e3, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e3, type(uint64).max);
+
         // make deposit
-        uint256 depositAmount0 = PRECISION;
-        uint256 depositAmount1 = PRECISION;
-        (uint256 shares,,,) = _makeDeposit(depositAmount0, depositAmount1);
+        (uint256 shares,, uint256 amount0, uint256 amount1) = _makeDeposit(depositAmount0, depositAmount1);
 
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
@@ -115,82 +125,16 @@ contract BunniHubTest is Test {
 
         // check return values
         // withdraw amount less than original due to rounding
-        assertEqDecimal(withdrawAmount0, depositAmount0 - 1, DECIMALS, "withdrawAmount0 incorrect");
-        assertEqDecimal(withdrawAmount1, depositAmount1 - 1, DECIMALS, "withdrawAmount1 incorrect");
+        assertApproxEqAbs(withdrawAmount0, amount0, 10, "withdrawAmount0 incorrect");
+        assertApproxEqAbs(withdrawAmount1, amount1, 10, "withdrawAmount1 incorrect");
 
         // check token balances
-        assertEqDecimal(token0.balanceOf(address(this)), depositAmount0 - 1, DECIMALS, "token0 balance incorrect");
-        assertEqDecimal(token1.balanceOf(address(this)), depositAmount1 - 1, DECIMALS, "token1 balance incorrect");
+        assertApproxEqAbs(token0.balanceOf(address(this)), depositAmount0, 10, "token0 balance incorrect");
+        assertApproxEqAbs(token1.balanceOf(address(this)), depositAmount1, 10, "token1 balance incorrect");
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
     }
 
-    /*function test_compound() public {
-        // make deposit
-        uint256 depositAmount0 = PRECISION;
-        uint256 depositAmount1 = PRECISION;
-        _makeDeposit(depositAmount0, depositAmount1);
-
-        // do a few trades to generate fees
-        {
-            // swap token0 to token1
-            uint256 amountIn = PRECISION / 100;
-            token0.mint(address(this), amountIn);
-            ISwapRouter.ExactInputSingleParams memory swapParams = ISwapRouter.ExactInputSingleParams({
-                tokenIn: address(token0),
-                tokenOut: address(token1),
-                fee: fee,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: amountIn,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            });
-            router.exactInputSingle(swapParams);
-        }
-
-        {
-            // swap token1 to token0
-            uint256 amountIn = PRECISION / 50;
-            token1.mint(address(this), amountIn);
-            ISwapRouter.ExactInputSingleParams memory swapParams = ISwapRouter.ExactInputSingleParams({
-                tokenIn: address(token1),
-                tokenOut: address(token0),
-                fee: fee,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: amountIn,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            });
-            router.exactInputSingle(swapParams);
-        }
-
-        // compound
-        uint256 beforeBalance0 = token0.balanceOf(address(this));
-        uint256 beforeBalance1 = token1.balanceOf(address(this));
-        vm.recordLogs();
-        (uint256 addedLiquidity, uint256 amount0, uint256 amount1) = hub.compound(key);
-
-        // check added liquidity
-        assertGtDecimal(addedLiquidity, 0, DECIMALS);
-        assertGtDecimal(amount0, 0, DECIMALS);
-        assertGtDecimal(amount1, 0, DECIMALS);
-
-        // check protocol fee
-        // fetch protocol fee directly from logs
-        (uint256 protocolFee0, uint256 protocolFee1) = abi.decode(vm.getRecordedLogs()[7].data, (uint256, uint256));
-        assertEqDecimal(
-            token0.balanceOf(address(hub)), protocolFee0, DECIMALS, "hub balance0 not equal to protocol fee"
-        );
-        assertEqDecimal(
-            token1.balanceOf(address(hub)), protocolFee1, DECIMALS, "hub balance1 not equal to protocol fee"
-        );
-
-        // check token balances
-        assertEqDecimal(token0.balanceOf(address(this)), beforeBalance0, DECIMALS, "sender balance0 changed");
-        assertEqDecimal(token1.balanceOf(address(this)), beforeBalance1, DECIMALS, "sender balance1 changed");
-    }
-
+    /*
     function test_pricePerFullShare() public {
         // make deposit
         uint256 depositAmount0 = PRECISION;
@@ -217,20 +161,24 @@ contract BunniHubTest is Test {
         returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
     {
         // mint tokens
-        token0.mint(address(this), depositAmount0);
-        token1.mint(address(this), depositAmount1);
+        token0.mint(recipient, depositAmount0);
+        token1.mint(recipient, depositAmount1);
 
         // deposit tokens
-        // max slippage is 1%
         IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
             bunniToken: bunniToken,
             amount0Desired: depositAmount0,
             amount1Desired: depositAmount1,
-            amount0Min: (depositAmount0 * 99) / 100,
-            amount1Min: (depositAmount1 * 99) / 100,
+            amount0Min: 0,
+            amount1Min: 0,
             deadline: block.timestamp,
             recipient: recipient
         });
+        vm.prank(recipient);
         return hub.deposit(depositParams);
+    }
+
+    function _decodeHookFee(uint8 fee, bool zeroForOne) internal pure returns (uint8) {
+        return zeroForOne ? (fee % 16) : (fee >> 4);
     }
 }
