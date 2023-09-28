@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import "forge-std/console2.sol";
+
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
@@ -18,7 +20,6 @@ import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
 
 import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-import {DynamicBufferLib} from "solady/src/utils/DynamicBufferLib.sol";
 
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
@@ -36,7 +37,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     using FixedPointMathLib for uint256;
     using BalanceDeltaLibrary for BalanceDelta;
     using Oracle for Oracle.Observation[65535];
-    using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
 
     error BunniHook__NotBunniHub();
     error BunniHook__SwapAlreadyInProgress();
@@ -337,10 +337,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         uint128 updatedRoundedTickLiquidity = totalLiquidity.mulDiv(liquidityDensityOfRoundedTickX96, Q96).toUint128();
 
         // update current tick liquidity if necessary
-        DynamicBufferLib.DynamicBuffer memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
+        bytes memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
         uint256 bufferLength;
+        // TODO: set difference threshold for updating current tick liquidity
         if (updatedRoundedTickLiquidity != liquidity) {
-            buffer = buffer.append(
+            buffer = bytes.concat(
+                buffer,
                 abi.encode(
                     LiquidityDelta({
                         tickLower: roundedTick,
@@ -401,7 +403,8 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             ).mulDivDown(totalLiquidity, Q96).toUint128();
 
             // buffer add liquidity to tickNext
-            buffer = buffer.append(
+            buffer = bytes.concat(
+                buffer,
                 abi.encode(
                     LiquidityDelta({tickLower: tickNext, delta: uint256(updatedRoundedTickLiquidity).toInt256()})
                 )
@@ -433,14 +436,18 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 ++numTicksToRemove_;
             }
         }
-        numTicksToRemove = numTicksToRemove_;
+        if (numTicksToRemove_ != 0) {
+            numTicksToRemove = numTicksToRemove_;
+        }
 
-        // call BunniHub to add liquidity
-        hub.hookModifyLiquidity({
-            bunniToken: bunniToken,
-            liquidityDeltas: abi.decode(abi.encodePacked(bufferLength, buffer.data), (LiquidityDelta[])),
-            compound: false
-        });
+        if (bufferLength != 0) {
+            // call BunniHub to update liquidity
+            hub.hookModifyLiquidity({
+                bunniToken: bunniToken,
+                liquidityDeltas: abi.decode(abi.encodePacked(uint256(0x20), bufferLength, buffer), (LiquidityDelta[])), // uint256(0x20) denotes the location of the start of the array in the calldata
+                compound: false
+            });
+        }
 
         // update TWAP oracle
         // do it at the end since we likely updated liquidity

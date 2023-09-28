@@ -5,17 +5,19 @@ pragma solidity ^0.8.15;
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 
-import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
-import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
-import {PoolManager} from "@uniswap/v4-core/contracts/PoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
+import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
+import {PoolManager} from "@uniswap/v4-core/contracts/PoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
+import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 
 import "../src/lib/Math.sol";
-import {BunniHook} from "../src/BunniHook.sol";
+import "../src/lib/Structs.sol";
 import {BunniHub} from "../src/BunniHub.sol";
+import {BunniHook} from "../src/BunniHook.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
-import {IBunniHub, BunniTokenState} from "../src/interfaces/IBunniHub.sol";
+import {Uniswapper} from "./mocks/Uniswapper.sol";
+import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 
@@ -42,6 +44,7 @@ contract BunniHubTest is Test {
         )
     );
     DiscreteLaplaceDistribution internal ldf;
+    Uniswapper internal swapper;
 
     function setUp() public {
         // initialize uniswap
@@ -51,6 +54,9 @@ contract BunniHubTest is Test {
             (token0, token1) = (token1, token0);
         }
         poolManager = new PoolManager(1e7);
+
+        // deploy swapper
+        swapper = new Uniswapper(poolManager);
 
         // initialize bunni hub
         hub = new BunniHub(poolManager);
@@ -74,18 +80,16 @@ contract BunniHubTest is Test {
 
         // approve tokens
         token0.approve(address(hub), type(uint256).max);
-        token0.approve(address(poolManager), type(uint256).max);
+        token0.approve(address(swapper), type(uint256).max);
         token1.approve(address(hub), type(uint256).max);
-        token1.approve(address(poolManager), type(uint256).max);
+        token1.approve(address(swapper), type(uint256).max);
 
         // make initial deposit to avoid accounting for MIN_INITIAL_SHARES
         uint256 depositAmount0 = PRECISION;
         uint256 depositAmount1 = PRECISION;
         vm.startPrank(address(0x6969));
         token0.approve(address(hub), type(uint256).max);
-        token0.approve(address(poolManager), type(uint256).max);
         token1.approve(address(hub), type(uint256).max);
-        token1.approve(address(poolManager), type(uint256).max);
         vm.stopPrank();
         _makeDeposit(depositAmount0, depositAmount1, address(0x6969));
     }
@@ -132,6 +136,22 @@ contract BunniHubTest is Test {
         assertApproxEqAbs(token0.balanceOf(address(this)), depositAmount0, 10, "token0 balance incorrect");
         assertApproxEqAbs(token1.balanceOf(address(this)), depositAmount1, 10, "token1 balance incorrect");
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
+    }
+
+    function test_swap() public {
+        uint256 inputAmount = PRECISION / 10;
+
+        token0.mint(address(this), inputAmount);
+
+        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
+        swapper.swap(
+            state.poolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: true,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
+            })
+        );
     }
 
     /*
