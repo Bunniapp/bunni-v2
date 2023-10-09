@@ -59,6 +59,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     error BunniHub__MaxNonceReached();
     error BunniHub__SlippageTooHigh();
     error BunniHub__ZeroSharesMinted();
+    error BunniHub__InvalidLDFParams();
     error BunniHub__BunniTokenNotInitialized();
 
     uint256 internal constant WAD = 1e18;
@@ -110,7 +111,7 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // fetch values from pool
         (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
         int24 arithmeticMeanTick;
-        (bool useTwap, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
+        (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
         if (useTwap) {
             // LDF uses TWAP
             // compute TWAP value
@@ -352,6 +353,11 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
         // we also use ldf to check if the state is initialized so we ensure the ldf is nonzero
         if (address(liquidityDensityFunction) == address(0)) revert BunniHub__LDFCannotBeZero();
+
+        {
+            (bool useTwap,, uint24 twapSecondsAgo,) = decodeLDFParams(ldfParams);
+            if (useTwap && twapSecondsAgo == 0) revert BunniHub__InvalidLDFParams();
+        }
 
         /// -----------------------------------------------------------------------
         /// State updates

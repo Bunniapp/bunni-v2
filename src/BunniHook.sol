@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
-import "forge-std/console2.sol";
+import {stdMath} from "forge-std/StdMath.sol";
 
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
@@ -9,7 +9,6 @@ import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
 import {SwapMath} from "@uniswap/v4-core/contracts/libraries/SwapMath.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
-import {FixedPoint96} from "@uniswap/v4-core/contracts/libraries/FixedPoint96.sol";
 import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamicFeeManager.sol";
@@ -296,7 +295,8 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
-        (bool useTwap, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(bunniState.ldfParams);
+        (bool useTwap, uint8 compoundThreshold, uint24 twapSecondsAgo, bytes11 decodedLDFParams) =
+            decodeLDFParams(bunniState.ldfParams);
         if (useTwap) {
             // LDF uses TWAP
             // compute TWAP value
@@ -329,8 +329,8 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // compute total liquidity
         uint256 totalLiquidity = max(
-            balance0.mulDiv(FixedPoint96.Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
-            balance1.mulDiv(FixedPoint96.Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+            balance0.mulDiv(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
+            balance1.mulDiv(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
 
         // compute updated current tick liquidity
@@ -339,8 +339,10 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         // update current tick liquidity if necessary
         bytes memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
         uint256 bufferLength;
-        // TODO: set difference threshold for updating current tick liquidity
-        if (updatedRoundedTickLiquidity != liquidity) {
+        if (
+            (compoundThreshold == 0 && updatedRoundedTickLiquidity != liquidity) // always compound if threshold is 0 and there's a liquidity difference
+                || stdMath.percentDelta(updatedRoundedTickLiquidity, liquidity) * uint256(compoundThreshold) >= 0.1e18 // compound if delta >= 1 / (compoundThreshold * 10)
+        ) {
             buffer = bytes.concat(
                 buffer,
                 abi.encode(

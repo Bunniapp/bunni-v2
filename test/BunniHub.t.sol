@@ -3,7 +3,6 @@
 pragma solidity ^0.8.15;
 
 import "forge-std/Test.sol";
-import "forge-std/console2.sol";
 
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
@@ -73,7 +72,7 @@ contract BunniHubTest is Test {
             Currency.wrap(address(token1)),
             TICK_SPACING,
             ldf,
-            bytes12(abi.encodePacked(uint8(0), int24(0), ALPHA)),
+            bytes12(abi.encodePacked(uint8(0x00 | 0x64), int24(0), ALPHA)),
             bunniHook,
             TickMath.getSqrtRatioAtTick(4)
         );
