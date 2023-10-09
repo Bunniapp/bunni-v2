@@ -7,6 +7,7 @@ import "forge-std/Test.sol";
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
 import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
 import {PoolManager} from "@uniswap/v4-core/contracts/PoolManager.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 
@@ -21,6 +22,8 @@ import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 
 contract BunniHubTest is Test {
+    using PoolIdLibrary for PoolKey;
+
     uint256 internal constant PRECISION = 10 ** 18;
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
@@ -62,6 +65,7 @@ contract BunniHubTest is Test {
 
         // initialize bunni hook
         deployCodeTo("BunniHook.sol", abi.encode(poolManager, hub, address(this), HOOK_SWAP_FEE), address(bunniHook));
+        vm.label(address(bunniHook), "BunniHook");
 
         // initialize LDF
         ldf = new DiscreteLaplaceDistribution();
@@ -137,7 +141,7 @@ contract BunniHubTest is Test {
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
     }
 
-    function test_swap() public {
+    function test_swap_noTickCrossing() public {
         uint256 inputAmount = PRECISION / 10;
 
         token0.mint(address(this), inputAmount);
@@ -151,6 +155,27 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
             })
         );
+    }
+
+    function test_swap_oneTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token0.mint(address(this), inputAmount);
+
+        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
+        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        swapper.swap(
+            state.poolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: true,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+            })
+        );
+        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing, "didn't cross one tick");
     }
 
     /*

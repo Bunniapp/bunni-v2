@@ -675,8 +675,8 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
                 data.state.reserve0 -= int256(balanceDelta.amount0()).toUint256().toUint128();
                 data.state.reserve1 -= int256(balanceDelta.amount1()).toUint256().toUint128();
             } else if (data.liquidityDeltas[i].delta < 0) {
-                data.state.reserve0 += int256(balanceDelta.amount0()).toUint256().toUint128();
-                data.state.reserve1 += int256(balanceDelta.amount1()).toUint256().toUint128();
+                data.state.reserve0 += int256(-balanceDelta.amount0()).toUint256().toUint128();
+                data.state.reserve1 += int256(-balanceDelta.amount1()).toUint256().toUint128();
             }
 
             unchecked {
