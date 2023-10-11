@@ -178,6 +178,27 @@ contract BunniHubTest is Test {
         assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing, "didn't cross one tick");
     }
 
+    function test_swap_twoTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token0.mint(address(this), inputAmount);
+
+        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
+        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        swapper.swap(
+            state.poolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: true,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
+            })
+        );
+        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing * 2, "didn't cross two ticks");
+    }
+
     /*
     function test_pricePerFullShare() public {
         // make deposit

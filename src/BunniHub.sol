@@ -218,6 +218,11 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
             existingAmount1 + state.reserve1 // current tick tokens + reserve tokens
         );
 
+        // update reserves
+        // reserves represent the amount of tokens not in the current tick
+        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + depositAmount0.toUint128();
+        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + depositAmount1.toUint128();
+
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
@@ -243,11 +248,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
             revert BunniHub__SlippageTooHigh();
         }
-
-        // update reserves
-        // reserves represent the amount of tokens not in the current tick
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + depositAmount0.toUint128();
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + depositAmount1.toUint128();
 
         // emit event
         emit Deposit(msg.sender, params.recipient, params.bunniToken, addedLiquidity, amount0, amount1, shares);
@@ -285,13 +285,18 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // type cast is safe because we know removedLiquidity <= existingLiquidity
         removedLiquidity = uint128(existingLiquidity.mulDiv(params.shares, currentTotalSupply));
 
+        // update reserves
+        // reserves represent the amount of tokens not in the current tick
+        uint256 removedReserve0 = state.reserve0.mulDiv(params.shares, currentTotalSupply);
+        uint256 removedReserve1 = state.reserve1.mulDiv(params.shares, currentTotalSupply);
+        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 - removedReserve0.toUint128();
+        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 - removedReserve1.toUint128();
+
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
 
         // burn liquidity and withdraw reserves
-        uint256 removedReserve0 = state.reserve0.mulDiv(params.shares, currentTotalSupply);
-        uint256 removedReserve1 = state.reserve1.mulDiv(params.shares, currentTotalSupply);
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, state.poolKey.tickSpacing);
         ModifyLiquidityReturnData memory returnData = abi.decode(
             poolManager.lock(
@@ -317,11 +322,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
             revert BunniHub__SlippageTooHigh();
         }
-
-        // update reserves
-        // reserves represent the amount of tokens not in the current tick
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 - removedReserve0.toUint128();
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 - removedReserve1.toUint128();
 
         emit Withdraw(
             msg.sender, params.recipient, params.bunniToken, removedLiquidity, amount0, amount1, params.shares
