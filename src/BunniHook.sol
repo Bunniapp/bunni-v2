@@ -215,37 +215,31 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         (, int24 currentTick,,,,) = poolManager.getSlot0(id);
         (int24 roundedTick,) = roundTick(currentTick, key.tickSpacing);
 
-        if (numTicksToRemove_ != 0) {
-            LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
-            for (uint256 i; i < numTicksToRemove_;) {
-                unchecked {
-                    roundedTick = params.zeroForOne ? roundedTick + key.tickSpacing : roundedTick - key.tickSpacing;
-                    if (roundedTick < TickMath.MIN_TICK) {
-                        roundedTick = TickMath.MIN_TICK;
-                    } else if (roundedTick > TickMath.MAX_TICK) {
-                        roundedTick = TickMath.MAX_TICK;
-                    }
-                }
-
-                // buffer remove liquidity
-                liquidityDeltas[i] = LiquidityDelta({
-                    tickLower: roundedTick,
-                    delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256(
-                    )
-                });
-
-                unchecked {
-                    ++i;
+        LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
+        for (uint256 i; i < numTicksToRemove_;) {
+            unchecked {
+                roundedTick = params.zeroForOne ? roundedTick + key.tickSpacing : roundedTick - key.tickSpacing;
+                if (roundedTick < TickMath.MIN_TICK) {
+                    roundedTick = TickMath.MIN_TICK;
+                } else if (roundedTick > TickMath.MAX_TICK) {
+                    roundedTick = TickMath.MAX_TICK;
                 }
             }
 
-            // call BunniHub to remove liquidity
-            hub.hookModifyLiquidity({
-                bunniToken: hub.bunniTokenOfPool(id),
-                liquidityDeltas: liquidityDeltas,
-                compound: true
+            // buffer remove liquidity
+            liquidityDeltas[i] = LiquidityDelta({
+                tickLower: roundedTick,
+                delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256()
             });
+
+            unchecked {
+                ++i;
+            }
         }
+
+        // call BunniHub to remove liquidity
+        // we always do this to compound after every swap
+        hub.hookModifyLiquidity({bunniToken: hub.bunniTokenOfPool(id), liquidityDeltas: liquidityDeltas, compound: true});
 
         return BunniHook.afterSwap.selector;
     }
