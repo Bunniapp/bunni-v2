@@ -141,7 +141,7 @@ contract BunniHubTest is Test {
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
     }
 
-    function test_swap_noTickCrossing() public {
+    function test_swap_zeroForOne_noTickCrossing() public {
         uint256 inputAmount = PRECISION / 10;
 
         token0.mint(address(this), inputAmount);
@@ -157,7 +157,7 @@ contract BunniHubTest is Test {
         );
     }
 
-    function test_swap_oneTickCrossing() public {
+    function test_swap_zeroForOne_oneTickCrossing() public {
         uint256 inputAmount = PRECISION * 2;
 
         token0.mint(address(this), inputAmount);
@@ -178,7 +178,7 @@ contract BunniHubTest is Test {
         assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing, "didn't cross one tick");
     }
 
-    function test_swap_twoTickCrossing() public {
+    function test_swap_zeroForOne_twoTickCrossing() public {
         uint256 inputAmount = PRECISION * 2;
 
         token0.mint(address(this), inputAmount);
@@ -197,6 +197,89 @@ contract BunniHubTest is Test {
         (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing * 2, "didn't cross two ticks");
+    }
+
+    function test_swap_zeroForOne_boundaryCondition() public {
+        // when swapping from token0 to token1, it's possible for the updated tick to exceed the tick
+        // specified by sqrtPriceLimitX96, so we need to handle this edge case properly by adding
+        // liquidity to the actual rounded tick
+
+        uint256 inputAmount = PRECISION * 2;
+
+        token0.mint(address(this), inputAmount);
+
+        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
+        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        swapper.swap(
+            state.poolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: true,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-10) // limit tick is -10 but we'll end up at -11
+            })
+        );
+        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing * 2, "didn't cross two ticks");
+    }
+
+    function test_swap_oneForZero_noTickCrossing() public {
+        uint256 inputAmount = PRECISION / 10;
+
+        token1.mint(address(this), inputAmount);
+
+        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
+        swapper.swap(
+            state.poolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: false,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+            })
+        );
+    }
+
+    function test_swap_oneForZero_oneTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token1.mint(address(this), inputAmount);
+
+        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
+        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        swapper.swap(
+            state.poolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: false,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
+            })
+        );
+        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick + state.poolKey.tickSpacing, "didn't cross one tick");
+    }
+
+    function test_swap_oneForZero_twoTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token1.mint(address(this), inputAmount);
+
+        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
+        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        swapper.swap(
+            state.poolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: false,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
+            })
+        );
+        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick + state.poolKey.tickSpacing * 2, "didn't cross two ticks");
     }
 
     /*

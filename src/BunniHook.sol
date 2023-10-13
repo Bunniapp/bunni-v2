@@ -349,6 +349,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             unchecked {
                 ++bufferLength;
             }
+            liquidity = updatedRoundedTickLiquidity;
         }
 
         // simulate swap to see if current tick liquidity is sufficient
@@ -358,6 +359,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         uint24 swapFee = _getFee(key);
         bool exactInput = params.amountSpecified > 0;
         uint160 sqrtPriceStartX96 = sqrtPriceX96;
+        int24 tick = currentTick;
         int24 tickNext = params.zeroForOne ? roundedTick : nextRoundedTick;
         if (tickNext < TickMath.MIN_TICK) {
             tickNext = TickMath.MIN_TICK;
@@ -372,7 +374,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                     ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
                     : sqrtPriceNextX96 > params.sqrtPriceLimitX96
             ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
-            updatedRoundedTickLiquidity,
+            liquidity,
             params.amountSpecified,
             swapFee
         );
@@ -384,27 +386,30 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 amountSpecifiedRemaining += amountOut.toInt256();
             }
         }
+        if (sqrtPriceX96 == sqrtPriceNextX96) {
+            unchecked {
+                tick = params.zeroForOne ? tickNext - 1 : tickNext;
+            }
+        } else if (sqrtPriceX96 != sqrtPriceStartX96) {
+            tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+        }
         // if insufficient, add liquidity to the next tick and repeat
         uint24 numTicksToRemove_;
         while (amountSpecifiedRemaining != 0 && sqrtPriceX96 != params.sqrtPriceLimitX96) {
-            // compute tickNext liquidity and store in updatedRoundedTickLiquidity
-            tickNext = params.zeroForOne ? tickNext - key.tickSpacing : tickNext + key.tickSpacing;
-            if (tickNext < TickMath.MIN_TICK) {
-                tickNext = TickMath.MIN_TICK;
-            } else if (tickNext > TickMath.MAX_TICK) {
-                tickNext = TickMath.MAX_TICK;
-            }
-            updatedRoundedTickLiquidity = bunniState.liquidityDensityFunction.liquidityDensityX96(
-                tickNext, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
-            ).mulDivDown(totalLiquidity, Q96).toUint128();
-
-            // buffer add liquidity to tickNext
-            buffer = bytes.concat(
-                buffer,
-                abi.encode(
-                    LiquidityDelta({tickLower: tickNext, delta: uint256(updatedRoundedTickLiquidity).toInt256()})
-                )
-            );
+            // update tickNext, liquidity, and buffer
+            // we will add `liquidity` to the range zeroForOne ? [tickNext, tickNext + tickSpacing) : [tickNext - tickSpacing, tickNext)
+            // (tickNext here refers to the updated tickNext value)
+            (tickNext, liquidity, buffer) = _addLiquidityToNextTick({
+                zeroForOne: params.zeroForOne,
+                tickNext: tickNext,
+                tickSpacing: key.tickSpacing,
+                arithmeticMeanTick: arithmeticMeanTick,
+                useTwap: useTwap,
+                decodedLDFParams: decodedLDFParams,
+                totalLiquidity: totalLiquidity,
+                buffer: buffer,
+                liquidityDensityFunction: bunniState.liquidityDensityFunction
+            });
             unchecked {
                 ++bufferLength;
             }
@@ -419,7 +424,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                         ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
                         : sqrtPriceNextX96 > params.sqrtPriceLimitX96
                 ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
-                updatedRoundedTickLiquidity,
+                liquidity,
                 params.amountSpecified,
                 swapFee
             );
@@ -431,7 +436,39 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 }
                 ++numTicksToRemove_;
             }
+
+            if (sqrtPriceX96 == sqrtPriceNextX96) {
+                unchecked {
+                    tick = params.zeroForOne ? tickNext - 1 : tickNext;
+                }
+            } else if (sqrtPriceX96 != sqrtPriceStartX96) {
+                tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+            }
         }
+
+        // handle zeroForOne edge case where we end up at a tick belonging to the next roundedTick
+        // this is caused by tick = params.zeroForOne ? tickNext - 1 : tickNext;
+        if (
+            params.zeroForOne
+                && roundTickSingle(tick, key.tickSpacing) == roundedTick - int24(numTicksToRemove_ + 1) * key.tickSpacing
+        ) {
+            (,, buffer) = _addLiquidityToNextTick({
+                zeroForOne: true,
+                tickNext: tickNext,
+                tickSpacing: key.tickSpacing,
+                arithmeticMeanTick: arithmeticMeanTick,
+                useTwap: useTwap,
+                decodedLDFParams: decodedLDFParams,
+                totalLiquidity: totalLiquidity,
+                buffer: buffer,
+                liquidityDensityFunction: bunniState.liquidityDensityFunction
+            });
+            unchecked {
+                ++bufferLength;
+                ++numTicksToRemove_;
+            }
+        }
+
         if (numTicksToRemove_ != 0) {
             numTicksToRemove = numTicksToRemove_;
         }
@@ -459,5 +496,40 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
     function _getFee(PoolKey calldata key) internal pure returns (uint24) {
         return 100; // TODO
+    }
+
+    /// @dev Partial compute step in _beforeSwapUpdatePool factored out to reduce bytecode size
+    function _addLiquidityToNextTick(
+        bool zeroForOne,
+        int24 tickNext,
+        int24 tickSpacing,
+        int24 arithmeticMeanTick,
+        bool useTwap,
+        bytes11 decodedLDFParams,
+        uint256 totalLiquidity,
+        bytes memory buffer,
+        ILiquidityDensityFunction liquidityDensityFunction
+    ) internal returns (int24 updatedTickNext, uint128 updatedLiquidity, bytes memory updatedBuffer) {
+        // compute tickNext liquidity and store in updatedLiquidity
+        updatedTickNext = zeroForOne ? tickNext - tickSpacing : tickNext + tickSpacing;
+        if (updatedTickNext < TickMath.MIN_TICK) {
+            updatedTickNext = TickMath.MIN_TICK;
+        } else if (updatedTickNext > TickMath.MAX_TICK) {
+            updatedTickNext = TickMath.MAX_TICK;
+        }
+        // if swapping token1 to token0, updatedTickNext is the tickUpper of the range to add liquidity to
+        // therefore we need to shift left by tickSpacing to get tickLower
+        int24 tickLowerToAddLiquidityTo = zeroForOne ? updatedTickNext : updatedTickNext - tickSpacing;
+        updatedLiquidity = liquidityDensityFunction.liquidityDensityX96(
+            tickLowerToAddLiquidityTo, arithmeticMeanTick, tickSpacing, useTwap, decodedLDFParams
+        ).mulDivDown(totalLiquidity, Q96).toUint128();
+
+        // buffer add liquidity to tickLowerToAddLiquidityTo
+        updatedBuffer = bytes.concat(
+            buffer,
+            abi.encode(
+                LiquidityDelta({tickLower: tickLowerToAddLiquidityTo, delta: uint256(updatedLiquidity).toInt256()})
+            )
+        );
     }
 }
