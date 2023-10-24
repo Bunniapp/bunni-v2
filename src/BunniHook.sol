@@ -509,7 +509,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         uint256 totalLiquidity,
         bytes memory buffer,
         ILiquidityDensityFunction liquidityDensityFunction
-    ) internal returns (int24 updatedTickNext, uint128 updatedLiquidity, bytes memory updatedBuffer) {
+    ) internal view returns (int24 updatedTickNext, uint128 updatedLiquidity, bytes memory updatedBuffer) {
         // compute tickNext liquidity and store in updatedLiquidity
         updatedTickNext = zeroForOne ? tickNext - tickSpacing : tickNext + tickSpacing;
         if (updatedTickNext < TickMath.MIN_TICK) {

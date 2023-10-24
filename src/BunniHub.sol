@@ -28,7 +28,6 @@ import {BunniHook} from "./BunniHook.sol";
 import {BunniToken} from "./BunniToken.sol";
 import {Multicall} from "./lib/Multicall.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
-import {SelfPermit} from "./lib/SelfPermit.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
@@ -40,7 +39,7 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
+contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     using FullMath for uint128;
     using FullMath for uint256;
     using SafeCastLib for int256;
@@ -469,6 +468,37 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
     /// Internal functions
     /// -----------------------------------------------------------
 
+    /// @notice Mints share tokens to the recipient based on the amount of liquidity added.
+    /// @param shareToken The BunniToken to mint
+    /// @param recipient The recipient of the share tokens
+    /// @return shares The amount of share tokens minted to the sender.
+    function _mintShares(
+        IBunniToken shareToken,
+        address recipient,
+        uint256 addedAmount0,
+        uint256 existingAmount0,
+        uint256 addedAmount1,
+        uint256 existingAmount1
+    ) internal virtual returns (uint256 shares) {
+        uint256 existingShareSupply = shareToken.totalSupply();
+        if (existingShareSupply == 0) {
+            // no existing shares, just give WAD
+            shares = WAD - MIN_INITIAL_SHARES;
+            // prevent first staker from stealing funds of subsequent stakers
+            // see https://code4rena.com/reports/2022-01-sherlock/#h-01-first-user-can-steal-everyone-elses-tokens
+            shareToken.mint(address(0), MIN_INITIAL_SHARES);
+        } else {
+            shares = min(
+                existingShareSupply.mulDiv(addedAmount0, existingAmount0),
+                existingShareSupply.mulDiv(addedAmount1, existingAmount1)
+            );
+            if (shares == 0) revert BunniHub__ZeroSharesMinted();
+        }
+
+        // mint shares to sender
+        shareToken.mint(recipient, shares);
+    }
+
     function _compound(PoolKey memory poolKey, int24 tickLower, int24 tickUpper)
         internal
         returns (uint256 feeToAdd0, uint256 feeToAdd1)
@@ -566,13 +596,9 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
 
             // withdraw tokens from PoolManager
             if (input.reserveAmount0 != 0 && input.reserveAmount1 != 0) {
-                uint256[] memory ids = new uint256[](2);
-                ids[0] = input.poolKey.currency0.toId();
-                ids[1] = input.poolKey.currency1.toId();
-                uint256[] memory amounts = new uint256[](2);
-                amounts[0] = input.reserveAmount0;
-                amounts[1] = input.reserveAmount1;
-                poolManager.safeBatchTransferFrom(address(this), address(poolManager), ids, amounts, bytes(""));
+                _transferPoolTokenToManager(
+                    input.poolKey.currency0, input.poolKey.currency1, input.reserveAmount0, input.reserveAmount1
+                );
                 takeAmount0 += input.reserveAmount0;
                 takeAmount1 += input.reserveAmount1;
             } else if (input.reserveAmount0 != 0) {
@@ -597,37 +623,6 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         }
 
         (returnData.amount0, returnData.amount1) = (result0, result1);
-    }
-
-    /// @notice Mints share tokens to the recipient based on the amount of liquidity added.
-    /// @param shareToken The BunniToken to mint
-    /// @param recipient The recipient of the share tokens
-    /// @return shares The amount of share tokens minted to the sender.
-    function _mintShares(
-        IBunniToken shareToken,
-        address recipient,
-        uint256 addedAmount0,
-        uint256 existingAmount0,
-        uint256 addedAmount1,
-        uint256 existingAmount1
-    ) internal virtual returns (uint256 shares) {
-        uint256 existingShareSupply = shareToken.totalSupply();
-        if (existingShareSupply == 0) {
-            // no existing shares, just give WAD
-            shares = WAD - MIN_INITIAL_SHARES;
-            // prevent first staker from stealing funds of subsequent stakers
-            // see https://code4rena.com/reports/2022-01-sherlock/#h-01-first-user-can-steal-everyone-elses-tokens
-            shareToken.mint(address(0), MIN_INITIAL_SHARES);
-        } else {
-            shares = min(
-                existingShareSupply.mulDiv(addedAmount0, existingAmount0),
-                existingShareSupply.mulDiv(addedAmount1, existingAmount1)
-            );
-            if (shares == 0) revert BunniHub__ZeroSharesMinted();
-        }
-
-        // mint shares to sender
-        shareToken.mint(recipient, shares);
     }
 
     struct HookCallbackInputData {
@@ -692,13 +687,12 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         // since we either add or remove liquidity
         if (initialReserve0 > data.state.reserve0 && initialReserve1 > data.state.reserve1) {
             // batch transfer ERC1155 tokens to PoolManager to settle debts
-            uint256[] memory ids = new uint256[](2);
-            ids[0] = data.state.poolKey.currency0.toId();
-            ids[1] = data.state.poolKey.currency1.toId();
-            uint256[] memory amounts = new uint256[](2);
-            amounts[0] = initialReserve0 - data.state.reserve0;
-            amounts[1] = initialReserve1 - data.state.reserve1;
-            poolManager.safeBatchTransferFrom(address(this), address(poolManager), ids, amounts, bytes(""));
+            _transferPoolTokenToManager(
+                data.state.poolKey.currency0,
+                data.state.poolKey.currency1,
+                initialReserve0 - data.state.reserve0,
+                initialReserve1 - data.state.reserve1
+            );
         } else if (initialReserve0 > data.state.reserve0) {
             // transfer ERC1155 tokens to PoolManager to settle debts
             poolManager.safeTransferFrom(
@@ -750,5 +744,18 @@ contract BunniHub is IBunniHub, Multicall, SelfPermit, ERC1155TokenReceiver {
         state = _bunniTokenState[bunniToken];
         if (address(state.liquidityDensityFunction) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         poolId = state.poolKey.toId();
+    }
+
+    function _transferPoolTokenToManager(Currency currency0, Currency currency1, uint256 amount0, uint256 amount1)
+        internal
+    {
+        // batch transfer ERC1155 tokens to PoolManager to settle debts
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = currency0.toId();
+        ids[1] = currency1.toId();
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = amount0;
+        amounts[1] = amount1;
+        poolManager.safeBatchTransferFrom(address(this), address(poolManager), ids, amounts, bytes(""));
     }
 }

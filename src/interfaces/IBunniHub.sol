@@ -12,7 +12,6 @@ import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILoc
 import "../lib/Structs.sol";
 import {IERC20} from "./IERC20.sol";
 import {IMulticall} from "./IMulticall.sol";
-import {ISelfPermit} from "./ISelfPermit.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 
@@ -22,7 +21,7 @@ import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 /// which is the ERC20 LP token for the Uniswap V3 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-interface IBunniHub is IMulticall, ISelfPermit, ILockCallback {
+interface IBunniHub is IMulticall, ILockCallback {
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
