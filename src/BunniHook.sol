@@ -290,6 +290,18 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         );
         (balance0, balance1) = (balance0 + bunniState.reserve0, balance1 + bunniState.reserve1);
 
+        // update TWAP oracle
+        // do it before we fetch the arithmeticMeanTick
+        (uint16 updatedIndex, uint16 updatedCardinality) = observations[id].write(
+            states[id].index,
+            _blockTimestamp(),
+            currentTick,
+            liquidity,
+            states[id].cardinality,
+            states[id].cardinalityNext
+        );
+        (states[id].index, states[id].cardinality) = (updatedIndex, updatedCardinality);
+
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
         (bool useTwap, uint8 compoundThreshold, uint24 twapSecondsAgo, bytes11 decodedLDFParams) =
@@ -297,12 +309,11 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         if (useTwap) {
             // LDF uses TWAP
             // compute TWAP value
-            ObservationState memory state = states[id];
             uint32[] memory secondsAgos = new uint32[](2);
             secondsAgos[0] = twapSecondsAgo;
             secondsAgos[1] = 0;
             (int56[] memory tickCumulatives,) = observations[id].observe(
-                _blockTimestamp(), secondsAgos, currentTick, state.index, liquidity, state.cardinality
+                _blockTimestamp(), secondsAgos, currentTick, updatedIndex, liquidity, updatedCardinality
             );
             int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
             arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
@@ -484,17 +495,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 compound: false
             });
         }
-
-        // update TWAP oracle
-        // do it at the end since we likely updated liquidity
-        (states[id].index, states[id].cardinality) = observations[id].write(
-            states[id].index,
-            _blockTimestamp(),
-            currentTick,
-            poolManager.getLiquidity(id),
-            states[id].cardinality,
-            states[id].cardinalityNext
-        );
     }
 
     function _getFee(PoolKey calldata key) internal pure returns (uint24) {
