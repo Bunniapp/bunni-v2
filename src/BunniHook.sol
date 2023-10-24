@@ -41,7 +41,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     error BunniHook__SwapAlreadyInProgress();
     error BunniHook__BunniTokenNotInitialized();
 
-    event SetHookSwapFee(uint8 newFee);
+    event SetHookSwapFee(uint24 newFee);
 
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
@@ -61,10 +61,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) public states;
 
-    uint8 public hookSwapFee;
+    uint24 public hookSwapFee;
     uint24 private numTicksToRemove;
 
-    constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, uint8 hookSwapFee_) BaseHook(_poolManager) {
+    constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, uint24 hookSwapFee_)
+        BaseHook(_poolManager)
+    {
         hub = hub_;
         hookSwapFee = hookSwapFee_;
         _initializeOwner(owner_);
@@ -94,7 +96,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// Owner functions
     /// -----------------------------------------------------------------------
 
-    function setHookSwapFee(uint8 newFee) external onlyOwner {
+    function setHookSwapFee(uint24 newFee) external onlyOwner {
         hookSwapFee = newFee;
         emit SetHookSwapFee(newFee);
     }
@@ -127,7 +129,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         ObservationState memory state = states[id];
 
-        (, int24 tick,,,,) = poolManager.getSlot0(id);
+        (, int24 tick,,) = poolManager.getSlot0(id);
 
         uint128 liquidity = poolManager.getLiquidity(id);
 
@@ -152,22 +154,22 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @inheritdoc IDynamicFeeManager
-    function getFee(PoolKey calldata key) external pure override returns (uint24) {
+    function getFee(
+        address, /* sender */
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata, /* params */
+        bytes calldata /* data */
+    ) external pure override returns (uint24) {
         return _getFee(key);
     }
 
     /// @inheritdoc IHookFeeManager
-    function getHookSwapFee(PoolKey calldata) external view override returns (uint8) {
+    function getHookFees(PoolKey calldata key) external view override returns (uint24) {
         return hookSwapFee;
     }
 
-    /// @inheritdoc IHookFeeManager
-    function getHookWithdrawFee(PoolKey calldata) external pure override returns (uint8) {
-        return 0;
-    }
-
     /// @inheritdoc IHooks
-    function afterInitialize(address, PoolKey calldata key, uint160, int24)
+    function afterInitialize(address, PoolKey calldata key, uint160, int24, bytes calldata)
         external
         override
         poolManagerOnly
@@ -179,19 +181,19 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @inheritdoc IHooks
-    function beforeModifyPosition(address caller, PoolKey calldata key, IPoolManager.ModifyPositionParams calldata)
-        external
-        override
-        poolManagerOnly
-        returns (bytes4)
-    {
+    function beforeModifyPosition(
+        address caller,
+        PoolKey calldata key,
+        IPoolManager.ModifyPositionParams calldata,
+        bytes calldata
+    ) external override poolManagerOnly returns (bytes4) {
         if (caller != address(hub)) revert BunniHook__NotBunniHub();
         _beforeModifyPositionUpdatePool(key);
         return BunniHook.beforeModifyPosition.selector;
     }
 
     /// @inheritdoc IHooks
-    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params)
+    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         external
         override
         poolManagerOnly
@@ -201,18 +203,19 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         return BunniHook.beforeSwap.selector;
     }
 
-    function afterSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, BalanceDelta)
-        external
-        override
-        poolManagerOnly
-        returns (bytes4)
-    {
+    function afterSwap(
+        address,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        BalanceDelta,
+        bytes calldata
+    ) external override poolManagerOnly returns (bytes4) {
         // withdraw liquidity from inactive ticks
         uint24 numTicksToRemove_ = numTicksToRemove;
         delete numTicksToRemove;
 
         PoolId id = key.toId();
-        (, int24 currentTick,,,,) = poolManager.getSlot0(id);
+        (, int24 currentTick,,) = poolManager.getSlot0(id);
         (int24 roundedTick,) = roundTick(currentTick, key.tickSpacing);
 
         LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
@@ -255,7 +258,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
     function _beforeModifyPositionUpdatePool(PoolKey calldata key) private {
         PoolId id = key.toId();
-        (, int24 currentTick,,,,) = poolManager.getSlot0(id);
+        (, int24 currentTick,,) = poolManager.getSlot0(id);
         uint128 liquidity = poolManager.getLiquidity(id);
 
         // update TWAP oracle
@@ -272,7 +275,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
         if (numTicksToRemove != 0) revert BunniHook__SwapAlreadyInProgress();
         PoolId id = key.toId();
-        (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(id);
+        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(id);
 
         // get current tick token balances & reserves
         IBunniToken bunniToken = hub.bunniTokenOfPool(id);

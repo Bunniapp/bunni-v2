@@ -32,7 +32,7 @@ contract Uniswapper is ILockCallback {
 
         (PoolKey memory key, IPoolManager.SwapParams memory params, address sender) =
             abi.decode(data, (PoolKey, IPoolManager.SwapParams, address));
-        BalanceDelta delta = poolManager.swap(key, params);
+        BalanceDelta delta = poolManager.swap(key, params, bytes(""));
 
         (Currency inputToken, uint256 inputAmount, Currency outputToken, uint256 outputAmount) = delta.amount0() > 0
             ? (key.currency0, uint128(delta.amount0()), key.currency1, uint128(-delta.amount1()))

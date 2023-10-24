@@ -163,7 +163,7 @@ contract BunniHubTest is Test {
         token0.mint(address(this), inputAmount);
 
         BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         swapper.swap(
             state.poolKey,
@@ -173,7 +173,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
             })
         );
-        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing, "didn't cross one tick");
     }
@@ -184,7 +184,7 @@ contract BunniHubTest is Test {
         token0.mint(address(this), inputAmount);
 
         BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         swapper.swap(
             state.poolKey,
@@ -194,7 +194,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
             })
         );
-        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing * 2, "didn't cross two ticks");
     }
@@ -209,7 +209,7 @@ contract BunniHubTest is Test {
         token0.mint(address(this), inputAmount);
 
         BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         swapper.swap(
             state.poolKey,
@@ -219,7 +219,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-10) // limit tick is -10 but we'll end up at -11
             })
         );
-        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing * 2, "didn't cross two ticks");
     }
@@ -246,7 +246,7 @@ contract BunniHubTest is Test {
         token1.mint(address(this), inputAmount);
 
         BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         swapper.swap(
             state.poolKey,
@@ -256,7 +256,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
             })
         );
-        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + state.poolKey.tickSpacing, "didn't cross one tick");
     }
@@ -267,7 +267,7 @@ contract BunniHubTest is Test {
         token1.mint(address(this), inputAmount);
 
         BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         swapper.swap(
             state.poolKey,
@@ -277,7 +277,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
             })
         );
-        (, currentTick,,,,) = poolManager.getSlot0(state.poolKey.toId());
+        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + state.poolKey.tickSpacing * 2, "didn't cross two ticks");
     }

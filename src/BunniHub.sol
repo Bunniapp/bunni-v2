@@ -108,7 +108,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(params.bunniToken);
 
         // fetch values from pool
-        (uint160 sqrtPriceX96, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
+        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(poolId);
         int24 arithmeticMeanTick;
         (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
         if (useTwap) {
@@ -268,7 +268,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         (BunniTokenState memory state, PoolId poolId) = _getStateAndIdOfBunniToken(params.bunniToken);
         uint256 currentTotalSupply = params.bunniToken.totalSupply();
-        (, int24 currentTick,,,,) = poolManager.getSlot0(poolId);
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
         uint128 existingLiquidity = poolManager.getLiquidity(poolId);
 
         /// -----------------------------------------------------------------------
@@ -400,7 +400,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         /// -----------------------------------------------------------------------
 
         // initialize Uniswap v4 pool
-        poolManager.initialize(key, sqrtPriceX96);
+        poolManager.initialize(key, sqrtPriceX96, bytes(""));
 
         emit NewBunni(token, poolId);
     }
@@ -505,7 +505,9 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     {
         // trigger an update of the position fees owed snapshots
         BalanceDelta feeDelta = poolManager.modifyPosition(
-            poolKey, IPoolManager.ModifyPositionParams({tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: 0})
+            poolKey,
+            IPoolManager.ModifyPositionParams({tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: 0}),
+            bytes("")
         );
 
         // negate values to get fees owed
@@ -545,7 +547,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                     tickLower: input.tickLower,
                     tickUpper: input.tickUpper,
                     liquidityDelta: input.liquidityDelta
-                })
+                }),
+                bytes("")
             );
             (amount0, amount1) = (delta.amount0(), delta.amount1());
         }
@@ -641,7 +644,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         // we do this after every swap (assuming hook is honest)
         // which means it's not necessary to compound before/after depositing/withdrawing
         if (data.compound) {
-            (, int24 currentTick,,,,) = poolManager.getSlot0(data.poolId);
+            (, int24 currentTick,,) = poolManager.getSlot0(data.poolId);
             (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, data.state.poolKey.tickSpacing);
             (uint256 compoundAmount0, uint256 compoundAmount1) =
                 _compound(data.state.poolKey, roundedTick, nextRoundedTick);
@@ -661,7 +664,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                     tickLower: data.liquidityDeltas[i].tickLower,
                     tickUpper: data.liquidityDeltas[i].tickLower + data.state.poolKey.tickSpacing,
                     liquidityDelta: data.liquidityDeltas[i].delta
-                })
+                }),
+                bytes("")
             );
 
             // update pool reserves
