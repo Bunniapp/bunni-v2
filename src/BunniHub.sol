@@ -113,11 +113,15 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
         if (useTwap) {
             // LDF uses TWAP
+            BunniHook hook = BunniHook(address(state.poolKey.hooks));
+
+            // update TWAP
+            hook.updateOracle(state.poolKey);
+
             // compute TWAP value
             uint32[] memory secondsAgos = new uint32[](2);
             secondsAgos[0] = twapSecondsAgo;
             secondsAgos[1] = 0;
-            BunniHook hook = BunniHook(address(state.poolKey.hooks));
             (int56[] memory tickCumulatives,) = hook.observe(state.poolKey, secondsAgos);
             int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
             arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));

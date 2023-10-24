@@ -92,6 +92,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         state.cardinalityNext = cardinalityNextNew;
     }
 
+    /// @notice Update the TWAP oracle for the given pool. Only callable by BunniHub.
+    function updateOracle(PoolKey calldata key) external {
+        if (msg.sender != address(hub)) revert BunniHook__NotBunniHub();
+        _beforeModifyPositionUpdatePool(key);
+    }
+
     /// -----------------------------------------------------------------------
     /// Owner functions
     /// -----------------------------------------------------------------------
@@ -183,12 +189,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// @inheritdoc IHooks
     function beforeModifyPosition(
         address caller,
-        PoolKey calldata key,
+        PoolKey calldata, /* key */
         IPoolManager.ModifyPositionParams calldata,
         bytes calldata
-    ) external override poolManagerOnly returns (bytes4) {
+    ) external view override poolManagerOnly returns (bytes4) {
         if (caller != address(hub)) revert BunniHook__NotBunniHub();
-        _beforeModifyPositionUpdatePool(key);
+        // Note: we don't need to update the oracle here because updateOracle() is called by BunniHub.deposit()
         return BunniHook.beforeModifyPosition.selector;
     }
 
