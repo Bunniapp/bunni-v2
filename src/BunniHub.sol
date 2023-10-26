@@ -112,24 +112,13 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             revert BunniHub__PoolKeyDoesNotMatchId();
         }
 
-        // update TWAP oracle
+        // update TWAP oracle and optionally observe
         BunniHook hook = BunniHook(address(params.poolKey.hooks));
-        hook.updateOracle(params.poolKey);
-
-        // fetch values from pool
         (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(state.poolId);
-        int24 arithmeticMeanTick;
         (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
-        if (useTwap) {
-            // LDF uses TWAP
-            // compute TWAP value
-            uint32[] memory secondsAgos = new uint32[](2);
-            secondsAgos[0] = twapSecondsAgo;
-            secondsAgos[1] = 0;
-            (int56[] memory tickCumulatives,) = hook.observe(params.poolKey, secondsAgos);
-            int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-            arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
-        }
+        int24 arithmeticMeanTick = hook.updateOracleAndObserve(state.poolId, useTwap, currentTick, twapSecondsAgo);
+
+        // compute sqrt ratios
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, params.poolKey.tickSpacing);
         uint160 roundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(roundedTick);
         uint160 nextRoundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextRoundedTick);
@@ -155,7 +144,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             params.amount0Desired.mulDiv(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
             params.amount1Desired.mulDiv(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
-        addedLiquidity = totalLiquidity.mulDiv(liquidityDensityOfRoundedTickX96, Q96).toUint128();
+        addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
         // compute token amounts
         (uint256 roundedTickAmount0, uint256 roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
@@ -529,21 +518,6 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         shareToken.mint(recipient, shares);
     }
 
-    function _compound(PoolKey memory poolKey, int24 tickLower, int24 tickUpper)
-        internal
-        returns (uint256 feeToAdd0, uint256 feeToAdd1)
-    {
-        // trigger an update of the position fees owed snapshots
-        BalanceDelta feeDelta = poolManager.modifyPosition(
-            poolKey,
-            IPoolManager.ModifyPositionParams({tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: 0}),
-            bytes("")
-        );
-
-        // negate values to get fees owed
-        (feeToAdd0, feeToAdd1) = (uint256(uint128(-feeDelta.amount0())), uint256(uint128(-feeDelta.amount1())));
-    }
-
     /// @param state The state associated with the Bunni token
     /// @param liquidityDelta The amount of liquidity to add/subtract
     /// @param user The address to pay/receive the tokens
@@ -670,45 +644,59 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     function _hookModifyLiquidityLockCallback(HookCallbackInputData memory data) internal {
         (uint128 initialReserve0, uint128 initialReserve1) = (data.state.reserve0, data.state.reserve1);
 
+        IPoolManager.ModifyPositionParams memory params;
+
         // compound fees
         // we do this after every swap (assuming hook is honest)
         // which means it's not necessary to compound before/after depositing/withdrawing
         if (data.compound) {
             (, int24 currentTick,,) = poolManager.getSlot0(data.state.poolId);
             (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, data.poolKey.tickSpacing);
-            (uint256 compoundAmount0, uint256 compoundAmount1) = _compound(data.poolKey, roundedTick, nextRoundedTick);
-            data.state.reserve0 += compoundAmount0.toUint128();
-            data.state.reserve1 += compoundAmount1.toUint128();
+
+            // trigger an update of the position fees owed snapshots
+            params.tickLower = roundedTick;
+            params.tickUpper = nextRoundedTick;
+            BalanceDelta feeDelta = poolManager.modifyPosition(data.poolKey, params, bytes(""));
+
+            // negate values to get fees owed
+            (uint128 compoundAmount0, uint128 compoundAmount1) =
+                (uint128(-feeDelta.amount0()), uint128(-feeDelta.amount1()));
+
+            // add fees to reserves
+            data.state.reserve0 += compoundAmount0;
+            data.state.reserve1 += compoundAmount1;
 
             // emit event
             emit Compound(data.bunniToken, compoundAmount0, compoundAmount1);
         }
 
         // modify the liquidity of all specified ticks
-        uint256 numTicks = data.liquidityDeltas.length;
-        for (uint256 i; i < numTicks;) {
-            BalanceDelta balanceDelta = poolManager.modifyPosition(
-                data.poolKey,
-                IPoolManager.ModifyPositionParams({
-                    tickLower: data.liquidityDeltas[i].tickLower,
-                    tickUpper: data.liquidityDeltas[i].tickLower + data.poolKey.tickSpacing,
-                    liquidityDelta: data.liquidityDeltas[i].delta
-                }),
-                bytes("")
-            );
+        {
+            uint256 numTicks = data.liquidityDeltas.length;
+            for (uint256 i; i < numTicks;) {
+                params.tickLower = data.liquidityDeltas[i].tickLower;
+                params.tickUpper = data.liquidityDeltas[i].tickLower + data.poolKey.tickSpacing;
+                params.liquidityDelta = data.liquidityDeltas[i].delta;
 
-            // update pool reserves
-            // this prevents malicious hooks from adding liquidity using other pools' reserves
-            if (data.liquidityDeltas[i].delta > 0) {
-                data.state.reserve0 -= int256(balanceDelta.amount0()).toUint256().toUint128();
-                data.state.reserve1 -= int256(balanceDelta.amount1()).toUint256().toUint128();
-            } else if (data.liquidityDeltas[i].delta < 0) {
-                data.state.reserve0 += int256(-balanceDelta.amount0()).toUint256().toUint128();
-                data.state.reserve1 += int256(-balanceDelta.amount1()).toUint256().toUint128();
-            }
+                BalanceDelta balanceDelta = poolManager.modifyPosition(data.poolKey, params, bytes(""));
 
-            unchecked {
-                ++i;
+                // update pool reserves
+                // this prevents malicious hooks from adding liquidity using other pools' reserves
+                (int128 amount0, int128 amount1) = (balanceDelta.amount0(), balanceDelta.amount1());
+                if (amount0 > 0) {
+                    data.state.reserve0 -= uint128(amount0);
+                } else if (amount0 < 0) {
+                    data.state.reserve0 += uint128(-amount0);
+                }
+                if (amount1 > 0) {
+                    data.state.reserve1 -= uint128(amount1);
+                } else if (amount1 < 0) {
+                    data.state.reserve1 += uint128(-amount1);
+                }
+
+                unchecked {
+                    ++i;
+                }
             }
         }
 

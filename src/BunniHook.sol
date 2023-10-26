@@ -15,7 +15,6 @@ import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamic
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 
 import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
-import {Oracle} from "@uniswap/v4-periphery/contracts/libraries/Oracle.sol";
 
 import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
@@ -25,6 +24,7 @@ import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
 import "./lib/LDFParams.sol";
+import {Oracle} from "./lib/Oracle.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {IBunniHub, IBunniToken} from "./interfaces/IBunniHub.sol";
 
@@ -93,9 +93,23 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @notice Update the TWAP oracle for the given pool. Only callable by BunniHub.
-    function updateOracle(PoolKey calldata key) external {
+    function updateOracleAndObserve(PoolId id, bool shouldObserve, int24 tick, uint24 twapSecondsAgo)
+        external
+        returns (int24 arithmeticMeanTick)
+    {
         if (msg.sender != address(hub)) revert BunniHook__NotBunniHub();
-        _beforeModifyPositionUpdatePool(key);
+
+        // update TWAP oracle
+        (uint16 updatedIndex, uint16 updatedCardinality) = observations[id].write(
+            states[id].index, uint32(block.timestamp), tick, states[id].cardinality, states[id].cardinalityNext
+        );
+        (states[id].index, states[id].cardinality) = (updatedIndex, updatedCardinality);
+
+        // observe if needed
+        if (shouldObserve) {
+            return _getTwap(id, tick, twapSecondsAgo, updatedIndex, updatedCardinality);
+        }
+        return 0;
     }
 
     /// -----------------------------------------------------------------------
@@ -117,29 +131,25 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         view
         returns (Oracle.Observation memory observation)
     {
-        observation = observations[PoolId.wrap(keccak256(abi.encode(key)))][index];
+        observation = observations[key.toId()][index];
     }
 
     /// @notice Returns the state for the given pool key
     function getState(PoolKey calldata key) external view returns (ObservationState memory state) {
-        state = states[PoolId.wrap(keccak256(abi.encode(key)))];
+        state = states[key.toId()];
     }
 
     /// @notice Observe the given pool for the timestamps
     function observe(PoolKey calldata key, uint32[] calldata secondsAgos)
         external
         view
-        returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s)
+        returns (int56[] memory tickCumulatives)
     {
         PoolId id = key.toId();
-
         ObservationState memory state = states[id];
-
         (, int24 tick,,) = poolManager.getSlot0(id);
 
-        uint128 liquidity = poolManager.getLiquidity(id);
-
-        return observations[id].observe(_blockTimestamp(), secondsAgos, tick, state.index, liquidity, state.cardinality);
+        return observations[id].observe(uint32(block.timestamp), secondsAgos, tick, state.index, state.cardinality);
     }
 
     /// -----------------------------------------------------------------------
@@ -182,7 +192,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         returns (bytes4)
     {
         PoolId id = key.toId();
-        (states[id].cardinality, states[id].cardinalityNext) = observations[id].initialize(_blockTimestamp());
+        (states[id].cardinality, states[id].cardinalityNext) = observations[id].initialize(uint32(block.timestamp));
         return BunniHook.afterInitialize.selector;
     }
 
@@ -259,71 +269,47 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// Internal functions
     /// -----------------------------------------------------------------------
 
-    /// @dev For mocking
-    function _blockTimestamp() internal view virtual returns (uint32) {
-        return uint32(block.timestamp);
-    }
+    function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
+        if (numTicksToRemove != 0) revert BunniHook__SwapAlreadyInProgress();
 
-    function _beforeModifyPositionUpdatePool(PoolKey calldata key) private {
         PoolId id = key.toId();
-        (, int24 currentTick,,) = poolManager.getSlot0(id);
+        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(id);
         uint128 liquidity = poolManager.getLiquidity(id);
 
         // update TWAP oracle
-        (states[id].index, states[id].cardinality) = observations[id].write(
-            states[id].index,
-            _blockTimestamp(),
-            currentTick,
-            liquidity,
-            states[id].cardinality,
-            states[id].cardinalityNext
+        // do it before we fetch the arithmeticMeanTick
+        (uint16 updatedIndex, uint16 updatedCardinality) = observations[id].write(
+            states[id].index, uint32(block.timestamp), currentTick, states[id].cardinality, states[id].cardinalityNext
         );
-    }
+        (states[id].index, states[id].cardinality) = (updatedIndex, updatedCardinality);
 
-    function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
-        if (numTicksToRemove != 0) revert BunniHook__SwapAlreadyInProgress();
-        PoolId id = key.toId();
-        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(id);
-
-        // get current tick token balances & reserves
-        IBunniToken bunniToken = hub.bunniTokenOfPool(id);
-        BunniTokenState memory bunniState = hub.bunniTokenState(bunniToken);
-        if (address(bunniState.liquidityDensityFunction) == address(0)) revert BunniHook__BunniTokenNotInitialized();
+        // get current tick token balances
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
-        uint128 liquidity = poolManager.getLiquidity(id);
         uint160 roundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(roundedTick);
         uint160 nextRoundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextRoundedTick);
         (uint256 balance0, uint256 balance1) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidity, false
         );
-        (balance0, balance1) = (balance0 + bunniState.reserve0, balance1 + bunniState.reserve1);
 
-        // update TWAP oracle
-        // do it before we fetch the arithmeticMeanTick
-        (uint16 updatedIndex, uint16 updatedCardinality) = observations[id].write(
-            states[id].index,
-            _blockTimestamp(),
-            currentTick,
-            liquidity,
-            states[id].cardinality,
-            states[id].cardinalityNext
-        );
-        (states[id].index, states[id].cardinality) = (updatedIndex, updatedCardinality);
+        // get reserves and add to balance
+        IBunniToken bunniToken = hub.bunniTokenOfPool(id);
+        BunniTokenState memory bunniState = hub.bunniTokenState(bunniToken);
+        if (address(bunniState.liquidityDensityFunction) == address(0)) revert BunniHook__BunniTokenNotInitialized();
+        (balance0, balance1) = (balance0 + bunniState.reserve0, balance1 + bunniState.reserve1);
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
-        int24 feeMeanTick;
         (bool useTwap, uint8 compoundThreshold, uint24 twapSecondsAgo, bytes11 decodedLDFParams) =
             decodeLDFParams(bunniState.ldfParams);
         if (useTwap) {
             // need to use TWAP
             // compute TWAP value
-            arithmeticMeanTick = _getTwap(id, currentTick, liquidity, twapSecondsAgo, updatedIndex, updatedCardinality);
+            arithmeticMeanTick = _getTwap(id, currentTick, twapSecondsAgo, updatedIndex, updatedCardinality);
         }
+        int24 feeMeanTick;
         if (bunniState.feeMin != bunniState.feeMax && bunniState.feeQuadraticMultiplier != 0) {
             // fee calculation needs TWAP
-            feeMeanTick =
-                _getTwap(id, currentTick, liquidity, bunniState.feeTwapSecondsAgo, updatedIndex, updatedCardinality);
+            feeMeanTick = _getTwap(id, currentTick, bunniState.feeTwapSecondsAgo, updatedIndex, updatedCardinality);
         }
 
         // get densities
@@ -349,7 +335,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         );
 
         // compute updated current tick liquidity
-        uint128 updatedRoundedTickLiquidity = totalLiquidity.mulDiv(liquidityDensityOfRoundedTickX96, Q96).toUint128();
+        uint128 updatedRoundedTickLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
         // update current tick liquidity if necessary
         bytes memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
@@ -376,9 +362,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         // simulate swap to see if current tick liquidity is sufficient
         uint256 amountIn;
         uint256 amountOut;
-        uint256 feeAmount;
-        bool exactInput = params.amountSpecified > 0;
-        uint160 sqrtPriceStartX96 = sqrtPriceX96;
         int24 tick = currentTick;
         int24 tickNext = params.zeroForOne ? roundedTick : nextRoundedTick;
         if (tickNext < TickMath.MIN_TICK) {
@@ -386,36 +369,45 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         } else if (tickNext > TickMath.MAX_TICK) {
             tickNext = TickMath.MAX_TICK;
         }
-        uint160 sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
-        (sqrtPriceX96, amountIn, amountOut, feeAmount) = SwapMath.computeSwapStep(
-            sqrtPriceX96,
-            (
-                params.zeroForOne
-                    ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
-                    : sqrtPriceNextX96 > params.sqrtPriceLimitX96
-            ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
-            liquidity,
-            params.amountSpecified,
-            0
-        );
         int256 amountSpecifiedRemaining = params.amountSpecified;
-        unchecked {
-            if (exactInput) {
-                amountSpecifiedRemaining -= (amountIn + feeAmount).toInt256();
-            } else {
-                amountSpecifiedRemaining += amountOut.toInt256();
-            }
-        }
-        if (sqrtPriceX96 == sqrtPriceNextX96) {
-            unchecked {
-                tick = params.zeroForOne ? tickNext - 1 : tickNext;
-            }
-        } else if (sqrtPriceX96 != sqrtPriceStartX96) {
-            tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
-        }
-        // if insufficient, add liquidity to the next tick and repeat
+        bool exactInput = amountSpecifiedRemaining > 0;
+        uint160 sqrtPriceStartX96;
+        uint160 sqrtPriceNextX96;
         uint24 numTicksToRemove_;
-        while (amountSpecifiedRemaining != 0 && sqrtPriceX96 != params.sqrtPriceLimitX96) {
+        while (true) {
+            // compute sqrtPriceX96 and amountSpecifiedRemaining
+            sqrtPriceStartX96 = sqrtPriceX96;
+            sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
+            (sqrtPriceX96, amountIn, amountOut,) = SwapMath.computeSwapStep(
+                sqrtPriceX96,
+                (
+                    params.zeroForOne
+                        ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
+                        : sqrtPriceNextX96 > params.sqrtPriceLimitX96
+                ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
+                liquidity,
+                params.amountSpecified,
+                0
+            );
+            unchecked {
+                if (exactInput) {
+                    amountSpecifiedRemaining -= amountIn.toInt256();
+                } else {
+                    amountSpecifiedRemaining += amountOut.toInt256();
+                }
+            }
+            if (sqrtPriceX96 == sqrtPriceNextX96) {
+                unchecked {
+                    tick = params.zeroForOne ? tickNext - 1 : tickNext;
+                }
+            } else if (sqrtPriceX96 != sqrtPriceStartX96) {
+                tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+            }
+
+            // break if the input has been exhausted or the price limit has been reached
+            if (amountSpecifiedRemaining == 0 || sqrtPriceX96 == params.sqrtPriceLimitX96) break;
+
+            // current tick liquidity insufficient, add liquidity to the next tick and repeat
             // update tickNext, liquidity, and buffer
             // we will add `liquidity` to the range zeroForOne ? [tickNext, tickNext + tickSpacing) : [tickNext - tickSpacing, tickNext)
             // (tickNext here refers to the updated tickNext value)
@@ -430,39 +422,10 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 buffer: buffer,
                 liquidityDensityFunction: bunniState.liquidityDensityFunction
             });
+
             unchecked {
                 ++bufferLength;
-            }
-
-            // recompute sqrtPriceX96 and amountSpecifiedRemaining
-            sqrtPriceStartX96 = sqrtPriceX96;
-            sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
-            (sqrtPriceX96, amountIn, amountOut, feeAmount) = SwapMath.computeSwapStep(
-                sqrtPriceX96,
-                (
-                    params.zeroForOne
-                        ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
-                        : sqrtPriceNextX96 > params.sqrtPriceLimitX96
-                ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
-                liquidity,
-                params.amountSpecified,
-                0
-            );
-            unchecked {
-                if (exactInput) {
-                    amountSpecifiedRemaining -= (amountIn + feeAmount).toInt256();
-                } else {
-                    amountSpecifiedRemaining += amountOut.toInt256();
-                }
                 ++numTicksToRemove_;
-            }
-
-            if (sqrtPriceX96 == sqrtPriceNextX96) {
-                unchecked {
-                    tick = params.zeroForOne ? tickNext - 1 : tickNext;
-                }
-            } else if (sqrtPriceX96 != sqrtPriceStartX96) {
-                tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
             }
         }
 
@@ -568,18 +531,14 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     function _getTwap(
         PoolId id,
         int24 currentTick,
-        uint128 liquidity,
         uint32 twapSecondsAgo,
         uint16 updatedIndex,
         uint16 updatedCardinality
     ) internal view returns (int24 arithmeticMeanTick) {
-        uint32[] memory secondsAgos = new uint32[](2);
-        secondsAgos[0] = twapSecondsAgo;
-        secondsAgos[1] = 0;
-        (int56[] memory tickCumulatives,) = observations[id].observe(
-            _blockTimestamp(), secondsAgos, currentTick, updatedIndex, liquidity, updatedCardinality
+        (int56 tickCumulative0, int56 tickCumulative1) = observations[id].observeDouble(
+            uint32(block.timestamp), twapSecondsAgo, 0, currentTick, updatedIndex, updatedCardinality
         );
-        int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
+        int56 tickCumulativesDelta = tickCumulative1 - tickCumulative0;
         arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 }
