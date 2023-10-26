@@ -66,6 +66,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @param poolId The Uniswap V4 pool's ID
     event NewBunni(IBunniToken indexed bunniToken, PoolId indexed poolId);
 
+    /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param bunniToken The BunniToken associated with the call
     /// @param amount0Desired The desired amount of token0 to be spent,
     /// @param amount1Desired The desired amount of token1 to be spent,
@@ -74,6 +75,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @param deadline The time by which the transaction must be included to effect the change
     /// @param recipient The recipient of the minted share tokens
     struct DepositParams {
+        PoolKey poolKey;
         IBunniToken bunniToken;
         uint256 amount0Desired;
         uint256 amount1Desired;
@@ -100,6 +102,7 @@ interface IBunniHub is IMulticall, ILockCallback {
         external
         returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1);
 
+    /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param bunniToken The BunniToken associated with the call
     /// @param recipient The user if not withdrawing ETH, address(0) if withdrawing ETH
     /// @param shares The amount of ERC20 tokens (this) to burn,
@@ -107,6 +110,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @param amount1Min The minimum amount of token1 that should be accounted for the burned liquidity,
     /// @param deadline The time by which the transaction must be included to effect the change
     struct WithdrawParams {
+        PoolKey poolKey;
         IBunniToken bunniToken;
         address recipient;
         uint256 shares;
@@ -141,12 +145,20 @@ interface IBunniHub is IMulticall, ILockCallback {
         int24 tickSpacing,
         ILiquidityDensityFunction liquidityDensityFunction,
         bytes12 ldfParams,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier,
+        uint24 feeTwapSecondsAgo,
         IHooks hooks,
         uint160 sqrtPriceX96
-    ) external returns (IBunniToken token);
+    ) external returns (IBunniToken token, PoolKey memory key);
 
-    function hookModifyLiquidity(IBunniToken bunniToken, LiquidityDelta[] calldata liquidityDeltas, bool compound)
-        external;
+    function hookModifyLiquidity(
+        PoolKey calldata poolKey,
+        IBunniToken bunniToken,
+        LiquidityDelta[] calldata liquidityDeltas,
+        bool compound
+    ) external;
 
     function poolManager() external view returns (IPoolManager);
     function bunniTokenState(IBunniToken bunniToken) external view returns (BunniTokenState memory);

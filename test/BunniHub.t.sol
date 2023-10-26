@@ -28,15 +28,19 @@ contract BunniHubTest is Test {
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
-    uint8 internal constant HOOK_SWAP_FEE = 0x88; // 12.5% in either direction
+    uint24 internal constant HOOK_SWAP_FEE = 0x208000; // 12.5% in either direction
     uint64 internal constant ALPHA = 0.7e18;
     uint256 internal constant MAX_ERROR = 1e9;
+    uint24 internal constant FEE_MIN = 0.0001e6;
+    uint24 internal constant FEE_MAX = 0.1e6;
+    uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
     ERC20Mock internal token1;
     IBunniHub internal hub;
     IBunniToken internal bunniToken;
+    PoolKey internal key;
     BunniHook internal constant bunniHook = BunniHook(
         address(
             uint160(
@@ -71,15 +75,22 @@ contract BunniHubTest is Test {
         ldf = new DiscreteLaplaceDistribution();
 
         // initialize bunni
-        bunniToken = hub.deployBunniToken(
+        (bunniToken, key) = hub.deployBunniToken(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
             TICK_SPACING,
             ldf,
             bytes12(abi.encodePacked(uint8(0x00 | 0x64), int24(0), ALPHA)),
+            FEE_MIN,
+            FEE_MAX,
+            FEE_QUADRATIC_MULTIPLIER,
+            30 minutes,
             bunniHook,
             TickMath.getSqrtRatioAtTick(4)
         );
+
+        // increase oracle cardinality
+        bunniHook.increaseCardinalityNext(key, 100);
 
         // approve tokens
         token0.approve(address(hub), type(uint256).max);
@@ -95,6 +106,9 @@ contract BunniHubTest is Test {
         token1.approve(address(hub), type(uint256).max);
         vm.stopPrank();
         _makeDeposit(depositAmount0, depositAmount1, address(0x6969));
+
+        // skip a bit to initialize oracle
+        skip(1 days);
     }
 
     function test_deposit(uint256 depositAmount0, uint256 depositAmount1) public {
@@ -121,6 +135,7 @@ contract BunniHubTest is Test {
 
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
             bunniToken: bunniToken,
             recipient: address(this),
             shares: shares,
@@ -146,9 +161,8 @@ contract BunniHubTest is Test {
 
         token0.mint(address(this), inputAmount);
 
-        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
         swapper.swap(
-            state.poolKey,
+            key,
             IPoolManager.SwapParams({
                 zeroForOne: true,
                 amountSpecified: int256(inputAmount),
@@ -162,20 +176,19 @@ contract BunniHubTest is Test {
 
         token0.mint(address(this), inputAmount);
 
-        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         swapper.swap(
-            state.poolKey,
+            key,
             IPoolManager.SwapParams({
                 zeroForOne: true,
                 amountSpecified: int256(inputAmount),
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
             })
         );
-        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
-        assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing, "didn't cross one tick");
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
     }
 
     function test_swap_zeroForOne_twoTickCrossing() public {
@@ -183,20 +196,19 @@ contract BunniHubTest is Test {
 
         token0.mint(address(this), inputAmount);
 
-        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         swapper.swap(
-            state.poolKey,
+            key,
             IPoolManager.SwapParams({
                 zeroForOne: true,
                 amountSpecified: int256(inputAmount),
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
             })
         );
-        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
-        assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing * 2, "didn't cross two ticks");
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
     }
 
     function test_swap_zeroForOne_boundaryCondition() public {
@@ -208,20 +220,19 @@ contract BunniHubTest is Test {
 
         token0.mint(address(this), inputAmount);
 
-        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         swapper.swap(
-            state.poolKey,
+            key,
             IPoolManager.SwapParams({
                 zeroForOne: true,
                 amountSpecified: int256(inputAmount),
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-10) // limit tick is -10 but we'll end up at -11
             })
         );
-        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
-        assertEq(afterRoundedTick, beforeRoundedTick - state.poolKey.tickSpacing * 2, "didn't cross two ticks");
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
     }
 
     function test_swap_oneForZero_noTickCrossing() public {
@@ -229,9 +240,8 @@ contract BunniHubTest is Test {
 
         token1.mint(address(this), inputAmount);
 
-        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
         swapper.swap(
-            state.poolKey,
+            key,
             IPoolManager.SwapParams({
                 zeroForOne: false,
                 amountSpecified: int256(inputAmount),
@@ -245,20 +255,19 @@ contract BunniHubTest is Test {
 
         token1.mint(address(this), inputAmount);
 
-        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         swapper.swap(
-            state.poolKey,
+            key,
             IPoolManager.SwapParams({
                 zeroForOne: false,
                 amountSpecified: int256(inputAmount),
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
             })
         );
-        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
-        assertEq(afterRoundedTick, beforeRoundedTick + state.poolKey.tickSpacing, "didn't cross one tick");
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
     }
 
     function test_swap_oneForZero_twoTickCrossing() public {
@@ -266,20 +275,19 @@ contract BunniHubTest is Test {
 
         token1.mint(address(this), inputAmount);
 
-        BunniTokenState memory state = hub.bunniTokenState(bunniToken);
-        (, int24 currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 beforeRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         swapper.swap(
-            state.poolKey,
+            key,
             IPoolManager.SwapParams({
                 zeroForOne: false,
                 amountSpecified: int256(inputAmount),
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
             })
         );
-        (, currentTick,,) = poolManager.getSlot0(state.poolKey.toId());
-        int24 afterRoundedTick = roundTickSingle(currentTick, state.poolKey.tickSpacing);
-        assertEq(afterRoundedTick, beforeRoundedTick + state.poolKey.tickSpacing * 2, "didn't cross two ticks");
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
     }
 
     /*
@@ -314,6 +322,7 @@ contract BunniHubTest is Test {
 
         // deposit tokens
         IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
+            poolKey: key,
             bunniToken: bunniToken,
             amount0Desired: depositAmount0,
             amount1Desired: depositAmount1,
