@@ -46,6 +46,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for IERC20;
+    using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint128;
     using FixedPointMathLib for uint256;
@@ -102,6 +103,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     /// @inheritdoc IBunniHub
     function deposit(DepositParams calldata params)
         external
+        payable
         virtual
         override
         checkDeadline(params.deadline)
@@ -243,6 +245,13 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         );
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
             revert BunniHub__SlippageTooHigh();
+        }
+
+        // refund excess ETH
+        // Note: since we transfer the entire balance, multicalls can only contain a single
+        // deposit() call that uses ETH.
+        if (address(this).balance != 0) {
+            payable(msg.sender).transfer(address(this).balance);
         }
 
         // emit event
@@ -584,11 +593,11 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
             // settle currencies
             if (payAmount0 != 0) {
-                _pay(Currency.unwrap(input.poolKey.currency0), input.user, address(poolManager), payAmount0);
+                _pay(input.poolKey.currency0, input.user, address(poolManager), payAmount0);
                 poolManager.settle(input.poolKey.currency0);
             }
             if (payAmount1 != 0) {
-                _pay(Currency.unwrap(input.poolKey.currency1), input.user, address(poolManager), payAmount1);
+                _pay(input.poolKey.currency1, input.user, address(poolManager), payAmount1);
                 poolManager.settle(input.poolKey.currency1);
             }
         } else {
@@ -747,13 +756,11 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     /// @param payer The entity that must pay
     /// @param recipient The entity that will receive payment
     /// @param value The amount to pay
-    function _pay(address token, address payer, address recipient, uint256 value) internal {
-        if (payer == address(this)) {
-            // pay with tokens already in the contract (for the exact input multihop case)
-            IERC20(token).safeTransfer(recipient, value);
+    function _pay(Currency token, address payer, address recipient, uint256 value) internal {
+        if (token.isNative()) {
+            recipient.safeTransferETH(value);
         } else {
-            // pull payment
-            IERC20(token).safeTransferFrom(payer, recipient, value);
+            IERC20(Currency.unwrap(token)).safeTransferFrom(payer, recipient, value);
         }
     }
 

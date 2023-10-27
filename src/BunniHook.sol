@@ -180,7 +180,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @inheritdoc IHookFeeManager
-    function getHookFees(PoolKey calldata key) external view override returns (uint24) {
+    function getHookFees(PoolKey calldata /* key */ ) external view override returns (uint24) {
         return hookFees;
     }
 

@@ -100,6 +100,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @return amount1 The amount of token1 to acheive resulting liquidity
     function deposit(DepositParams calldata params)
         external
+        payable
         returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
