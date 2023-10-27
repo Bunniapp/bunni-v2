@@ -229,8 +229,10 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         // withdraw liquidity from inactive ticks
         int24 roundedTick = firstTickToRemove;
         uint24 numTicksToRemove_ = numTicksToRemove;
-        delete firstTickToRemove;
-        delete numTicksToRemove;
+        if (numTicksToRemove_ != 0) {
+            delete firstTickToRemove;
+            delete numTicksToRemove;
+        }
 
         PoolId id = key.toId();
         LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
