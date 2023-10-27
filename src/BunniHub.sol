@@ -216,8 +216,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         // update reserves
         // reserves represent the amount of tokens not in the current tick
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + depositAmount0.toUint128();
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + depositAmount1.toUint128();
+        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + depositAmount0;
+        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + depositAmount1;
 
         /// -----------------------------------------------------------------------
         /// External calls
@@ -289,8 +289,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         // reserves represent the amount of tokens not in the current tick
         uint256 removedReserve0 = state.reserve0.mulDiv(params.shares, currentTotalSupply);
         uint256 removedReserve1 = state.reserve1.mulDiv(params.shares, currentTotalSupply);
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 - removedReserve0.toUint128();
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 - removedReserve1.toUint128();
+        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 - removedReserve0;
+        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 - removedReserve1;
 
         /// -----------------------------------------------------------------------
         /// External calls
@@ -642,7 +642,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
     /// @dev Adds liquidity using a pool's reserves. Expected to be called by the pool's hook.
     function _hookModifyLiquidityLockCallback(HookCallbackInputData memory data) internal {
-        (uint128 initialReserve0, uint128 initialReserve1) = (data.state.reserve0, data.state.reserve1);
+        (uint256 initialReserve0, uint256 initialReserve1) = (data.state.reserve0, data.state.reserve1);
 
         IPoolManager.ModifyPositionParams memory params;
 

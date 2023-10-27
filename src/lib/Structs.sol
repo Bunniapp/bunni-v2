@@ -15,8 +15,8 @@ struct BunniTokenState {
     uint24 feeMax;
     uint24 feeQuadraticMultiplier;
     uint24 feeTwapSecondsAgo;
-    uint128 reserve0;
-    uint128 reserve1;
+    uint256 reserve0;
+    uint256 reserve1;
 }
 
 struct LiquidityDelta {
