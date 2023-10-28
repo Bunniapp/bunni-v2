@@ -255,14 +255,14 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             }
         }
 
-        // call BunniHub to remove liquidity
-        // we always do this to compound after every swap
-        hub.hookModifyLiquidity({
-            poolKey: key,
-            bunniToken: hub.bunniTokenOfPool(id),
-            liquidityDeltas: liquidityDeltas,
-            compound: true
-        });
+        if (numTicksToRemove_ != 0) {
+            // call BunniHub to remove liquidity
+            hub.hookModifyLiquidity({
+                poolKey: key,
+                bunniToken: hub.bunniTokenOfPool(id),
+                liquidityDeltas: liquidityDeltas
+            });
+        }
 
         return BunniHook.afterSwap.selector;
     }
@@ -472,8 +472,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             hub.hookModifyLiquidity({
                 poolKey: key,
                 bunniToken: bunniToken,
-                liquidityDeltas: abi.decode(abi.encodePacked(uint256(0x20), bufferLength, buffer), (LiquidityDelta[])), // uint256(0x20) denotes the location of the start of the array in the calldata
-                compound: false
+                liquidityDeltas: abi.decode(abi.encodePacked(uint256(0x20), bufferLength, buffer), (LiquidityDelta[])) // uint256(0x20) denotes the location of the start of the array in the calldata
             });
         }
     }

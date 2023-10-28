@@ -10,8 +10,8 @@ function max(uint256 a, uint256 b) pure returns (uint256) {
     return a > b ? a : b;
 }
 
-function abs(int24 a) pure returns (uint256) {
-    return a > 0 ? uint256(int256(a)) : uint256(-int256(a));
+function abs(int256 a) pure returns (uint256) {
+    return a > 0 ? uint256(a) : uint256(-a);
 }
 
 function absDiff(uint256 a, uint256 b) pure returns (bool positive, uint256 diff) {

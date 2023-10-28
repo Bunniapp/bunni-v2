@@ -6,6 +6,7 @@ pragma abicoder v2;
 import {PoolId} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
+import {BalanceDelta} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
 
@@ -57,10 +58,9 @@ interface IBunniHub is IMulticall, ILockCallback {
         uint256 shares
     );
     /// @notice Emitted when fees are compounded back into liquidity
-    /// @param bunniToken The BunniToken associated with the call
-    /// @param amount0 The amount of token0 added to the liquidity position
-    /// @param amount1 The amount of token1 added to the liquidity position
-    event Compound(IBunniToken indexed bunniToken, uint256 amount0, uint256 amount1);
+    /// @param poolId The Uniswap V4 pool's ID
+    /// @param feeDelta The amount of token0 and token1 added to the reserves
+    event Compound(PoolId indexed poolId, BalanceDelta feeDelta);
     /// @notice Emitted when a new IBunniToken is created
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
@@ -157,8 +157,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     function hookModifyLiquidity(
         PoolKey calldata poolKey,
         IBunniToken bunniToken,
-        LiquidityDelta[] calldata liquidityDeltas,
-        bool compound
+        LiquidityDelta[] calldata liquidityDeltas
     ) external;
 
     function poolManager() external view returns (IPoolManager);

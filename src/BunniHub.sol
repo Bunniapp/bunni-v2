@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 
 import "forge-std/console2.sol";
 
+import "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
@@ -13,7 +14,6 @@ import {FixedPoint96} from "@uniswap/v4-core/contracts/libraries/FixedPoint96.so
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/contracts/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 
 import {CREATE3} from "solady/src/utils/CREATE3.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
@@ -204,8 +204,9 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         /// -----------------------------------------------------------------------
 
         // mint shares
+        uint128 currentLiquidity = poolManager.getLiquidity(state.poolId);
         (uint256 existingAmount0, uint256 existingAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, poolManager.getLiquidity(state.poolId), false
+            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, currentLiquidity, false
         );
         shares = _mintShares(
             params.bunniToken,
@@ -236,9 +237,10 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                         tickUpper: nextRoundedTick,
                         liquidityDelta: uint256(addedLiquidity).toInt256(),
                         user: msg.sender,
-                        reserveAmount0: depositAmount0,
-                        reserveAmount1: depositAmount1,
-                        isDeposit: true
+                        reserveDelta: toBalanceDelta(
+                            depositAmount0.toInt256().toInt128(), depositAmount1.toInt256().toInt128()
+                            ),
+                        currentLiquidity: currentLiquidity
                     })
                 )
             )
@@ -318,9 +320,10 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                             tickUpper: nextRoundedTick,
                             liquidityDelta: -uint256(removedLiquidity).toInt256(),
                             user: msg.sender,
-                            reserveAmount0: removedReserve0,
-                            reserveAmount1: removedReserve1,
-                            isDeposit: false
+                            reserveDelta: toBalanceDelta(
+                                -removedReserve0.toInt256().toInt128(), -removedReserve1.toInt256().toInt128()
+                                ),
+                            currentLiquidity: existingLiquidity
                         })
                     )
                 )
@@ -432,8 +435,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     function hookModifyLiquidity(
         PoolKey calldata poolKey,
         IBunniToken bunniToken,
-        LiquidityDelta[] calldata liquidityDeltas,
-        bool compound
+        LiquidityDelta[] calldata liquidityDeltas
     ) external override {
         BunniTokenState memory state = _getStateOfBunniToken(bunniToken);
         if (PoolId.unwrap(poolKey.toId()) != PoolId.unwrap(state.poolId)) {
@@ -449,7 +451,6 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                         poolKey: poolKey,
                         bunniToken: bunniToken,
                         state: state,
-                        compound: compound,
                         liquidityDeltas: liquidityDeltas
                     })
                 )
@@ -535,10 +536,9 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         int24 tickLower;
         int24 tickUpper;
         int256 liquidityDelta;
-        uint256 reserveAmount0;
-        uint256 reserveAmount1;
+        BalanceDelta reserveDelta;
+        uint128 currentLiquidity;
         address user;
-        bool isDeposit;
     }
 
     struct ModifyLiquidityReturnData {
@@ -550,102 +550,42 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         internal
         returns (ModifyLiquidityReturnData memory returnData)
     {
-        int128 amount0;
-        int128 amount1;
-        {
-            // update liquidity
-            BalanceDelta delta = poolManager.modifyPosition(
-                input.poolKey,
-                IPoolManager.ModifyPositionParams({
-                    tickLower: input.tickLower,
-                    tickUpper: input.tickUpper,
-                    liquidityDelta: input.liquidityDelta
-                }),
-                bytes("")
-            );
-            (amount0, amount1) = (delta.amount0(), delta.amount1());
+        // compound fees into reserve
+        IPoolManager.ModifyPositionParams memory params;
+        params.tickLower = input.tickLower;
+        params.tickUpper = input.tickUpper;
+        BalanceDelta poolTokenDelta = input.reserveDelta;
+        if (input.currentLiquidity != 0) {
+            // negate pool delta to get fees owed
+            BalanceDelta feeDelta = BalanceDelta.wrap(0) - poolManager.modifyPosition(input.poolKey, params, bytes(""));
+
+            // add fees to the amount of pool tokens to mint/burn
+            poolTokenDelta = poolTokenDelta + feeDelta;
+
+            // emit event
+            emit Compound(input.poolKey.toId(), feeDelta);
         }
 
-        uint256 result0;
-        uint256 result1;
+        // update liquidity
+        params.liquidityDelta = input.liquidityDelta;
+        BalanceDelta delta = poolManager.modifyPosition(input.poolKey, params, bytes(""));
 
-        // transfer tokens owed
+        // amount of tokens to pay/take
+        BalanceDelta settleDelta = input.reserveDelta + delta;
 
-        if (input.isDeposit) {
-            // deposit
-            uint256 payAmount0;
-            uint256 payAmount1;
+        // mint/burn pool tokens
+        _updatePoolTokens(input.poolKey.currency0, input.poolKey.currency1, poolTokenDelta);
 
-            // we owe uniswap tokens
-            (result0, result1) = (uint256(uint128(amount0)), uint256(uint128(amount1)));
-            payAmount0 += result0;
-            payAmount1 += result1;
+        // settle currency payments to zero out delta with PoolManager
+        _settleCurrencies(input.user, input.poolKey.currency0, input.poolKey.currency1, settleDelta);
 
-            // deposit tokens into PoolManager
-            if (input.reserveAmount0 != 0) {
-                payAmount0 += input.reserveAmount0;
-                poolManager.mint(input.poolKey.currency0, address(this), input.reserveAmount0);
-            }
-            if (input.reserveAmount1 != 0) {
-                payAmount1 += input.reserveAmount1;
-                poolManager.mint(input.poolKey.currency1, address(this), input.reserveAmount1);
-            }
-
-            // settle currencies
-            if (payAmount0 != 0) {
-                _pay(input.poolKey.currency0, input.user, address(poolManager), payAmount0);
-                poolManager.settle(input.poolKey.currency0);
-            }
-            if (payAmount1 != 0) {
-                _pay(input.poolKey.currency1, input.user, address(poolManager), payAmount1);
-                poolManager.settle(input.poolKey.currency1);
-            }
-        } else {
-            // withdraw
-            uint256 takeAmount0;
-            uint256 takeAmount1;
-
-            // uniswap owes us tokens
-            (result0, result1) = (uint256(uint128(-amount0)), uint256(uint128(-amount1)));
-            takeAmount0 += result0;
-            takeAmount1 += result1;
-
-            // withdraw tokens from PoolManager
-            if (input.reserveAmount0 != 0 && input.reserveAmount1 != 0) {
-                _transferPoolTokenToManager(
-                    input.poolKey.currency0, input.poolKey.currency1, input.reserveAmount0, input.reserveAmount1
-                );
-                takeAmount0 += input.reserveAmount0;
-                takeAmount1 += input.reserveAmount1;
-            } else if (input.reserveAmount0 != 0) {
-                poolManager.safeTransferFrom(
-                    address(this), address(poolManager), input.poolKey.currency0.toId(), input.reserveAmount0, bytes("")
-                );
-                takeAmount0 += input.reserveAmount0;
-            } else if (input.reserveAmount1 != 0) {
-                poolManager.safeTransferFrom(
-                    address(this), address(poolManager), input.poolKey.currency1.toId(), input.reserveAmount1, bytes("")
-                );
-                takeAmount1 += input.reserveAmount1;
-            }
-
-            // settle currencies
-            if (takeAmount0 != 0) {
-                poolManager.take(input.poolKey.currency0, input.user, takeAmount0);
-            }
-            if (takeAmount1 != 0) {
-                poolManager.take(input.poolKey.currency1, input.user, takeAmount1);
-            }
-        }
-
-        (returnData.amount0, returnData.amount1) = (result0, result1);
+        (returnData.amount0, returnData.amount1) = (abs(delta.amount0()), abs(delta.amount1()));
     }
 
     struct HookCallbackInputData {
         PoolKey poolKey;
         IBunniToken bunniToken;
         BunniTokenState state;
-        bool compound;
         LiquidityDelta[] liquidityDeltas;
     }
 
@@ -654,30 +594,6 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         (uint256 initialReserve0, uint256 initialReserve1) = (data.state.reserve0, data.state.reserve1);
 
         IPoolManager.ModifyPositionParams memory params;
-
-        // compound fees
-        // we do this after every swap (assuming hook is honest)
-        // which means it's not necessary to compound before/after depositing/withdrawing
-        if (data.compound) {
-            (, int24 currentTick,,) = poolManager.getSlot0(data.state.poolId);
-            (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, data.poolKey.tickSpacing);
-
-            // trigger an update of the position fees owed snapshots
-            params.tickLower = roundedTick;
-            params.tickUpper = nextRoundedTick;
-            BalanceDelta feeDelta = poolManager.modifyPosition(data.poolKey, params, bytes(""));
-
-            // negate values to get fees owed
-            (uint128 compoundAmount0, uint128 compoundAmount1) =
-                (uint128(-feeDelta.amount0()), uint128(-feeDelta.amount1()));
-
-            // add fees to reserves
-            data.state.reserve0 += compoundAmount0;
-            data.state.reserve1 += compoundAmount1;
-
-            // emit event
-            emit Compound(data.bunniToken, compoundAmount0, compoundAmount1);
-        }
 
         // modify the liquidity of all specified ticks
         {
@@ -713,43 +629,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         _bunniTokenState[data.bunniToken].reserve0 = data.state.reserve0;
         _bunniTokenState[data.bunniToken].reserve1 = data.state.reserve1;
 
-        // cannot have positive balance of one currency and negative balance of the other
-        // since we either add or remove liquidity
-        if (initialReserve0 > data.state.reserve0 && initialReserve1 > data.state.reserve1) {
-            // batch transfer ERC1155 tokens to PoolManager to settle debts
-            _transferPoolTokenToManager(
-                data.poolKey.currency0,
-                data.poolKey.currency1,
-                initialReserve0 - data.state.reserve0,
-                initialReserve1 - data.state.reserve1
-            );
-        } else if (initialReserve0 > data.state.reserve0) {
-            // transfer ERC1155 tokens to PoolManager to settle debts
-            poolManager.safeTransferFrom(
-                address(this),
-                address(poolManager),
-                data.poolKey.currency0.toId(),
-                initialReserve0 - data.state.reserve0,
-                bytes("")
-            );
-        } else if (initialReserve1 > data.state.reserve1) {
-            // transfer ERC1155 tokens to PoolManager to settle debts
-            poolManager.safeTransferFrom(
-                address(this),
-                address(poolManager),
-                data.poolKey.currency1.toId(),
-                initialReserve1 - data.state.reserve1,
-                bytes("")
-            );
-        } else {
-            // mint ERC1155 tokens for new reserves
-            if (initialReserve0 < data.state.reserve0) {
-                poolManager.mint(data.poolKey.currency0, address(this), data.state.reserve0 - initialReserve0);
-            }
-            if (initialReserve1 < data.state.reserve1) {
-                poolManager.mint(data.poolKey.currency1, address(this), data.state.reserve1 - initialReserve1);
-            }
-        }
+        _updatePoolToken(data.poolKey.currency0, data.state.reserve0.toInt256() - initialReserve0.toInt256());
+        _updatePoolToken(data.poolKey.currency1, data.state.reserve1.toInt256() - initialReserve1.toInt256());
     }
 
     /// @param token The token to pay
@@ -769,16 +650,32 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         if (address(state.liquidityDensityFunction) == address(0)) revert BunniHub__BunniTokenNotInitialized();
     }
 
-    function _transferPoolTokenToManager(Currency currency0, Currency currency1, uint256 amount0, uint256 amount1)
-        internal
-    {
-        // batch transfer ERC1155 tokens to PoolManager to settle debts
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = currency0.toId();
-        ids[1] = currency1.toId();
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = amount0;
-        amounts[1] = amount1;
-        poolManager.safeBatchTransferFrom(address(this), address(poolManager), ids, amounts, bytes(""));
+    function _updatePoolTokens(Currency currency0, Currency currency1, BalanceDelta delta) internal {
+        _updatePoolToken(currency0, delta.amount0());
+        _updatePoolToken(currency1, delta.amount1());
+    }
+
+    function _updatePoolToken(Currency currency, int256 amount) internal {
+        if (amount > 0) {
+            poolManager.mint(currency, address(this), uint256(amount));
+        } else if (amount < 0) {
+            poolManager.safeTransferFrom(
+                address(this), address(poolManager), currency.toId(), uint256(-amount), bytes("")
+            );
+        }
+    }
+
+    function _settleCurrency(address user, Currency currency, int256 amount) internal {
+        if (amount > 0) {
+            _pay(currency, user, address(poolManager), uint256(amount));
+            poolManager.settle(currency);
+        } else if (amount < 0) {
+            poolManager.take(currency, user, uint256(-amount));
+        }
+    }
+
+    function _settleCurrencies(address user, Currency currency0, Currency currency1, BalanceDelta delta) internal {
+        _settleCurrency(user, currency0, delta.amount0());
+        _settleCurrency(user, currency1, delta.amount1());
     }
 }
