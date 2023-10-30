@@ -235,7 +235,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
             PoolId id = key.toId();
             LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
-            for (uint256 i; i < numTicksToRemove_;) {
+            for (uint256 i; i < numTicksToRemove_; i++) {
                 // buffer remove liquidity
                 liquidityDeltas[i] = LiquidityDelta({
                     tickLower: roundedTick,
@@ -248,7 +248,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                         params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing,
                         key.tickSpacing
                     );
-                    ++i;
                 }
             }
 

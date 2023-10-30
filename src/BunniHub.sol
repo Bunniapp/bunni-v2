@@ -595,7 +595,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         // modify the liquidity of all specified ticks
         {
             uint256 numTicks = data.liquidityDeltas.length;
-            for (uint256 i; i < numTicks;) {
+            for (uint256 i; i < numTicks; i++) {
                 params.tickLower = data.liquidityDeltas[i].tickLower;
                 params.tickUpper = data.liquidityDeltas[i].tickLower + data.poolKey.tickSpacing;
                 params.liquidityDelta = data.liquidityDeltas[i].delta;
@@ -614,10 +614,6 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                     data.state.reserve1 -= uint128(amount1);
                 } else if (amount1 < 0) {
                     data.state.reserve1 += uint128(-amount1);
-                }
-
-                unchecked {
-                    ++i;
                 }
             }
         }
