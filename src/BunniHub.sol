@@ -122,8 +122,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         // compute sqrt ratios
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, params.poolKey.tickSpacing);
-        uint160 roundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(roundedTick);
-        uint160 nextRoundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextRoundedTick);
+        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
+            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
 
         // compute density
         (
@@ -137,7 +137,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             sqrtPriceX96,
             roundedTickSqrtRatio,
             nextRoundedTickSqrtRatio,
-            liquidityDensityOfRoundedTickX96.toUint128(),
+            uint128(liquidityDensityOfRoundedTickX96),
             false
         );
 
@@ -146,53 +146,50 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             params.amount0Desired.mulDiv(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
             params.amount1Desired.mulDiv(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
+        // totalLiquidity could exceed uint128 so .toUint128() is used
         addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
         // compute token amounts
         (uint256 roundedTickAmount0, uint256 roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, addedLiquidity, true
         );
-        uint256 depositAmount0 = totalLiquidity.mulDivRoundingUp(density0RightOfRoundedTickX96, Q96);
-        uint256 depositAmount1 = totalLiquidity.mulDivRoundingUp(density1LeftOfRoundedTickX96, Q96);
-        amount0 = roundedTickAmount0 + depositAmount0;
-        amount1 = roundedTickAmount1 + depositAmount1;
+        (uint256 depositAmount0, uint256 depositAmount1) = (
+            totalLiquidity.mulDivRoundingUp(density0RightOfRoundedTickX96, Q96),
+            totalLiquidity.mulDivRoundingUp(density1LeftOfRoundedTickX96, Q96)
+        );
+        (amount0, amount1) = (roundedTickAmount0 + depositAmount0, roundedTickAmount1 + depositAmount1);
 
         // sanity check against desired amounts
-        if ((amount0 > params.amount0Desired) && (amount1 > params.amount1Desired)) {
-            // scale down amounts and take minimum
-            (amount0, amount1, addedLiquidity) = (
-                min(params.amount0Desired, amount0.mulDiv(params.amount1Desired, amount1)),
-                min(params.amount1Desired, amount1.mulDiv(params.amount0Desired, amount0)),
-                min(
-                    addedLiquidity.mulDivDown(params.amount0Desired, amount0),
-                    addedLiquidity.mulDivDown(params.amount1Desired, amount1)
-                    ).toUint128()
-            );
+        if ((amount0 > params.amount0Desired) || (amount1 > params.amount1Desired)) {
+            if ((amount0 > params.amount0Desired) && (amount1 > params.amount1Desired)) {
+                // scale down amounts and take minimum
+                (amount0, amount1, addedLiquidity) = (
+                    min(params.amount0Desired, amount0.mulDiv(params.amount1Desired, amount1)),
+                    min(params.amount1Desired, amount1.mulDiv(params.amount0Desired, amount0)),
+                    uint128(
+                        min(
+                            addedLiquidity.mulDivDown(params.amount0Desired, amount0),
+                            addedLiquidity.mulDivDown(params.amount1Desired, amount1)
+                        )
+                        )
+                );
+            } else if (amount0 > params.amount0Desired) {
+                // scale down amounts based on amount0
+                (amount0, amount1, addedLiquidity) = (
+                    params.amount0Desired,
+                    amount1.mulDiv(params.amount0Desired, amount0),
+                    uint128(addedLiquidity.mulDivDown(params.amount0Desired, amount0))
+                );
+            } /* else if (amount1 > params.amount1Desired) */ else {
+                // scale down amounts based on amount1
+                (amount0, amount1, addedLiquidity) = (
+                    amount0.mulDiv(params.amount1Desired, amount1),
+                    params.amount1Desired,
+                    uint128(addedLiquidity.mulDivDown(params.amount1Desired, amount1))
+                );
+            }
 
-            (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, addedLiquidity, true
-            );
-            (depositAmount0, depositAmount1) = (amount0 - roundedTickAmount0, amount1 - roundedTickAmount1);
-        } else if (amount0 > params.amount0Desired) {
-            // scale down amounts based on amount0
-            (amount0, amount1, addedLiquidity) = (
-                params.amount0Desired,
-                amount1.mulDiv(params.amount0Desired, amount0),
-                addedLiquidity.mulDivDown(params.amount0Desired, amount0).toUint128()
-            );
-
-            (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, addedLiquidity, true
-            );
-            (depositAmount0, depositAmount1) = (amount0 - roundedTickAmount0, amount1 - roundedTickAmount1);
-        } else if (amount1 > params.amount1Desired) {
-            // scale down amounts based on amount1
-            (amount0, amount1, addedLiquidity) = (
-                amount0.mulDiv(params.amount1Desired, amount1),
-                params.amount1Desired,
-                addedLiquidity.mulDivDown(params.amount1Desired, amount1).toUint128()
-            );
-
+            // update token amounts
             (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
                 sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, addedLiquidity, true
             );
