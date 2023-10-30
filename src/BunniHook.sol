@@ -272,7 +272,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         PoolId id = key.toId();
         (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(id);
-        uint128 liquidity = poolManager.getLiquidity(id);
 
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
@@ -283,8 +282,9 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // get current tick token balances
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
-        uint160 roundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(roundedTick);
-        uint160 nextRoundedTickSqrtRatio = TickMath.getSqrtRatioAtTick(nextRoundedTick);
+        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
+            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+        uint128 liquidity = poolManager.getLiquidity(id);
         (uint256 balance0, uint256 balance1) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidity, false
         );
@@ -322,7 +322,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             sqrtPriceX96,
             roundedTickSqrtRatio,
             nextRoundedTickSqrtRatio,
-            liquidityDensityOfRoundedTickX96.toUint128(),
+            uint128(liquidityDensityOfRoundedTickX96),
             false
         );
 
@@ -333,6 +333,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         );
 
         // compute updated current tick liquidity
+        // totalLiquidity could exceed uint128 so .toUint128() is used
         uint128 updatedRoundedTickLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
         // update current tick liquidity if necessary
@@ -347,7 +348,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 abi.encode(
                     LiquidityDelta({
                         tickLower: roundedTick,
-                        delta: uint256(updatedRoundedTickLiquidity).toInt256() - uint256(liquidity).toInt256()
+                        delta: int256(uint256(updatedRoundedTickLiquidity)) - int256(uint256(liquidity)) // both values are uint128 so cast is safe
                     })
                 )
             );
@@ -503,16 +504,19 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         // if swapping token1 to token0, updatedTickNext is the tickUpper of the range to add liquidity to
         // therefore we need to shift left by tickSpacing to get tickLower
         int24 tickLowerToAddLiquidityTo = zeroForOne ? updatedTickNext : updatedTickNext - tickSpacing;
-        updatedLiquidity = liquidityDensityFunction.liquidityDensityX96(
-            tickLowerToAddLiquidityTo, arithmeticMeanTick, tickSpacing, useTwap, decodedLDFParams
-        ).mulDivDown(totalLiquidity, Q96).toUint128();
+        // totalLiquidity could exceed uint128 so .toUint128() is used
+        updatedLiquidity = (
+            (
+                liquidityDensityFunction.liquidityDensityX96(
+                    tickLowerToAddLiquidityTo, arithmeticMeanTick, tickSpacing, useTwap, decodedLDFParams
+                ) * totalLiquidity
+            ) >> 96
+        ).toUint128();
 
         // buffer add liquidity to tickLowerToAddLiquidityTo
         updatedBuffer = bytes.concat(
             buffer,
-            abi.encode(
-                LiquidityDelta({tickLower: tickLowerToAddLiquidityTo, delta: uint256(updatedLiquidity).toInt256()})
-            )
+            abi.encode(LiquidityDelta({tickLower: tickLowerToAddLiquidityTo, delta: int256(uint256(updatedLiquidity))})) // updatedLiquidity is uint128 so cast is safe
         );
     }
 
