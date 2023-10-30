@@ -232,30 +232,29 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         if (numTicksToRemove_ != 0) {
             delete firstTickToRemove;
             delete numTicksToRemove;
-        }
 
-        PoolId id = key.toId();
-        LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
-        for (uint256 i; i < numTicksToRemove_;) {
-            // buffer remove liquidity
-            liquidityDeltas[i] = LiquidityDelta({
-                tickLower: roundedTick,
-                delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256()
-            });
+            PoolId id = key.toId();
+            LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
+            for (uint256 i; i < numTicksToRemove_;) {
+                // buffer remove liquidity
+                liquidityDeltas[i] = LiquidityDelta({
+                    tickLower: roundedTick,
+                    delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256(
+                    )
+                });
 
-            unchecked {
-                roundedTick = params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing;
-                if (roundedTick < TickMath.MIN_TICK) {
-                    roundedTick = TickMath.MIN_TICK;
-                } else if (roundedTick > TickMath.MAX_TICK) {
-                    roundedTick = TickMath.MAX_TICK;
+                unchecked {
+                    roundedTick = params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing;
+                    if (roundedTick < TickMath.MIN_TICK) {
+                        roundedTick = TickMath.MIN_TICK;
+                    } else if (roundedTick > TickMath.MAX_TICK) {
+                        roundedTick = TickMath.MAX_TICK;
+                    }
+
+                    ++i;
                 }
-
-                ++i;
             }
-        }
 
-        if (numTicksToRemove_ != 0) {
             // call BunniHub to remove liquidity
             hub.hookModifyLiquidity({
                 poolKey: key,
