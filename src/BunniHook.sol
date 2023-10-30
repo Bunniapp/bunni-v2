@@ -244,13 +244,10 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
                 });
 
                 unchecked {
-                    roundedTick = params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing;
-                    if (roundedTick < TickMath.MIN_TICK) {
-                        roundedTick = TickMath.MIN_TICK;
-                    } else if (roundedTick > TickMath.MAX_TICK) {
-                        roundedTick = TickMath.MAX_TICK;
-                    }
-
+                    roundedTick = boundTick(
+                        params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing,
+                        key.tickSpacing
+                    );
                     ++i;
                 }
             }
@@ -364,12 +361,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         uint256 amountIn;
         uint256 amountOut;
         int24 tick = currentTick;
-        int24 tickNext = params.zeroForOne ? roundedTick : nextRoundedTick;
-        if (tickNext < TickMath.MIN_TICK) {
-            tickNext = TickMath.MIN_TICK;
-        } else if (tickNext > TickMath.MAX_TICK) {
-            tickNext = TickMath.MAX_TICK;
-        }
+        int24 tickNext = boundTick(params.zeroForOne ? roundedTick : nextRoundedTick, key.tickSpacing);
         int256 amountSpecifiedRemaining = params.amountSpecified;
         bool exactInput = amountSpecifiedRemaining > 0;
         uint160 sqrtPriceStartX96;
@@ -506,12 +498,8 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         ILiquidityDensityFunction liquidityDensityFunction
     ) internal view returns (int24 updatedTickNext, uint128 updatedLiquidity, bytes memory updatedBuffer) {
         // compute tickNext liquidity and store in updatedLiquidity
-        updatedTickNext = zeroForOne ? tickNext - tickSpacing : tickNext + tickSpacing;
-        if (updatedTickNext < TickMath.MIN_TICK) {
-            updatedTickNext = TickMath.MIN_TICK;
-        } else if (updatedTickNext > TickMath.MAX_TICK) {
-            updatedTickNext = TickMath.MAX_TICK;
-        }
+        updatedTickNext = boundTick(zeroForOne ? tickNext - tickSpacing : tickNext + tickSpacing, tickSpacing);
+
         // if swapping token1 to token0, updatedTickNext is the tickUpper of the range to add liquidity to
         // therefore we need to shift left by tickSpacing to get tickLower
         int24 tickLowerToAddLiquidityTo = zeroForOne ? updatedTickNext : updatedTickNext - tickSpacing;
