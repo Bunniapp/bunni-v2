@@ -272,6 +272,20 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         PoolId id = key.toId();
         (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(id);
+        if (
+            sqrtPriceX96 == 0
+                || (
+                    params.zeroForOne
+                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_RATIO)
+                )
+                || (
+                    !params.zeroForOne
+                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_RATIO)
+                )
+        ) {
+            // if the swap is invalid, do nothing and let PoolManager handle the revert
+            return;
+        }
 
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
