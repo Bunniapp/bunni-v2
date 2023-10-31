@@ -184,12 +184,13 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @inheritdoc IHooks
-    function afterInitialize(address, PoolKey calldata key, uint160, int24, bytes calldata)
+    function afterInitialize(address caller, PoolKey calldata key, uint160, int24, bytes calldata)
         external
         override
         poolManagerOnly
         returns (bytes4)
     {
+        if (caller != address(hub)) revert BunniHook__NotBunniHub(); // prevents non-BunniHub contracts from initializing a pool using this hook
         PoolId id = key.toId();
         (states[id].cardinality, states[id].cardinalityNext) = observations[id].initialize(uint32(block.timestamp));
         return BunniHook.afterInitialize.selector;
@@ -202,7 +203,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         IPoolManager.ModifyPositionParams calldata,
         bytes calldata
     ) external view override poolManagerOnly returns (bytes4) {
-        if (caller != address(hub)) revert BunniHook__NotBunniHub();
+        if (caller != address(hub)) revert BunniHook__NotBunniHub(); // prevents non-BunniHub contracts from modifying a position using this hook
         // Note: we don't need to update the oracle here because updateOracle() is called by BunniHub.deposit()
         return BunniHook.beforeModifyPosition.selector;
     }
