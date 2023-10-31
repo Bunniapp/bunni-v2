@@ -61,7 +61,6 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     error BunniHub__ZeroSharesMinted();
     error BunniHub__InvalidLDFParams();
     error BunniHub__InvalidFeeParams();
-    error BunniHub__PoolKeyDoesNotMatchId();
     error BunniHub__BunniTokenNotInitialized();
 
     uint256 internal constant WAD = 1e18;
@@ -75,9 +74,9 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     /// Storage variables
     /// -----------------------------------------------------------
 
-    mapping(IBunniToken bunniToken => BunniTokenState) internal _bunniTokenState;
+    mapping(PoolId poolId => PoolState) internal _poolState;
     mapping(bytes32 bunniSubspace => uint24) public override nonce;
-    mapping(PoolId poolId => IBunniToken) public override bunniTokenOfPool;
+    mapping(IBunniToken bunniToken => PoolId) public override poolIdOfBunniToken;
 
     /// -----------------------------------------------------------
     /// Modifiers
@@ -109,16 +108,14 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         checkDeadline(params.deadline)
         returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1)
     {
-        BunniTokenState memory state = _getStateOfBunniToken(params.bunniToken);
-        if (PoolId.unwrap(params.poolKey.toId()) != PoolId.unwrap(state.poolId)) {
-            revert BunniHub__PoolKeyDoesNotMatchId();
-        }
+        PoolId poolId = params.poolKey.toId();
+        PoolState memory state = _getPoolState(poolId);
 
         // update TWAP oracle and optionally observe
         BunniHook hook = BunniHook(address(params.poolKey.hooks));
-        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(state.poolId);
+        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(poolId);
         (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
-        int24 arithmeticMeanTick = hook.updateOracleAndObserve(state.poolId, useTwap, currentTick, twapSecondsAgo);
+        int24 arithmeticMeanTick = hook.updateOracleAndObserve(poolId, useTwap, currentTick, twapSecondsAgo);
 
         // compute sqrt ratios
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, params.poolKey.tickSpacing);
@@ -201,12 +198,12 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         /// -----------------------------------------------------------------------
 
         // mint shares
-        uint128 currentLiquidity = poolManager.getLiquidity(state.poolId);
+        uint128 currentLiquidity = poolManager.getLiquidity(poolId);
         (uint256 existingAmount0, uint256 existingAmount1) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, currentLiquidity, false
         );
         shares = _mintShares(
-            params.bunniToken,
+            state.bunniToken,
             params.recipient,
             amount0,
             existingAmount0 + state.reserve0, // current tick tokens + reserve tokens
@@ -216,8 +213,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         // update reserves
         // reserves represent the amount of tokens not in the current tick
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 + depositAmount0;
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 + depositAmount1;
+        _poolState[poolId].reserve0 = state.reserve0 + depositAmount0;
+        _poolState[poolId].reserve1 = state.reserve1 + depositAmount1;
 
         /// -----------------------------------------------------------------------
         /// External calls
@@ -254,7 +251,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         }
 
         // emit event
-        emit Deposit(msg.sender, params.recipient, params.bunniToken, addedLiquidity, amount0, amount1, shares);
+        emit Deposit(msg.sender, params.recipient, poolId, addedLiquidity, amount0, amount1, shares);
     }
 
     /// @inheritdoc IBunniHub
@@ -271,21 +268,19 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         if (params.shares == 0) revert BunniHub__ZeroInput();
 
-        BunniTokenState memory state = _getStateOfBunniToken(params.bunniToken);
-        if (PoolId.unwrap(params.poolKey.toId()) != PoolId.unwrap(state.poolId)) {
-            revert BunniHub__PoolKeyDoesNotMatchId();
-        }
+        PoolId poolId = params.poolKey.toId();
+        PoolState memory state = _getPoolState(poolId);
 
-        uint256 currentTotalSupply = params.bunniToken.totalSupply();
-        (, int24 currentTick,,) = poolManager.getSlot0(state.poolId);
-        uint128 existingLiquidity = poolManager.getLiquidity(state.poolId);
+        uint256 currentTotalSupply = state.bunniToken.totalSupply();
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+        uint128 existingLiquidity = poolManager.getLiquidity(poolId);
 
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
 
         // burn shares
-        params.bunniToken.burn(msg.sender, params.shares);
+        state.bunniToken.burn(msg.sender, params.shares);
         // at this point of execution we know params.shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 
@@ -297,8 +292,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         // reserves represent the amount of tokens not in the current tick
         uint256 removedReserve0 = state.reserve0.mulDiv(params.shares, currentTotalSupply);
         uint256 removedReserve1 = state.reserve1.mulDiv(params.shares, currentTotalSupply);
-        _bunniTokenState[params.bunniToken].reserve0 = state.reserve0 - removedReserve0;
-        _bunniTokenState[params.bunniToken].reserve1 = state.reserve1 - removedReserve1;
+        _poolState[poolId].reserve0 = state.reserve0 - removedReserve0;
+        _poolState[poolId].reserve1 = state.reserve1 - removedReserve1;
 
         /// -----------------------------------------------------------------------
         /// External calls
@@ -332,9 +327,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             revert BunniHub__SlippageTooHigh();
         }
 
-        emit Withdraw(
-            msg.sender, params.recipient, params.bunniToken, removedLiquidity, amount0, amount1, params.shares
-        );
+        emit Withdraw(msg.sender, params.recipient, poolId, removedLiquidity, amount0, amount1, params.shares);
     }
 
     /// @inheritdoc IBunniHub
@@ -401,10 +394,11 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             tickSpacing: tickSpacing,
             hooks: hooks
         });
-        _bunniTokenState[token] = BunniTokenState({
-            poolId: key.toId(),
+        PoolId poolId = key.toId();
+        _poolState[poolId] = PoolState({
             liquidityDensityFunction: liquidityDensityFunction,
             ldfParams: ldfParams,
+            bunniToken: token,
             feeMin: feeMin,
             feeMax: feeMax,
             feeQuadraticMultiplier: feeQuadraticMultiplier,
@@ -412,8 +406,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             reserve0: 0,
             reserve1: 0
         });
-        PoolId poolId = key.toId();
-        bunniTokenOfPool[poolId] = token;
+        poolIdOfBunniToken[token] = poolId;
 
         // increment nonce
         nonce[bunniSubspace] = nonce_ + 1;
@@ -429,28 +422,18 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     }
 
     /// @inheritdoc IBunniHub
-    function hookModifyLiquidity(
-        PoolKey calldata poolKey,
-        IBunniToken bunniToken,
-        LiquidityDelta[] calldata liquidityDeltas
-    ) external override {
-        BunniTokenState memory state = _getStateOfBunniToken(bunniToken);
-        if (PoolId.unwrap(poolKey.toId()) != PoolId.unwrap(state.poolId)) {
-            revert BunniHub__PoolKeyDoesNotMatchId();
-        }
+    function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas)
+        external
+        override
+    {
+        PoolId poolId = poolKey.toId();
+        PoolState memory state = _getPoolState(poolId);
         if (msg.sender != address(poolKey.hooks)) revert BunniHub__Unauthorized(); // only hook
 
         poolManager.lock(
             abi.encode(
                 LockCallbackType.HOOK_MODIFY_LIQUIDITY,
-                abi.encode(
-                    HookCallbackInputData({
-                        poolKey: poolKey,
-                        bunniToken: bunniToken,
-                        state: state,
-                        liquidityDeltas: liquidityDeltas
-                    })
-                )
+                abi.encode(HookCallbackInputData({poolKey: poolKey, state: state, liquidityDeltas: liquidityDeltas}))
             )
         );
     }
@@ -460,8 +443,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHub
-    function bunniTokenState(IBunniToken bunniToken) external view override returns (BunniTokenState memory) {
-        return _bunniTokenState[bunniToken];
+    function poolState(PoolId poolId) external view returns (PoolState memory) {
+        return _getPoolState(poolId);
     }
 
     /// -----------------------------------------------------------------------
@@ -581,8 +564,7 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
     struct HookCallbackInputData {
         PoolKey poolKey;
-        IBunniToken bunniToken;
-        BunniTokenState state;
+        PoolState state;
         LiquidityDelta[] liquidityDeltas;
     }
 
@@ -619,8 +601,9 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         }
 
         // store updated pool reserves
-        _bunniTokenState[data.bunniToken].reserve0 = data.state.reserve0;
-        _bunniTokenState[data.bunniToken].reserve1 = data.state.reserve1;
+        PoolId poolId = data.poolKey.toId();
+        _poolState[poolId].reserve0 = data.state.reserve0;
+        _poolState[poolId].reserve1 = data.state.reserve1;
 
         _updatePoolToken(data.poolKey.currency0, data.state.reserve0.toInt256() - initialReserve0.toInt256());
         _updatePoolToken(data.poolKey.currency1, data.state.reserve1.toInt256() - initialReserve1.toInt256());
@@ -638,9 +621,9 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         }
     }
 
-    function _getStateOfBunniToken(IBunniToken bunniToken) internal view returns (BunniTokenState memory state) {
-        state = _bunniTokenState[bunniToken];
-        if (address(state.liquidityDensityFunction) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+    function _getPoolState(PoolId poolId) internal view returns (PoolState memory state) {
+        state = _poolState[poolId];
+        if (address(state.bunniToken) == address(0)) revert BunniHub__BunniTokenNotInitialized();
     }
 
     function _updatePoolTokens(Currency currency0, Currency currency1, BalanceDelta delta) internal {

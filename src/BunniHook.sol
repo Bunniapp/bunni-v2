@@ -39,7 +39,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
     error BunniHook__NotBunniHub();
     error BunniHook__SwapAlreadyInProgress();
-    error BunniHook__BunniTokenNotInitialized();
 
     event SetHookFees(uint24 newFee);
 
@@ -252,11 +251,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             }
 
             // call BunniHub to remove liquidity
-            hub.hookModifyLiquidity({
-                poolKey: key,
-                bunniToken: hub.bunniTokenOfPool(id),
-                liquidityDeltas: liquidityDeltas
-            });
+            hub.hookModifyLiquidity({poolKey: key, liquidityDeltas: liquidityDeltas});
         }
 
         return BunniHook.afterSwap.selector;
@@ -303,9 +298,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         );
 
         // get reserves and add to balance
-        IBunniToken bunniToken = hub.bunniTokenOfPool(id);
-        BunniTokenState memory bunniState = hub.bunniTokenState(bunniToken);
-        if (address(bunniState.liquidityDensityFunction) == address(0)) revert BunniHook__BunniTokenNotInitialized();
+        PoolState memory bunniState = hub.poolState(id);
         (balance0, balance1) = (balance0 + bunniState.reserve0, balance1 + bunniState.reserve1);
 
         // (optional) get TWAP value
@@ -476,7 +469,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             // call BunniHub to update liquidity
             hub.hookModifyLiquidity({
                 poolKey: key,
-                bunniToken: bunniToken,
                 liquidityDeltas: abi.decode(abi.encodePacked(uint256(0x20), bufferLength, buffer), (LiquidityDelta[])) // uint256(0x20) denotes the location of the start of the array in the calldata
             });
         }

@@ -26,7 +26,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
-    /// @param bunniToken The BunniToken associated with the call
+    /// @param poolId The Uniswap V4 pool's ID
     /// @param liquidity The amount by which liquidity was increased
     /// @param amount0 The amount of token0 that was paid for the increase in liquidity
     /// @param amount1 The amount of token1 that was paid for the increase in liquidity
@@ -34,7 +34,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     event Deposit(
         address indexed sender,
         address indexed recipient,
-        IBunniToken indexed bunniToken,
+        PoolId indexed poolId,
         uint128 liquidity,
         uint256 amount0,
         uint256 amount1,
@@ -43,7 +43,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @notice Emitted when liquidity is decreased via withdrawal
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the collected tokens
-    /// @param bunniToken The BunniToken associated with the call
+    /// @param poolId The Uniswap V4 pool's ID
     /// @param liquidity The amount by which liquidity was decreased
     /// @param amount0 The amount of token0 that was accounted for the decrease in liquidity
     /// @param amount1 The amount of token1 that was accounted for the decrease in liquidity
@@ -51,7 +51,7 @@ interface IBunniHub is IMulticall, ILockCallback {
     event Withdraw(
         address indexed sender,
         address indexed recipient,
-        IBunniToken indexed bunniToken,
+        PoolId indexed poolId,
         uint128 liquidity,
         uint256 amount0,
         uint256 amount1,
@@ -67,7 +67,6 @@ interface IBunniHub is IMulticall, ILockCallback {
     event NewBunni(IBunniToken indexed bunniToken, PoolId indexed poolId);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
-    /// @param bunniToken The BunniToken associated with the call
     /// @param amount0Desired The desired amount of token0 to be spent,
     /// @param amount1Desired The desired amount of token1 to be spent,
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
@@ -76,7 +75,6 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @param recipient The recipient of the minted share tokens
     struct DepositParams {
         PoolKey poolKey;
-        IBunniToken bunniToken;
         uint256 amount0Desired;
         uint256 amount1Desired;
         uint256 amount0Min;
@@ -104,7 +102,6 @@ interface IBunniHub is IMulticall, ILockCallback {
         returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
-    /// @param bunniToken The BunniToken associated with the call
     /// @param recipient The user if not withdrawing ETH, address(0) if withdrawing ETH
     /// @param shares The amount of ERC20 tokens (this) to burn,
     /// @param amount0Min The minimum amount of token0 that should be accounted for the burned liquidity,
@@ -112,7 +109,6 @@ interface IBunniHub is IMulticall, ILockCallback {
     /// @param deadline The time by which the transaction must be included to effect the change
     struct WithdrawParams {
         PoolKey poolKey;
-        IBunniToken bunniToken;
         address recipient;
         uint256 shares;
         uint256 amount0Min;
@@ -154,14 +150,10 @@ interface IBunniHub is IMulticall, ILockCallback {
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token, PoolKey memory key);
 
-    function hookModifyLiquidity(
-        PoolKey calldata poolKey,
-        IBunniToken bunniToken,
-        LiquidityDelta[] calldata liquidityDeltas
-    ) external;
+    function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas) external;
 
     function poolManager() external view returns (IPoolManager);
-    function bunniTokenState(IBunniToken bunniToken) external view returns (BunniTokenState memory);
+    function poolState(PoolId poolId) external view returns (PoolState memory);
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
-    function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken);
+    function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
 }

@@ -136,7 +136,6 @@ contract BunniHubTest is Test {
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
             poolKey: key,
-            bunniToken: bunniToken,
             recipient: address(this),
             shares: shares,
             amount0Min: 0,
@@ -323,7 +322,6 @@ contract BunniHubTest is Test {
         // deposit tokens
         IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
             poolKey: key,
-            bunniToken: bunniToken,
             amount0Desired: depositAmount0,
             amount1Desired: depositAmount1,
             amount0Min: 0,
