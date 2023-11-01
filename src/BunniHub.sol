@@ -427,13 +427,23 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         override
     {
         PoolId poolId = poolKey.toId();
-        PoolState memory state = _getPoolState(poolId);
+        IBunniToken bunniToken = _poolState[poolId].bunniToken;
+        uint256 reserve0 = _poolState[poolId].reserve0;
+        uint256 reserve1 = _poolState[poolId].reserve1;
+        if (address(bunniToken) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         if (msg.sender != address(poolKey.hooks)) revert BunniHub__Unauthorized(); // only hook
 
         poolManager.lock(
             abi.encode(
                 LockCallbackType.HOOK_MODIFY_LIQUIDITY,
-                abi.encode(HookCallbackInputData({poolKey: poolKey, state: state, liquidityDeltas: liquidityDeltas}))
+                abi.encode(
+                    HookCallbackInputData({
+                        poolKey: poolKey,
+                        reserve0: reserve0,
+                        reserve1: reserve1,
+                        liquidityDeltas: liquidityDeltas
+                    })
+                )
             )
         );
     }
@@ -564,13 +574,14 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
     struct HookCallbackInputData {
         PoolKey poolKey;
-        PoolState state;
+        uint256 reserve0;
+        uint256 reserve1;
         LiquidityDelta[] liquidityDeltas;
     }
 
     /// @dev Adds liquidity using a pool's reserves. Expected to be called by the pool's hook.
     function _hookModifyLiquidityLockCallback(HookCallbackInputData memory data) internal {
-        (uint256 initialReserve0, uint256 initialReserve1) = (data.state.reserve0, data.state.reserve1);
+        (uint256 initialReserve0, uint256 initialReserve1) = (data.reserve0, data.reserve1);
 
         IPoolManager.ModifyPositionParams memory params;
 
@@ -588,25 +599,25 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                 // this prevents malicious hooks from adding liquidity using other pools' reserves
                 (int128 amount0, int128 amount1) = (balanceDelta.amount0(), balanceDelta.amount1());
                 if (amount0 > 0) {
-                    data.state.reserve0 -= uint128(amount0);
+                    data.reserve0 -= uint128(amount0);
                 } else if (amount0 < 0) {
-                    data.state.reserve0 += uint128(-amount0);
+                    data.reserve0 += uint128(-amount0);
                 }
                 if (amount1 > 0) {
-                    data.state.reserve1 -= uint128(amount1);
+                    data.reserve1 -= uint128(amount1);
                 } else if (amount1 < 0) {
-                    data.state.reserve1 += uint128(-amount1);
+                    data.reserve1 += uint128(-amount1);
                 }
             }
         }
 
         // store updated pool reserves
         PoolId poolId = data.poolKey.toId();
-        _poolState[poolId].reserve0 = data.state.reserve0;
-        _poolState[poolId].reserve1 = data.state.reserve1;
+        _poolState[poolId].reserve0 = data.reserve0;
+        _poolState[poolId].reserve1 = data.reserve1;
 
-        _updatePoolToken(data.poolKey.currency0, data.state.reserve0.toInt256() - initialReserve0.toInt256());
-        _updatePoolToken(data.poolKey.currency1, data.state.reserve1.toInt256() - initialReserve1.toInt256());
+        _updatePoolToken(data.poolKey.currency0, data.reserve0.toInt256() - initialReserve0.toInt256());
+        _updatePoolToken(data.poolKey.currency1, data.reserve1.toInt256() - initialReserve1.toInt256());
     }
 
     /// @param token The token to pay
