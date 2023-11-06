@@ -7,7 +7,6 @@ import "forge-std/console2.sol";
 import "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
 import {FeeLibrary} from "@uniswap/v4-core/contracts/libraries/FeeLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {FixedPoint96} from "@uniswap/v4-core/contracts/libraries/FixedPoint96.sol";
@@ -40,8 +39,6 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
 contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
-    using FullMath for uint128;
-    using FullMath for uint256;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
@@ -140,8 +137,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         // compute how much liquidity we'd get from the desired token amounts
         uint256 totalLiquidity = min(
-            params.amount0Desired.mulDiv(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
-            params.amount1Desired.mulDiv(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+            params.amount0Desired.mulDivDown(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
+            params.amount1Desired.mulDivDown(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
         );
         // totalLiquidity could exceed uint128 so .toUint128() is used
         addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
@@ -151,8 +148,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, addedLiquidity, true
         );
         (uint256 depositAmount0, uint256 depositAmount1) = (
-            totalLiquidity.mulDivRoundingUp(density0RightOfRoundedTickX96, Q96),
-            totalLiquidity.mulDivRoundingUp(density1LeftOfRoundedTickX96, Q96)
+            totalLiquidity.mulDivUp(density0RightOfRoundedTickX96, Q96),
+            totalLiquidity.mulDivUp(density1LeftOfRoundedTickX96, Q96)
         );
         (amount0, amount1) = (roundedTickAmount0 + depositAmount0, roundedTickAmount1 + depositAmount1);
 
@@ -161,8 +158,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             if ((amount0 > params.amount0Desired) && (amount1 > params.amount1Desired)) {
                 // scale down amounts and take minimum
                 (amount0, amount1, addedLiquidity) = (
-                    min(params.amount0Desired, amount0.mulDiv(params.amount1Desired, amount1)),
-                    min(params.amount1Desired, amount1.mulDiv(params.amount0Desired, amount0)),
+                    min(params.amount0Desired, amount0.mulDivDown(params.amount1Desired, amount1)),
+                    min(params.amount1Desired, amount1.mulDivDown(params.amount0Desired, amount0)),
                     uint128(
                         min(
                             addedLiquidity.mulDivDown(params.amount0Desired, amount0),
@@ -174,13 +171,13 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
                 // scale down amounts based on amount0
                 (amount0, amount1, addedLiquidity) = (
                     params.amount0Desired,
-                    amount1.mulDiv(params.amount0Desired, amount0),
+                    amount1.mulDivDown(params.amount0Desired, amount0),
                     uint128(addedLiquidity.mulDivDown(params.amount0Desired, amount0))
                 );
             } /* else if (amount1 > params.amount1Desired) */ else {
                 // scale down amounts based on amount1
                 (amount0, amount1, addedLiquidity) = (
-                    amount0.mulDiv(params.amount1Desired, amount1),
+                    amount0.mulDivDown(params.amount1Desired, amount1),
                     params.amount1Desired,
                     uint128(addedLiquidity.mulDivDown(params.amount1Desired, amount1))
                 );
@@ -286,12 +283,12 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         // burn liquidity from pool
         // type cast is safe because we know removedLiquidity <= existingLiquidity
-        removedLiquidity = uint128(existingLiquidity.mulDiv(params.shares, currentTotalSupply));
+        removedLiquidity = uint128(existingLiquidity.mulDivDown(params.shares, currentTotalSupply));
 
         // update reserves
         // reserves represent the amount of tokens not in the current tick
-        uint256 removedReserve0 = state.reserve0.mulDiv(params.shares, currentTotalSupply);
-        uint256 removedReserve1 = state.reserve1.mulDiv(params.shares, currentTotalSupply);
+        uint256 removedReserve0 = state.reserve0.mulDivDown(params.shares, currentTotalSupply);
+        uint256 removedReserve1 = state.reserve1.mulDivDown(params.shares, currentTotalSupply);
         _poolState[poolId].reserve0 = state.reserve0 - removedReserve0;
         _poolState[poolId].reserve1 = state.reserve1 - removedReserve1;
 
@@ -508,8 +505,8 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
             shareToken.mint(address(0), MIN_INITIAL_SHARES);
         } else {
             shares = min(
-                existingShareSupply.mulDiv(addedAmount0, existingAmount0),
-                existingShareSupply.mulDiv(addedAmount1, existingAmount1)
+                existingShareSupply.mulDivDown(addedAmount0, existingAmount0),
+                existingShareSupply.mulDivDown(addedAmount1, existingAmount1)
             );
             if (shares == 0) revert BunniHub__ZeroSharesMinted();
         }
