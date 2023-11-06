@@ -34,6 +34,7 @@ contract BunniHubTest is Test {
     uint24 internal constant FEE_MIN = 0.0001e6;
     uint24 internal constant FEE_MAX = 0.1e6;
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
+    address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -68,7 +69,11 @@ contract BunniHubTest is Test {
         hub = new BunniHub(poolManager);
 
         // initialize bunni hook
-        deployCodeTo("BunniHook.sol", abi.encode(poolManager, hub, address(this), HOOK_SWAP_FEE), address(bunniHook));
+        deployCodeTo(
+            "BunniHook.sol",
+            abi.encode(poolManager, hub, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
+            address(bunniHook)
+        );
         vm.label(address(bunniHook), "BunniHook");
 
         // initialize LDF

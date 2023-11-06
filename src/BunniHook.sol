@@ -3,7 +3,9 @@ pragma solidity ^0.8.19;
 
 import {stdMath} from "forge-std/StdMath.sol";
 
+import {Fees} from "@uniswap/v4-core/contracts/Fees.sol";
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
+import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
@@ -41,6 +43,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     error BunniHook__SwapAlreadyInProgress();
 
     event SetHookFees(uint24 newFee);
+    event SetHookFeesRecipient(address newRecipient);
 
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
@@ -61,16 +64,21 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     mapping(PoolId => ObservationState) public states;
 
     uint24 public hookFees;
+    address public hookFeesRecipient;
     int24 private firstTickToRemove;
     uint24 private numTicksToRemove;
     uint24 private swapFee;
 
-    constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, uint24 hookFees_) BaseHook(_poolManager) {
+    constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, address hookFeesRecipient_, uint24 hookFees_)
+        BaseHook(_poolManager)
+    {
         hub = hub_;
         hookFees = hookFees_;
+        hookFeesRecipient = hookFeesRecipient_;
         _initializeOwner(owner_);
 
         emit SetHookFees(hookFees_);
+        emit SetHookFeesRecipient(hookFeesRecipient_);
     }
 
     /// -----------------------------------------------------------------------
@@ -90,6 +98,18 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         cardinalityNextNew = observations[id].grow(cardinalityNextOld, cardinalityNext);
         state.cardinalityNext = cardinalityNextNew;
     }
+
+    function collectHookFees(Currency[] calldata currencyList) external {
+        address recipient = hookFeesRecipient;
+        for (uint256 i; i < currencyList.length; i++) {
+            // setting `amount` to 0 claims all accrued fees
+            Fees(address(poolManager)).collectHookFees(recipient, currencyList[i], 0);
+        }
+    }
+
+    /// -----------------------------------------------------------------------
+    /// BunniHub functions
+    /// -----------------------------------------------------------------------
 
     /// @notice Update the TWAP oracle for the given pool. Only callable by BunniHub.
     function updateOracleAndObserve(PoolId id, bool shouldObserve, int24 tick, uint24 twapSecondsAgo)
@@ -118,6 +138,11 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     function setHookFees(uint24 newFee) external onlyOwner {
         hookFees = newFee;
         emit SetHookFees(newFee);
+    }
+
+    function setHookFeesRecipient(address newRecipient) external onlyOwner {
+        hookFeesRecipient = newRecipient;
+        emit SetHookFeesRecipient(newRecipient);
     }
 
     /// -----------------------------------------------------------------------
