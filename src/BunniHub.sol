@@ -25,8 +25,8 @@ import "./lib/Structs.sol";
 import "./lib/LDFParams.sol";
 import {BunniHook} from "./BunniHook.sol";
 import {BunniToken} from "./BunniToken.sol";
-import {Multicall} from "./lib/Multicall.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
+import {Multicallable} from "./lib/Multicallable.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
@@ -38,7 +38,7 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
+contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
@@ -155,33 +155,17 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
 
         // sanity check against desired amounts
         if ((amount0 > params.amount0Desired) || (amount1 > params.amount1Desired)) {
-            if ((amount0 > params.amount0Desired) && (amount1 > params.amount1Desired)) {
-                // scale down amounts and take minimum
-                (amount0, amount1, addedLiquidity) = (
-                    min(params.amount0Desired, amount0.mulDivDown(params.amount1Desired, amount1)),
-                    min(params.amount1Desired, amount1.mulDivDown(params.amount0Desired, amount0)),
-                    uint128(
-                        min(
-                            addedLiquidity.mulDivDown(params.amount0Desired, amount0),
-                            addedLiquidity.mulDivDown(params.amount1Desired, amount1)
-                        )
-                        )
-                );
-            } else if (amount0 > params.amount0Desired) {
-                // scale down amounts based on amount0
-                (amount0, amount1, addedLiquidity) = (
-                    params.amount0Desired,
-                    amount1.mulDivDown(params.amount0Desired, amount0),
-                    uint128(addedLiquidity.mulDivDown(params.amount0Desired, amount0))
-                );
-            } /* else if (amount1 > params.amount1Desired) */ else {
-                // scale down amounts based on amount1
-                (amount0, amount1, addedLiquidity) = (
-                    amount0.mulDivDown(params.amount1Desired, amount1),
-                    params.amount1Desired,
-                    uint128(addedLiquidity.mulDivDown(params.amount1Desired, amount1))
-                );
-            }
+            // scale down amounts and take minimum
+            (amount0, amount1, addedLiquidity) = (
+                min(params.amount0Desired, amount0.mulDivDown(params.amount1Desired, amount1)),
+                min(params.amount1Desired, amount1.mulDivDown(params.amount0Desired, amount0)),
+                uint128(
+                    min(
+                        addedLiquidity.mulDivDown(params.amount0Desired, amount0),
+                        addedLiquidity.mulDivDown(params.amount1Desired, amount1)
+                    )
+                    )
+            );
 
             // update token amounts
             (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
@@ -583,28 +567,25 @@ contract BunniHub is IBunniHub, Multicall, ERC1155TokenReceiver {
         IPoolManager.ModifyPositionParams memory params;
 
         // modify the liquidity of all specified ticks
-        {
-            uint256 numTicks = data.liquidityDeltas.length;
-            for (uint256 i; i < numTicks; i++) {
-                params.tickLower = data.liquidityDeltas[i].tickLower;
-                params.tickUpper = data.liquidityDeltas[i].tickLower + data.poolKey.tickSpacing;
-                params.liquidityDelta = data.liquidityDeltas[i].delta;
+        for (uint256 i; i < data.liquidityDeltas.length; i++) {
+            params.tickLower = data.liquidityDeltas[i].tickLower;
+            params.tickUpper = data.liquidityDeltas[i].tickLower + data.poolKey.tickSpacing;
+            params.liquidityDelta = data.liquidityDeltas[i].delta;
 
-                BalanceDelta balanceDelta = poolManager.modifyPosition(data.poolKey, params, bytes(""));
+            BalanceDelta balanceDelta = poolManager.modifyPosition(data.poolKey, params, bytes(""));
 
-                // update pool reserves
-                // this prevents malicious hooks from adding liquidity using other pools' reserves
-                (int128 amount0, int128 amount1) = (balanceDelta.amount0(), balanceDelta.amount1());
-                if (amount0 > 0) {
-                    data.reserve0 -= uint128(amount0);
-                } else if (amount0 < 0) {
-                    data.reserve0 += uint128(-amount0);
-                }
-                if (amount1 > 0) {
-                    data.reserve1 -= uint128(amount1);
-                } else if (amount1 < 0) {
-                    data.reserve1 += uint128(-amount1);
-                }
+            // update pool reserves
+            // this prevents malicious hooks from adding liquidity using other pools' reserves
+            (int128 amount0, int128 amount1) = (balanceDelta.amount0(), balanceDelta.amount1());
+            if (amount0 > 0) {
+                data.reserve0 -= uint128(amount0);
+            } else if (amount0 < 0) {
+                data.reserve0 += uint128(-amount0);
+            }
+            if (amount1 > 0) {
+                data.reserve1 -= uint128(amount1);
+            } else if (amount1 < 0) {
+                data.reserve1 += uint128(-amount1);
             }
         }
 
