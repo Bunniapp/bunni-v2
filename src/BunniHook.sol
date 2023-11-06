@@ -217,7 +217,9 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     {
         if (caller != address(hub)) revert BunniHook__NotBunniHub(); // prevents non-BunniHub contracts from initializing a pool using this hook
         PoolId id = key.toId();
-        (states[id].cardinality, states[id].cardinalityNext) = observations[id].initialize(uint32(block.timestamp));
+        (, int24 tick,,) = poolManager.getSlot0(id);
+        (states[id].cardinality, states[id].cardinalityNext) =
+            observations[id].initialize(uint32(block.timestamp), tick);
         return BunniHook.afterInitialize.selector;
     }
 

@@ -2,7 +2,8 @@
 pragma solidity ^0.8.19;
 
 /// @title Oracle
-/// @notice Provides price data useful for a wide variety of system designs
+/// @notice Provides price data useful for a wide variety of system designs. Based on Uniswap's
+/// truncated oracle.
 /// @dev Instances of stored oracle data, "observations", are collected in the oracle array
 /// Every pool is initialized with an oracle array length of 1. Anyone can pay the SSTOREs to increase the
 /// maximum length of the oracle array. New slots will be added when the array is fully populated.
@@ -17,9 +18,14 @@ library Oracle {
     /// @param targetTimestamp Invalid timestamp targeted to be observed
     error TargetPredatesOldestObservation(uint32 oldestTimestamp, uint32 targetTimestamp);
 
+    /// @notice This is the max amount of ticks in either direction that the pool is allowed to move at one time
+    int24 constant MAX_ABS_TICK_MOVE = 9116;
+
     struct Observation {
         // the block timestamp of the observation
         uint32 blockTimestamp;
+        // the previous printed tick to calculate the change from time to time
+        int24 prevTick;
         // the tick accumulator, i.e. tick * time elapsed since the pool was first initialized
         int56 tickCumulative;
         // whether or not the observation is initialized
@@ -39,8 +45,18 @@ library Oracle {
     {
         unchecked {
             uint32 delta = blockTimestamp - last.blockTimestamp;
+
+            // if the current tick moves more than the max abs tick movement
+            // then we truncate it down
+            if ((tick - last.prevTick) > MAX_ABS_TICK_MOVE) {
+                tick = last.prevTick + MAX_ABS_TICK_MOVE;
+            } else if ((tick - last.prevTick) < -MAX_ABS_TICK_MOVE) {
+                tick = last.prevTick - MAX_ABS_TICK_MOVE;
+            }
+
             return Observation({
                 blockTimestamp: blockTimestamp,
+                prevTick: tick,
                 tickCumulative: last.tickCumulative + int56(tick) * int56(uint56(delta)),
                 initialized: true
             });
@@ -52,11 +68,11 @@ library Oracle {
     /// @param time The time of the oracle initialization, via block.timestamp truncated to uint32
     /// @return cardinality The number of populated elements in the oracle array
     /// @return cardinalityNext The new length of the oracle array, independent of population
-    function initialize(Observation[65535] storage self, uint32 time)
+    function initialize(Observation[65535] storage self, uint32 time, int24 tick)
         internal
         returns (uint16 cardinality, uint16 cardinalityNext)
     {
-        self[0] = Observation({blockTimestamp: time, tickCumulative: 0, initialized: true});
+        self[0] = Observation({blockTimestamp: time, prevTick: tick, tickCumulative: 0, initialized: true});
         return (1, 1);
     }
 
