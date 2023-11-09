@@ -341,9 +341,13 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
         // we also use ldf to check if the state is initialized so we ensure the ldf is nonzero
         if (address(liquidityDensityFunction) == address(0)) revert BunniHub__LDFCannotBeZero();
 
+        // ensure LDF params are valid
         {
-            (bool useTwap,, uint24 twapSecondsAgo,) = decodeLDFParams(ldfParams);
-            if (useTwap && twapSecondsAgo == 0) revert BunniHub__InvalidLDFParams();
+            (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(ldfParams);
+            if (
+                (useTwap && twapSecondsAgo == 0)
+                    || !liquidityDensityFunction.isValidParams(tickSpacing, useTwap, decodedLDFParams)
+            ) revert BunniHub__InvalidLDFParams();
         }
 
         if (

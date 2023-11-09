@@ -19,9 +19,6 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
-    error DiscreteLaplaceDistribution__InvalidMu(int24 mu);
-    error DiscreteLaplaceDistribution__InvalidAlpha(uint256 alpha);
-
     function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
         external
         pure
@@ -110,6 +107,34 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         return alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDivDown(Q96, totalDensityX96);
     }
 
+    function isValidParams(int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
+        external
+        pure
+        override
+        returns (bool)
+    {
+        uint256 alpha;
+        if (useTwap) {
+            // use rounded TWAP value as mu
+            // | alpha - 8 bytes |
+            alpha = uint256(uint64(bytes8(decodedLDFParams)));
+        } else {
+            // static mu set in params
+            // | mu - 3 bytes | alpha - 8 bytes |
+            int24 mu = int24(uint24(bytes3(decodedLDFParams)));
+            alpha = uint256(uint64(bytes8(decodedLDFParams << 24)));
+
+            // ensure mu is aligned to tickSpacing
+            if (mu % tickSpacing != 0) return false;
+        }
+
+        // ensure alpha is in range
+        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA) return false;
+
+        // if all conditions are met, return true
+        return true;
+    }
+
     function _totalDensityX96(uint256 alphaX96, int24 mu, int24 minTick, int24 maxTick, int24 tickSpacing)
         internal
         pure
@@ -141,10 +166,8 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
             // static mu set in params
             // | mu - 3 bytes | alpha - 8 bytes |
             mu = int24(uint24(bytes3(decodedLDFParams)));
-            if (mu % tickSpacing != 0) revert DiscreteLaplaceDistribution__InvalidMu(mu);
             alpha = uint256(uint64(bytes8(decodedLDFParams << 24)));
         }
-        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA) revert DiscreteLaplaceDistribution__InvalidAlpha(alpha);
         alphaX96 = alpha.mulDivDown(Q96, WAD);
     }
 

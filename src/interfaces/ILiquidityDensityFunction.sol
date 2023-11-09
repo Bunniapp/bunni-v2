@@ -16,4 +16,6 @@ interface ILiquidityDensityFunction {
         bool useTwap,
         bytes11 decodedLDFParams
     ) external view returns (uint256);
+
+    function isValidParams(int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams) external view returns (bool);
 }
