@@ -84,14 +84,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         returns (uint256 amount0DensityX96)
     {
         return FullMath.mulDiv(
-            FixedPoint96.Q96 - (-tickSpacing).getSqrtRatioAtTick(), _getSqrtRatioAtTick(-roundedTick), FixedPoint96.Q96
+            FixedPoint96.Q96 - (-tickSpacing).getSqrtRatioAtTick(), FixedPoint96.Q96, (roundedTick).getSqrtRatioAtTick()
         );
-    }
-
-    function _getSqrtRatioAtTick(int24 tick) internal pure returns (uint160) {
-        if (tick < TickMath.MIN_TICK) return 0;
-        if (tick > TickMath.MAX_TICK) return TickMath.MAX_SQRT_RATIO;
-        return tick.getSqrtRatioAtTick();
     }
 
     function _bruteForceCumulativeAmount1Density(int24 roundedTick, int24 tickSpacing, bytes11 decodedLDFParams)
@@ -113,7 +107,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
         returns (uint256 amount1DensityX96)
     {
         return FullMath.mulDiv(
-            tickSpacing.getSqrtRatioAtTick() - FixedPoint96.Q96, _getSqrtRatioAtTick(roundedTick), FixedPoint96.Q96
+            tickSpacing.getSqrtRatioAtTick() - FixedPoint96.Q96, (roundedTick).getSqrtRatioAtTick(), FixedPoint96.Q96
         );
     }
 }

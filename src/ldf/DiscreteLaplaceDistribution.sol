@@ -56,7 +56,7 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
                     cumulativeAmount0DensityX96 = c.mulDivDown(term2 - term1, totalDensityX96);
                 }
             } else {
-                uint256 numerator = _getSqrtRatioAtTick(-roundedTickRight).mulDivDown(
+                uint256 numerator = (-roundedTickRight).getSqrtRatioAtTick().mulDivDown(
                     alphaX96.rpow(uint256(int256((roundedTickRight - mu) / tickSpacing)), Q96), totalDensityX96
                 );
                 uint256 denominator = Q96 - sqrtRatioNegTickSpacing.mulDivDown(alphaX96, Q96);
@@ -169,11 +169,5 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
             alpha = uint256(uint64(bytes8(decodedLDFParams << 24)));
         }
         alphaX96 = alpha.mulDivDown(Q96, WAD);
-    }
-
-    function _getSqrtRatioAtTick(int24 tick) internal pure returns (uint160) {
-        if (tick < TickMath.MIN_TICK) return 0;
-        if (tick > TickMath.MAX_TICK) return TickMath.MAX_SQRT_RATIO;
-        return tick.getSqrtRatioAtTick();
     }
 }
