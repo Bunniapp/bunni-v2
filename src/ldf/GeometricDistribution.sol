@@ -35,18 +35,18 @@ contract GeometricDistribution is ILiquidityDensityFunction {
 
         // x is the index of the roundedTick in the distribution
         // should be in the range [0, length)
-        uint256 x;
+        int24 x;
         if (roundedTick < minTick) {
             // roundedTick is to the left of the distribution
-            // set x = 0
-            x = 0;
+            // set x = -1
+            x = -1;
         } else if (roundedTick >= minTick + length * tickSpacing) {
             // roundedTick is to the right of the distribution
-            // set x = length - 1
-            x = uint24(length - 1);
+            // set x = length
+            x = length;
         } else {
             // roundedTick is in the distribution
-            x = uint24((roundedTick - minTick) / tickSpacing);
+            x = (roundedTick - minTick) / tickSpacing;
         }
 
         uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtRatioAtTick();
@@ -60,30 +60,28 @@ contract GeometricDistribution is ILiquidityDensityFunction {
             uint256 alphaInvX96 = Q96.mulDivDown(Q96, alphaX96);
 
             // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
-            if (x >= uint24(length) - 1) {
+            if (x >= length - 1) {
                 // roundedTick is the last tick in the distribution
                 // cumulativeAmount0DensityX96 is just 0
                 cumulativeAmount0DensityX96 = 0;
             } else {
-                uint256 xPlus1 = x + 1; // the rounded tick to the right of the current rounded tick
-                uint256 alphaInvPowXX96 = alphaInvX96.rpow(xPlus1, Q96);
-                uint256 alphaInvPowXPlusLengthX96 = alphaInvX96.rpow(xPlus1 + uint24(length), Q96);
+                int24 xPlus1 = x + 1; // the rounded tick to the right of the current rounded tick
 
                 uint256 numerator = absDiffSimple(
-                    alphaInvX96.rpow(uint24(length), Q96),
-                    alphaInvPowXX96.mulDivDown(
-                        (-tickSpacing * (length - int24(uint24(xPlus1)))).getSqrtRatioAtTick(), Q96
-                    )
-                ) * (-tickSpacing * int24(uint24(xPlus1))).getSqrtRatioAtTick();
+                    alphaInvX96.rpow(uint24(length - xPlus1), Q96),
+                    (-tickSpacing * (length - xPlus1)).getSqrtRatioAtTick()
+                ) * (-tickSpacing * xPlus1).getSqrtRatioAtTick();
+
                 uint256 denominator = absDiffSimple(Q96, alphaX96.mulDivDown(sqrtRatioNegTickSpacing, Q96))
-                    * (alphaInvPowXX96 - alphaInvPowXPlusLengthX96);
+                    * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
+
                 cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).mulDiv(numerator, denominator).mulDivDown(
                     alphaX96 - Q96, sqrtRatioMinTick
                 );
             }
 
             // compute cumulativeAmount1DensityX96 for the rounded tick to the left of the rounded current tick
-            if (x == 0) {
+            if (x <= 0) {
                 // roundedTick is the first tick in the distribution
                 // cumulativeAmount1DensityX96 is just 0
                 cumulativeAmount1DensityX96 = 0;
@@ -93,8 +91,8 @@ contract GeometricDistribution is ILiquidityDensityFunction {
                 uint256 baseX96 = alphaX96.mulDivDown(sqrtRatioTickSpacing, Q96);
                 uint256 numerator1 = alphaX96 - Q96;
                 uint256 denominator1 = baseX96 - Q96;
-                uint256 numerator2 = alphaInvX96.rpow(uint24(length) - x, Q96).mulDivDown(
-                    (int24(uint24(x)) * tickSpacing).getSqrtRatioAtTick(), Q96
+                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x), Q96).mulDivDown(
+                    (x * tickSpacing).getSqrtRatioAtTick(), Q96
                 ) - alphaInvPowLengthX96;
 
                 uint256 denominator2 = Q96 - alphaInvPowLengthX96;
@@ -107,29 +105,32 @@ contract GeometricDistribution is ILiquidityDensityFunction {
             // will revert if alpha == 1 but that's ok
 
             // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
-            if (x >= uint24(length) - 1) {
+            if (x >= length - 1) {
                 // roundedTick is the last tick in the distribution
                 // cumulativeAmount0DensityX96 is just 0
                 cumulativeAmount0DensityX96 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDivDown(sqrtRatioNegTickSpacing, Q96);
-                uint256 numerator = (Q96 - alphaX96) * (baseX96.rpow(x + 1, Q96) - baseX96.rpow(uint24(length), Q96));
+                uint256 numerator =
+                    (Q96 - alphaX96) * (baseX96.rpow(uint24(x + 1), Q96) - baseX96.rpow(uint24(length), Q96));
                 uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
                 cumulativeAmount0DensityX96 =
                     (Q96 - sqrtRatioNegTickSpacing).mulDiv(numerator, denominator).mulDivDown(Q96, sqrtRatioMinTick);
             }
 
             // compute cumulativeAmount1DensityX96 for the rounded tick to the left of the rounded current tick
-            if (x == 0) {
+            if (x <= 0) {
                 // roundedTick is the first tick in the distribution
                 // cumulativeAmount1DensityX96 is just 0
                 cumulativeAmount1DensityX96 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDivDown(sqrtRatioTickSpacing, Q96);
-                uint256 numerator = absDiffSimple(Q96, baseX96.rpow(x, Q96)) * (Q96 - alphaX96);
+                uint256 numerator = absDiffSimple(
+                    sqrtRatioMinTick,
+                    alphaX96.rpow(uint24(x), Q96).mulDivDown((x * tickSpacing + minTick).getSqrtRatioAtTick(), Q96)
+                ) * (Q96 - alphaX96);
                 uint256 denominator = absDiffSimple(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
-                cumulativeAmount1DensityX96 =
-                    (sqrtRatioTickSpacing - Q96).mulDiv(numerator, denominator).mulDivDown(sqrtRatioMinTick, Q96);
+                cumulativeAmount1DensityX96 = (sqrtRatioTickSpacing - Q96).mulDiv(numerator, denominator);
             }
         }
     }
@@ -171,12 +172,12 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         }
 
         // ensure alpha is in range
-        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA) return false;
+        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
 
         // ensure length can be contained between minUsableTick and maxUsableTick
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        if (length * tickSpacing > maxUsableTick - minUsableTick) return false;
+        if (length * tickSpacing > maxUsableTick || -length * tickSpacing < minUsableTick) return false;
 
         // if all conditions are met, return true
         return true;
@@ -221,7 +222,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
             // use rounded TWAP value + offset as minTick
             // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes |
             int24 offset = int24(int16(uint16(bytes2(decodedLDFParams)))); // the offset applied to the twap tick to get the minTick
-            minTick = roundTickSingle(twapTick + offset, tickSpacing);
+            minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
             length = int24(int16(uint16(bytes2(decodedLDFParams << 16))));
             alpha = uint32(bytes4(decodedLDFParams << 32));
         } else {
