@@ -14,7 +14,8 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
 
     function test_liquidityDensity_sumUpToOne(int24 tickSpacing, int24 mu, uint256 alpha) external {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minTick, int24 maxTick) = (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        (int24 minTick, int24 maxTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
         mu = roundTickSingle(int24(bound(mu, minTick, maxTick)), tickSpacing);
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
 
@@ -23,7 +24,8 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
 
     function test_query_cumulativeAmounts(int24 currentTick, int24 tickSpacing, int24 mu, uint256 alpha) external {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minTick, int24 maxTick) = (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        (int24 minTick, int24 maxTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
         currentTick = int24(bound(currentTick, minTick, maxTick));
         mu = roundTickSingle(int24(bound(mu, minTick, maxTick)), tickSpacing);
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);

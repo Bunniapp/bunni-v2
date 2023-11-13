@@ -26,7 +26,8 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         returns (uint256 liquidityDensityX96_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
     {
         (int24 mu, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
-        (int24 minTick, int24 maxTick) = (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        (int24 minTick, int24 maxTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
         uint256 totalDensityX96 = _totalDensityX96(alphaX96, mu, minTick, maxTick, tickSpacing);
 
         // compute liquidityDensityX96
@@ -102,7 +103,11 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
     ) external pure override returns (uint256) {
         (int24 mu, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
         uint256 totalDensityX96 = _totalDensityX96(
-            alphaX96, mu, TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing), tickSpacing
+            alphaX96,
+            mu,
+            TickMath.minUsableTick(tickSpacing),
+            TickMath.maxUsableTick(tickSpacing) - tickSpacing,
+            tickSpacing
         );
         return alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDivDown(Q96, totalDensityX96);
     }

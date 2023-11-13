@@ -31,7 +31,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
 
     function _test_liquidityDensity_sumUpToOne(int24 tickSpacing, bytes11 decodedLDFParams) internal {
         uint256 cumulativeLiquidityDensity;
-        (int24 minTick, int24 maxTick) = (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        (int24 minTick, int24 maxTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
         for (int24 tick = minTick; tick <= maxTick; tick += tickSpacing) {
             cumulativeLiquidityDensity += ldf.liquidityDensityX96(tick, 0, tickSpacing, false, decodedLDFParams);
         }
@@ -70,7 +71,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
         view
         returns (uint256 cumulativeAmount0DensityX96)
     {
-        int24 maxTick = TickMath.maxUsableTick(tickSpacing);
+        int24 maxTick = TickMath.maxUsableTick(tickSpacing) - tickSpacing;
         for (int24 tick = roundedTick; tick <= maxTick; tick += tickSpacing) {
             uint256 liquidityDensityX96 = ldf.liquidityDensityX96(tick, 0, tickSpacing, false, decodedLDFParams);
             uint256 amount0DensityX96 = _amount0DensityX96(tick, tickSpacing);
