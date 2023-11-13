@@ -244,8 +244,27 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
         if (roundedTick < mu - lengthLeft * tickSpacing || roundedTick > mu + lengthRight * tickSpacing) {
             return 0;
         }
-        uint256 totalDensityX96 = _totalDensityX96(alphaX96, lengthLeft, lengthRight);
-        return alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDivDown(Q96, totalDensityX96);
+
+        uint256 x = abs((roundedTick - mu) / tickSpacing);
+        if (alphaX96 < Q96) {
+            uint256 totalDensityX96 = _totalDensityX96(alphaX96, lengthLeft, lengthRight);
+            return alphaX96.rpow(x, Q96).mulDivDown(Q96, totalDensityX96);
+        } else {
+            uint256 alphaInvX96 = Q96.mulDivDown(Q96, alphaX96);
+
+            /**
+             *        alpha^(-(lengthLeft + lengthRight - x)) * (alpha - 1)
+             * d(x) = --------------------------------------------------------------------------------------------------------
+             *        alpha * (alpha^(-lengthLeft) + alpha^(-lengthRight)) - (alpha + 1) * alpha^(-(lengthLeft + lengthRight))
+             */
+            uint256 tmp = alphaInvX96.rpow(uint24(lengthLeft + lengthRight), Q96);
+            uint256 numerator = alphaInvX96.rpow(uint24(lengthLeft + lengthRight) - x, Q96);
+            uint256 denominator = (
+                alphaInvX96.rpow(uint24(lengthLeft), Q96) + alphaInvX96.rpow(uint24(lengthRight), Q96) - tmp
+            ).mulDivDown(alphaX96, Q96) - tmp;
+            if (denominator == 0) return 0;
+            return (alphaX96 - Q96).mulDivDown(numerator, denominator);
+        }
     }
 
     function isValidParams(int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
@@ -276,7 +295,8 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
         }
 
         // ensure alpha is in range
-        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA) return false;
+        // must not be 1 since all liquidity density would be 0
+        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
 
         // ensure length can be contained between minUsableTick and maxUsableTick
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -288,13 +308,11 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
     }
 
     function _totalDensityX96(uint256 alphaX96, int24 lengthLeft, int24 lengthRight) internal pure returns (uint256) {
-        return (
-            alphaX96.mulDivDown(
-                Q96 + Q96.mulDivDown(Q96, alphaX96) - alphaX96.rpow(uint24(lengthLeft), Q96)
-                    - alphaX96.rpow(uint24(lengthRight), Q96),
-                Q96
-            )
-        ).mulDivDown(Q96, Q96 - alphaX96);
+        return alphaX96.mulDivDown(
+            Q96 + Q96.mulDivDown(Q96, alphaX96) - alphaX96.rpow(uint24(lengthLeft), Q96)
+                - alphaX96.rpow(uint24(lengthRight), Q96),
+            Q96 - alphaX96
+        );
     }
 
     /// @return mu Center of the distribution

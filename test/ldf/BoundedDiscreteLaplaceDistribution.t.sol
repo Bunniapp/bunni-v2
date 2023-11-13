@@ -6,7 +6,7 @@ import "../../src/ldf/BoundedDiscreteLaplaceDistribution.sol";
 
 contract BoundedDiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e2;
-    uint256 internal constant MAX_ALPHA = 0.9e5;
+    uint256 internal constant MAX_ALPHA = 10e5;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new BoundedDiscreteLaplaceDistribution()));
@@ -27,9 +27,16 @@ contract BoundedDiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest 
         lengthRight = int24(bound(lengthRight, 0, (maxUsableTick - mu) / tickSpacing - 1));
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
 
-        _test_liquidityDensity_sumUpToOne(
-            tickSpacing, bytes11(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha), uint8(0)))
-        );
+        console2.log("alpha", alpha);
+        console2.log("tickSpacing", tickSpacing);
+        console2.log("mu", mu);
+        console2.log("lengthLeft", lengthLeft);
+        console2.log("lengthRight", lengthRight);
+
+        bytes11 decodedLDFParams =
+            bytes11(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha), uint8(0)));
+        vm.assume(ldf.isValidParams(tickSpacing, false, decodedLDFParams));
+        _test_liquidityDensity_sumUpToOne(tickSpacing, decodedLDFParams);
     }
 
     function test_query_cumulativeAmounts(
@@ -49,10 +56,16 @@ contract BoundedDiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest 
         currentTick = int24(bound(currentTick, minUsableTick, maxUsableTick));
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
 
-        _test_query_cumulativeAmounts(
-            currentTick,
-            tickSpacing,
-            bytes11(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha), uint8(0)))
-        );
+        console2.log("alpha", alpha);
+        console2.log("tickSpacing", tickSpacing);
+        console2.log("mu", mu);
+        console2.log("lengthLeft", lengthLeft);
+        console2.log("lengthRight", lengthRight);
+        console2.log("currentTick", currentTick);
+
+        bytes11 decodedLDFParams =
+            bytes11(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha), uint8(0)));
+        vm.assume(ldf.isValidParams(tickSpacing, false, decodedLDFParams));
+        _test_query_cumulativeAmounts(currentTick, tickSpacing, decodedLDFParams);
     }
 }

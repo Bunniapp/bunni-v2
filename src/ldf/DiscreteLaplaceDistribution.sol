@@ -145,13 +145,11 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         pure
         returns (uint256)
     {
-        return (
-            alphaX96.mulDivDown(
-                Q96 + Q96.mulDivDown(Q96, alphaX96) - alphaX96.rpow(uint256(int256((mu - minTick) / tickSpacing)), Q96)
-                    - alphaX96.rpow(uint256(int256((maxTick - mu) / tickSpacing)), Q96),
-                Q96
-            )
-        ).mulDivDown(Q96, Q96 - alphaX96);
+        return alphaX96.mulDivDown(
+            Q96 + Q96.mulDivDown(Q96, alphaX96) - alphaX96.rpow(uint256(int256((mu - minTick) / tickSpacing)), Q96)
+                - alphaX96.rpow(uint256(int256((maxTick - mu) / tickSpacing)), Q96),
+            Q96 - alphaX96
+        );
     }
 
     /// @return mu Center of the distribution
