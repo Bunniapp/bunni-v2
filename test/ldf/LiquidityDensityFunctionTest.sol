@@ -15,7 +15,7 @@ import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityF
 abstract contract LiquidityDensityFunctionTest is Test {
     using TickMath for int24;
 
-    uint256 internal constant MAX_ERROR = 1e12;
+    uint256 internal constant MAX_ERROR = 1e10;
     int24 internal constant MAX_TICK_SPACING = type(int16).max;
     int24 internal constant MIN_TICK_SPACING = 1000; // >1 to make brute forcing viable
     uint256 internal constant MIN_ABS_ERROR = FixedPoint96.Q96 / 1e9;

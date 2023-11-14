@@ -20,6 +20,7 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
     uint256 internal constant MAX_ALPHA = 10e5;
     uint256 internal constant ALPHA_BASE = 1e5; // alpha uses 5 decimals in decodedLDFParams
     uint256 internal constant Q96 = 0x1000000000000000000000000;
+    uint256 internal constant Q120 = 0x1000000000000000000000000000000;
 
     function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
         external
@@ -250,19 +251,18 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
             uint256 totalDensityX96 = _totalDensityX96(alphaX96, lengthLeft, lengthRight);
             return alphaX96.rpow(x, Q96).mulDivDown(Q96, totalDensityX96);
         } else {
-            uint256 alphaInvX96 = Q96.mulDivDown(Q96, alphaX96);
+            uint256 alphaInvX120 = Q120.mulDivDown(Q96, alphaX96);
 
             /**
              *        alpha^(-(lengthLeft + lengthRight - x)) * (alpha - 1)
              * d(x) = --------------------------------------------------------------------------------------------------------
              *        alpha * (alpha^(-lengthLeft) + alpha^(-lengthRight)) - (alpha + 1) * alpha^(-(lengthLeft + lengthRight))
              */
-            uint256 tmp = alphaInvX96.rpow(uint24(lengthLeft + lengthRight), Q96);
-            uint256 numerator = alphaInvX96.rpow(uint24(lengthLeft + lengthRight) - x, Q96);
+            uint256 tmp = alphaInvX120.rpow(uint24(lengthLeft + lengthRight), Q120);
+            uint256 numerator = alphaInvX120.rpow(uint24(lengthLeft + lengthRight) - x, Q120);
             uint256 denominator = (
-                alphaInvX96.rpow(uint24(lengthLeft), Q96) + alphaInvX96.rpow(uint24(lengthRight), Q96) - tmp
+                alphaInvX120.rpow(uint24(lengthLeft), Q120) + alphaInvX120.rpow(uint24(lengthRight), Q120) - tmp
             ).mulDivDown(alphaX96, Q96) - tmp;
-            if (denominator == 0) return 0;
             return (alphaX96 - Q96).mulDivDown(numerator, denominator);
         }
     }
