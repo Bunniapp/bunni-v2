@@ -25,7 +25,6 @@ import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
-import "./lib/LDFParams.sol";
 import {Oracle} from "./lib/Oracle.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {IBunniHub, IBunniToken} from "./interfaces/IBunniHub.sol";
@@ -112,7 +111,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// -----------------------------------------------------------------------
 
     /// @notice Update the TWAP oracle for the given pool. Only callable by BunniHub.
-    function updateOracleAndObserve(PoolId id, bool shouldObserve, int24 tick, uint24 twapSecondsAgo)
+    function updateOracleAndObserve(PoolId id, int24 tick, uint24 twapSecondsAgo)
         external
         returns (int24 arithmeticMeanTick)
     {
@@ -125,7 +124,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         (states[id].index, states[id].cardinality) = (updatedIndex, updatedCardinality);
 
         // observe if needed
-        if (shouldObserve) {
+        if (twapSecondsAgo != 0) {
             return _getTwap(id, tick, twapSecondsAgo, updatedIndex, updatedCardinality);
         }
         return 0;
@@ -174,6 +173,13 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         (, int24 tick,,) = poolManager.getSlot0(id);
 
         return observations[id].observe(uint32(block.timestamp), secondsAgos, tick, state.index, state.cardinality);
+    }
+
+    function isValidParams(bytes32 hookParams) external pure returns (bool) {
+        (, uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo) =
+            _decodeParams(hookParams);
+        return (feeMin <= feeMax) && (feeMax <= 1e6)
+            && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0);
     }
 
     /// -----------------------------------------------------------------------
@@ -331,17 +337,18 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
-        (bool useTwap, uint8 compoundThreshold, uint24 twapSecondsAgo, bytes11 decodedLDFParams) =
-            decodeLDFParams(bunniState.ldfParams);
+        bool useTwap = bunniState.twapSecondsAgo != 0;
         if (useTwap) {
             // need to use TWAP
             // compute TWAP value
-            arithmeticMeanTick = _getTwap(id, currentTick, twapSecondsAgo, updatedIndex, updatedCardinality);
+            arithmeticMeanTick = _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
         }
+        (uint8 compoundThreshold, uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo)
+        = _decodeParams(bunniState.hookParams);
         int24 feeMeanTick;
-        if (bunniState.feeMin != bunniState.feeMax && bunniState.feeQuadraticMultiplier != 0) {
+        if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
             // fee calculation needs TWAP
-            feeMeanTick = _getTwap(id, currentTick, bunniState.feeTwapSecondsAgo, updatedIndex, updatedCardinality);
+            feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
         }
 
         // get densities
@@ -350,7 +357,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96
         ) = bunniState.liquidityDensityFunction.query(
-            roundedTick, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
+            roundedTick, arithmeticMeanTick, key.tickSpacing, useTwap, bunniState.ldfParams
         );
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96,
@@ -463,7 +470,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             liquidity = (
                 (
                     bunniState.liquidityDensityFunction.liquidityDensityX96(
-                        tickLowerToAddLiquidityTo, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
+                        tickLowerToAddLiquidityTo, arithmeticMeanTick, key.tickSpacing, useTwap, bunniState.ldfParams
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();
@@ -499,7 +506,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             liquidity = (
                 (
                     bunniState.liquidityDensityFunction.liquidityDensityX96(
-                        tickLowerToAddLiquidityTo, arithmeticMeanTick, key.tickSpacing, useTwap, decodedLDFParams
+                        tickLowerToAddLiquidityTo, arithmeticMeanTick, key.tickSpacing, useTwap, bunniState.ldfParams
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();
@@ -520,13 +527,9 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             // consolidate same-slot storage writes to save gas
             firstTickToRemove = roundedTick;
             numTicksToRemove = numTicksToRemove_;
-            swapFee = _getFee(
-                sqrtPriceX96, feeMeanTick, bunniState.feeMin, bunniState.feeMax, bunniState.feeQuadraticMultiplier
-            );
+            swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
         } else {
-            swapFee = _getFee(
-                sqrtPriceX96, feeMeanTick, bunniState.feeMin, bunniState.feeMax, bunniState.feeQuadraticMultiplier
-            );
+            swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
         }
 
         if (bufferLength != 0) {
@@ -570,5 +573,24 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         );
         int56 tickCumulativesDelta = tickCumulative1 - tickCumulative0;
         arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
+    }
+
+    function _decodeParams(bytes32 hookParams)
+        internal
+        pure
+        returns (
+            uint8 compoundThreshold,
+            uint24 feeMin,
+            uint24 feeMax,
+            uint24 feeQuadraticMultiplier,
+            uint24 feeTwapSecondsAgo
+        )
+    {
+        // | compoundThreshold - 1 byte | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes |
+        compoundThreshold = uint8(bytes1(hookParams));
+        feeMin = uint24(bytes3(hookParams << 8));
+        feeMax = uint24(bytes3(hookParams << 32));
+        feeQuadraticMultiplier = uint24(bytes3(hookParams << 56));
+        feeTwapSecondsAgo = uint24(bytes3(hookParams << 80));
     }
 }

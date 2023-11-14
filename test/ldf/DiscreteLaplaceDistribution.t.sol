@@ -19,7 +19,7 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
         mu = roundTickSingle(int24(bound(mu, minTick, maxTick)), tickSpacing);
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
 
-        _test_liquidityDensity_sumUpToOne(tickSpacing, bytes11(abi.encodePacked(mu, uint64(alpha))));
+        _test_liquidityDensity_sumUpToOne(tickSpacing, bytes32(abi.encodePacked(mu, uint64(alpha))));
     }
 
     function test_query_cumulativeAmounts(int24 currentTick, int24 tickSpacing, int24 mu, uint256 alpha) external {
@@ -30,6 +30,6 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
         mu = roundTickSingle(int24(bound(mu, minTick, maxTick)), tickSpacing);
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
 
-        _test_query_cumulativeAmounts(currentTick, tickSpacing, bytes11(abi.encodePacked(mu, uint64(alpha))));
+        _test_query_cumulativeAmounts(currentTick, tickSpacing, bytes32(abi.encodePacked(mu, uint64(alpha))));
     }
 }

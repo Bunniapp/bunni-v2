@@ -16,19 +16,18 @@ contract GeometricDistribution is ILiquidityDensityFunction {
     using FixedPointMathLib for uint256;
     using FullMath for uint256;
 
-    uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in decodedLDFParams
+    uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
-    function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
+    function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
         external
         pure
         override
         returns (uint256 liquidityDensityX96_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
     {
-        (int24 minTick, int24 length, uint256 alphaX96) =
-            _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
+        (int24 minTick, int24 length, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
 
         // compute liquidityDensityX96
         liquidityDensityX96_ = _liquidityDensityX96(minTick, length, alphaX96, roundedTick, tickSpacing);
@@ -135,19 +134,17 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         }
     }
 
-    function liquidityDensityX96(
-        int24 roundedTick,
-        int24 twapTick,
-        int24 tickSpacing,
-        bool useTwap,
-        bytes11 decodedLDFParams
-    ) external pure override returns (uint256) {
-        (int24 minTick, int24 length, uint256 alphaX96) =
-            _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
+    function liquidityDensityX96(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+        external
+        pure
+        override
+        returns (uint256)
+    {
+        (int24 minTick, int24 length, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
         return _liquidityDensityX96(minTick, length, alphaX96, roundedTick, tickSpacing);
     }
 
-    function isValidParams(int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
         external
         pure
         override
@@ -155,17 +152,17 @@ contract GeometricDistribution is ILiquidityDensityFunction {
     {
         int24 length;
         uint256 alpha;
-        if (useTwap) {
+        if (twapSecondsAgo != 0) {
             // use rounded TWAP value + offset as minTick
             // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes |
-            length = int24(int16(uint16(bytes2(decodedLDFParams << 16))));
-            alpha = uint32(bytes4(decodedLDFParams << 32));
+            length = int24(int16(uint16(bytes2(ldfParams << 16))));
+            alpha = uint32(bytes4(ldfParams << 32));
         } else {
             // static minTick set in params
             // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | 0 - 2 bytes |
-            int24 minTick = int24(uint24(bytes3(decodedLDFParams))); // must be aligned to tickSpacing
-            length = int24(int16(uint16(bytes2(decodedLDFParams << 24))));
-            alpha = uint32(bytes4(decodedLDFParams << 40));
+            int24 minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
+            length = int24(int16(uint16(bytes2(ldfParams << 24))));
+            alpha = uint32(bytes4(ldfParams << 40));
 
             // ensure minTick is aligned to tickSpacing
             if (minTick % tickSpacing != 0) return false;
@@ -212,7 +209,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
     /// @return minTick The minimum rounded tick of the distribution
     /// @return length The length of the distribution in number of rounded ticks (i.e. the number of ticks / tickSpacing)
     /// @return alphaX96 Parameter of the discrete laplace distribution, FixedPoint96
-    function _decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
+    function _decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
         internal
         pure
         returns (int24 minTick, int24 length, uint256 alphaX96)
@@ -221,16 +218,16 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         if (useTwap) {
             // use rounded TWAP value + offset as minTick
             // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes |
-            int24 offset = int24(int16(uint16(bytes2(decodedLDFParams)))); // the offset applied to the twap tick to get the minTick
+            int24 offset = int24(int16(uint16(bytes2(ldfParams)))); // the offset applied to the twap tick to get the minTick
             minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            length = int24(int16(uint16(bytes2(decodedLDFParams << 16))));
-            alpha = uint32(bytes4(decodedLDFParams << 32));
+            length = int24(int16(uint16(bytes2(ldfParams << 16))));
+            alpha = uint32(bytes4(ldfParams << 32));
         } else {
             // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | 0 - 2 bytes |
-            minTick = int24(uint24(bytes3(decodedLDFParams))); // must be aligned to tickSpacing
-            length = int24(int16(uint16(bytes2(decodedLDFParams << 24))));
-            alpha = uint32(bytes4(decodedLDFParams << 40));
+            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes |
+            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
+            length = int24(int16(uint16(bytes2(ldfParams << 24))));
+            alpha = uint32(bytes4(ldfParams << 40));
         }
         alphaX96 = alpha.mulDivDown(Q96, ALPHA_BASE);
 

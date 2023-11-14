@@ -18,18 +18,18 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
 
     uint256 internal constant MIN_ALPHA = 1e2;
     uint256 internal constant MAX_ALPHA = 10e5;
-    uint256 internal constant ALPHA_BASE = 1e5; // alpha uses 5 decimals in decodedLDFParams
+    uint256 internal constant ALPHA_BASE = 1e5; // alpha uses 5 decimals in ldfParams
     uint256 internal constant Q96 = 0x1000000000000000000000000;
     uint256 internal constant Q120 = 0x1000000000000000000000000000000;
 
-    function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
+    function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
         external
         pure
         override
         returns (uint256 liquidityDensityX96_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
     {
         (int24 mu, int24 lengthLeft, int24 lengthRight, uint256 alphaX96) =
-            _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
+            _decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
         (int24 minTick, int24 maxTick) = (mu - lengthLeft * tickSpacing, mu + lengthRight * tickSpacing);
         uint256 totalDensityX96 = _totalDensityX96(alphaX96, lengthLeft, lengthRight);
 
@@ -233,15 +233,14 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
         }
     }
 
-    function liquidityDensityX96(
-        int24 roundedTick,
-        int24 twapTick,
-        int24 tickSpacing,
-        bool useTwap,
-        bytes11 decodedLDFParams
-    ) external pure override returns (uint256) {
+    function liquidityDensityX96(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+        external
+        pure
+        override
+        returns (uint256)
+    {
         (int24 mu, int24 lengthLeft, int24 lengthRight, uint256 alphaX96) =
-            _decodeParams(twapTick, tickSpacing, useTwap, decodedLDFParams);
+            _decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
         if (roundedTick < mu - lengthLeft * tickSpacing || roundedTick > mu + lengthRight * tickSpacing) {
             return 0;
         }
@@ -267,7 +266,7 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
         }
     }
 
-    function isValidParams(int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
         external
         pure
         override
@@ -276,19 +275,19 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
         uint256 alpha;
         int24 lengthLeft;
         int24 lengthRight;
-        if (useTwap) {
+        if (twapSecondsAgo != 0) {
             // use rounded TWAP value + offset as mu
             // | offset - 1 byte | lengthLeft - 2 bytes | lengthRight - 2 bytes | alpha - 3 bytes |
-            lengthLeft = int24(uint24(uint16(bytes2(decodedLDFParams << 8))));
-            lengthRight = int24(uint24(uint16(bytes2(decodedLDFParams << 24))));
-            alpha = uint24(bytes3(decodedLDFParams << 40));
+            lengthLeft = int24(uint24(uint16(bytes2(ldfParams << 8))));
+            lengthRight = int24(uint24(uint16(bytes2(ldfParams << 24))));
+            alpha = uint24(bytes3(ldfParams << 40));
         } else {
             // static mu set in params
             // | mu - 3 bytes | lengthLeft - 2 bytes | lengthRight - 2 bytes | alpha - 3 bytes | 0 - 1 byte |
-            int24 mu = int24(uint24(bytes3(decodedLDFParams)));
-            lengthLeft = int24(uint24(uint16(bytes2(decodedLDFParams << 24))));
-            lengthRight = int24(uint24(uint16(bytes2(decodedLDFParams << 40))));
-            alpha = uint24(bytes3(decodedLDFParams << 56));
+            int24 mu = int24(uint24(bytes3(ldfParams)));
+            lengthLeft = int24(uint24(uint16(bytes2(ldfParams << 24))));
+            lengthRight = int24(uint24(uint16(bytes2(ldfParams << 40))));
+            alpha = uint24(bytes3(ldfParams << 56));
 
             // ensure mu is aligned to tickSpacing
             if (mu % tickSpacing != 0) return false;
@@ -319,7 +318,7 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
     /// @return lengthLeft Number of rounded ticks to the left of mu
     /// @return lengthRight Number of rounded ticks to the right of mu
     /// @return alphaX96 Parameter of the discrete laplace distribution, FixedPoint96
-    function _decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes11 decodedLDFParams)
+    function _decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
         internal
         pure
         returns (int24 mu, int24 lengthLeft, int24 lengthRight, uint256 alphaX96)
@@ -328,18 +327,18 @@ contract BoundedDiscreteLaplaceDistribution is ILiquidityDensityFunction {
         if (useTwap) {
             // use rounded TWAP value + offset as mu
             // | offset - 1 byte | lengthLeft - 2 bytes | lengthRight - 2 bytes | alpha - 3 bytes |
-            int24 offset = int8(uint8(bytes1(decodedLDFParams)));
+            int24 offset = int8(uint8(bytes1(ldfParams)));
             mu = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            lengthLeft = int24(uint24(uint16(bytes2(decodedLDFParams << 8))));
-            lengthRight = int24(uint24(uint16(bytes2(decodedLDFParams << 24))));
-            alpha = uint24(bytes3(decodedLDFParams << 40));
+            lengthLeft = int24(uint24(uint16(bytes2(ldfParams << 8))));
+            lengthRight = int24(uint24(uint16(bytes2(ldfParams << 24))));
+            alpha = uint24(bytes3(ldfParams << 40));
         } else {
             // static mu set in params
-            // | mu - 3 bytes | lengthLeft - 2 bytes | lengthRight - 2 bytes | alpha - 3 bytes | 0 - 1 byte |
-            mu = int24(uint24(bytes3(decodedLDFParams)));
-            lengthLeft = int24(uint24(uint16(bytes2(decodedLDFParams << 24))));
-            lengthRight = int24(uint24(uint16(bytes2(decodedLDFParams << 40))));
-            alpha = uint24(bytes3(decodedLDFParams << 56));
+            // | mu - 3 bytes | lengthLeft - 2 bytes | lengthRight - 2 bytes | alpha - 3 bytes |
+            mu = int24(uint24(bytes3(ldfParams)));
+            lengthLeft = int24(uint24(uint16(bytes2(ldfParams << 24))));
+            lengthRight = int24(uint24(uint16(bytes2(ldfParams << 40))));
+            alpha = uint24(bytes3(ldfParams << 56));
         }
         alphaX96 = alpha.mulDivDown(Q96, ALPHA_BASE);
 

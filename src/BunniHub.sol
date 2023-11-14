@@ -15,6 +15,7 @@ import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPool
 import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
 
 import {CREATE3} from "solady/src/utils/CREATE3.sol";
+import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
 import {ERC1155TokenReceiver} from "solmate/tokens/ERC1155.sol";
@@ -22,7 +23,6 @@ import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
-import "./lib/LDFParams.sol";
 import {BunniHook} from "./BunniHook.sol";
 import {BunniToken} from "./BunniToken.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
@@ -39,6 +39,8 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
 contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
+    using SSTORE2 for bytes;
+    using SSTORE2 for address;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
@@ -55,9 +57,10 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
     error BunniHub__LDFCannotBeZero();
     error BunniHub__MaxNonceReached();
     error BunniHub__SlippageTooHigh();
+    error BunniHub__HookCannotBeZero();
     error BunniHub__ZeroSharesMinted();
     error BunniHub__InvalidLDFParams();
-    error BunniHub__InvalidFeeParams();
+    error BunniHub__InvalidHookParams();
     error BunniHub__BunniTokenNotInitialized();
 
     uint256 internal constant WAD = 1e18;
@@ -71,7 +74,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
     /// Storage variables
     /// -----------------------------------------------------------
 
-    mapping(PoolId poolId => PoolState) internal _poolState;
+    mapping(PoolId poolId => RawPoolState) internal _poolState;
     mapping(bytes32 bunniSubspace => uint24) public override nonce;
     mapping(IBunniToken bunniToken => PoolId) public override poolIdOfBunniToken;
 
@@ -111,8 +114,8 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
         // update TWAP oracle and optionally observe
         BunniHook hook = BunniHook(address(params.poolKey.hooks));
         (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(poolId);
-        (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(state.ldfParams);
-        int24 arithmeticMeanTick = hook.updateOracleAndObserve(poolId, useTwap, currentTick, twapSecondsAgo);
+        bool useTwap = state.twapSecondsAgo != 0;
+        int24 arithmeticMeanTick = hook.updateOracleAndObserve(poolId, currentTick, state.twapSecondsAgo);
 
         // compute sqrt ratios
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, params.poolKey.tickSpacing);
@@ -125,7 +128,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96
         ) = state.liquidityDensityFunction.query(
-            roundedTick, arithmeticMeanTick, params.poolKey.tickSpacing, useTwap, decodedLDFParams
+            roundedTick, arithmeticMeanTick, params.poolKey.tickSpacing, useTwap, state.ldfParams
         );
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96,
@@ -316,13 +319,11 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
         Currency currency0,
         Currency currency1,
         int24 tickSpacing,
+        uint24 twapSecondsAgo,
         ILiquidityDensityFunction liquidityDensityFunction,
-        bytes12 ldfParams,
-        uint24 feeMin,
-        uint24 feeMax,
-        uint24 feeQuadraticMultiplier,
-        uint24 feeTwapSecondsAgo,
+        bytes32 ldfParams,
         IHooks hooks,
+        bytes32 hookParams,
         uint160 sqrtPriceX96
     ) external override returns (IBunniToken token, PoolKey memory key) {
         /// -----------------------------------------------------------------------
@@ -338,22 +339,15 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
         uint24 nonce_ = nonce[bunniSubspace];
         if (nonce_ + 1 > MAX_NONCE) revert BunniHub__MaxNonceReached();
 
-        // we also use ldf to check if the state is initialized so we ensure the ldf is nonzero
-        if (address(liquidityDensityFunction) == address(0)) revert BunniHub__LDFCannotBeZero();
-
         // ensure LDF params are valid
-        {
-            (bool useTwap,, uint24 twapSecondsAgo, bytes11 decodedLDFParams) = decodeLDFParams(ldfParams);
-            if (
-                (useTwap && twapSecondsAgo == 0)
-                    || !liquidityDensityFunction.isValidParams(tickSpacing, useTwap, decodedLDFParams)
-            ) revert BunniHub__InvalidLDFParams();
+        if (address(liquidityDensityFunction) == address(0)) revert BunniHub__LDFCannotBeZero();
+        if (!liquidityDensityFunction.isValidParams(tickSpacing, twapSecondsAgo, ldfParams)) {
+            revert BunniHub__InvalidLDFParams();
         }
 
-        if (
-            feeMin > feeMax || feeMin > 1e6 || feeMax > 1e6
-                || (feeTwapSecondsAgo == 0 && feeMin != feeMax && feeQuadraticMultiplier != 0)
-        ) revert BunniHub__InvalidFeeParams();
+        // ensure hook params are valid
+        if (address(hooks) == address(0)) revert BunniHub__HookCannotBeZero();
+        if (!BunniHook(address(hooks)).isValidParams(hookParams)) revert BunniHub__InvalidHookParams();
 
         /// -----------------------------------------------------------------------
         /// State updates
@@ -380,17 +374,8 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
             hooks: hooks
         });
         PoolId poolId = key.toId();
-        _poolState[poolId] = PoolState({
-            liquidityDensityFunction: liquidityDensityFunction,
-            ldfParams: ldfParams,
-            bunniToken: token,
-            feeMin: feeMin,
-            feeMax: feeMax,
-            feeQuadraticMultiplier: feeQuadraticMultiplier,
-            feeTwapSecondsAgo: feeTwapSecondsAgo,
-            reserve0: 0,
-            reserve1: 0
-        });
+        _poolState[poolId].immutableParamsPointer =
+            abi.encodePacked(liquidityDensityFunction, token, twapSecondsAgo, ldfParams, hookParams).write();
         poolIdOfBunniToken[token] = poolId;
 
         // increment nonce
@@ -412,9 +397,10 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
         override
     {
         PoolId poolId = poolKey.toId();
-        IBunniToken bunniToken = _poolState[poolId].bunniToken;
-        uint256 reserve0 = _poolState[poolId].reserve0;
-        uint256 reserve1 = _poolState[poolId].reserve1;
+        PoolState memory state = _getPoolState(poolId);
+        IBunniToken bunniToken = state.bunniToken;
+        uint256 reserve0 = state.reserve0;
+        uint256 reserve1 = state.reserve1;
         if (address(bunniToken) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         if (msg.sender != address(poolKey.hooks)) revert BunniHub__Unauthorized(); // only hook
 
@@ -615,8 +601,35 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
     }
 
     function _getPoolState(PoolId poolId) internal view returns (PoolState memory state) {
-        state = _poolState[poolId];
-        if (address(state.bunniToken) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+        RawPoolState memory rawState = _poolState[poolId];
+        if (rawState.immutableParamsPointer == address(0)) revert BunniHub__BunniTokenNotInitialized();
+
+        // read params via SSLOAD2
+        bytes memory immutableParams = rawState.immutableParamsPointer.read();
+
+        ILiquidityDensityFunction liquidityDensityFunction;
+        IBunniToken bunniToken;
+        uint24 twapSecondsAgo;
+        bytes32 ldfParams;
+        bytes32 hookParams;
+
+        assembly {
+            liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
+            bunniToken := shr(96, mload(add(immutableParams, 52)))
+            twapSecondsAgo := shr(232, mload(add(immutableParams, 72)))
+            ldfParams := mload(add(immutableParams, 75))
+            hookParams := mload(add(immutableParams, 107))
+        }
+
+        state = PoolState({
+            liquidityDensityFunction: liquidityDensityFunction,
+            bunniToken: bunniToken,
+            twapSecondsAgo: twapSecondsAgo,
+            ldfParams: ldfParams,
+            hookParams: hookParams,
+            reserve0: rawState.reserve0,
+            reserve1: rawState.reserve1
+        });
     }
 
     function _updatePoolTokens(Currency currency0, Currency currency1, BalanceDelta delta) internal {

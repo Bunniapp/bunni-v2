@@ -34,6 +34,7 @@ contract BunniHubTest is Test {
     uint24 internal constant FEE_MIN = 0.0001e6;
     uint24 internal constant FEE_MAX = 0.1e6;
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
+    uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
     address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
 
     IPoolManager internal poolManager;
@@ -84,13 +85,11 @@ contract BunniHubTest is Test {
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
             TICK_SPACING,
+            0,
             ldf,
-            bytes12(abi.encodePacked(uint8(0x00 | 0x64), int24(0), ALPHA)),
-            FEE_MIN,
-            FEE_MAX,
-            FEE_QUADRATIC_MULTIPLIER,
-            30 minutes,
+            bytes32(abi.encodePacked(int24(0), ALPHA)),
             bunniHook,
+            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
             TickMath.getSqrtRatioAtTick(4)
         );
 

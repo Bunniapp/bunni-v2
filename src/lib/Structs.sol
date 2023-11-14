@@ -10,12 +10,16 @@ import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction
 
 struct PoolState {
     ILiquidityDensityFunction liquidityDensityFunction;
-    bytes12 ldfParams;
     IBunniToken bunniToken;
-    uint24 feeMin;
-    uint24 feeMax;
-    uint24 feeQuadraticMultiplier;
-    uint24 feeTwapSecondsAgo;
+    uint24 twapSecondsAgo;
+    bytes32 ldfParams;
+    bytes32 hookParams;
+    uint256 reserve0;
+    uint256 reserve1;
+}
+
+struct RawPoolState {
+    address immutableParamsPointer;
     uint256 reserve0;
     uint256 reserve1;
 }

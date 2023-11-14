@@ -33,10 +33,9 @@ contract BoundedDiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest 
         console2.log("lengthLeft", lengthLeft);
         console2.log("lengthRight", lengthRight);
 
-        bytes11 decodedLDFParams =
-            bytes11(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha), uint8(0)));
-        vm.assume(ldf.isValidParams(tickSpacing, false, decodedLDFParams));
-        _test_liquidityDensity_sumUpToOne(tickSpacing, decodedLDFParams);
+        bytes32 ldfParams = bytes32(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha)));
+        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        _test_liquidityDensity_sumUpToOne(tickSpacing, ldfParams);
     }
 
     function test_query_cumulativeAmounts(
@@ -63,9 +62,8 @@ contract BoundedDiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest 
         console2.log("lengthRight", lengthRight);
         console2.log("currentTick", currentTick);
 
-        bytes11 decodedLDFParams =
-            bytes11(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha), uint8(0)));
-        vm.assume(ldf.isValidParams(tickSpacing, false, decodedLDFParams));
-        _test_query_cumulativeAmounts(currentTick, tickSpacing, decodedLDFParams);
+        bytes32 ldfParams = bytes32(abi.encodePacked(mu, int16(lengthLeft), int16(lengthRight), uint24(alpha)));
+        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        _test_query_cumulativeAmounts(currentTick, tickSpacing, ldfParams);
     }
 }

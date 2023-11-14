@@ -140,13 +140,11 @@ interface IBunniHub is IMulticallable, ILockCallback {
         Currency currency0,
         Currency currency1,
         int24 tickSpacing,
+        uint24 twapSecondsAgo,
         ILiquidityDensityFunction liquidityDensityFunction,
-        bytes12 ldfParams,
-        uint24 feeMin,
-        uint24 feeMax,
-        uint24 feeQuadraticMultiplier,
-        uint24 feeTwapSecondsAgo,
+        bytes32 ldfParams,
         IHooks hooks,
+        bytes32 hookParams,
         uint160 sqrtPriceX96
     ) external returns (IBunniToken token, PoolKey memory key);
 
