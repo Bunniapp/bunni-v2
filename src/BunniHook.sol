@@ -64,9 +64,13 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
     uint24 public hookFees;
     address public hookFeesRecipient;
-    int24 private firstTickToRemove;
+    /* int24 private firstTickToRemove;
     uint24 private numTicksToRemove;
-    uint24 private swapFee;
+    uint24 private swapFee; */
+    uint256 constant SWAP_VALS_SLOT = uint256(keccak256("SwapVals")) - 1;
+    uint256 constant FIRST_TICK_TO_REMOVE_MASK = type(uint256).max << 232;
+    uint256 constant NUM_TICKS_TO_REMOVE_MASK = type(uint256).max << 208;
+    uint256 constant SWAP_FEE_MASK = type(uint256).max << 184;
 
     constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, address hookFeesRecipient_, uint24 hookFees_)
         BaseHook(_poolManager)
@@ -200,8 +204,17 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @inheritdoc IDynamicFeeManager
-    function getFee(address, /* sender */ PoolKey calldata /* key */ ) external view override returns (uint24) {
-        return swapFee;
+    function getFee(address, /* sender */ PoolKey calldata /* key */ )
+        external
+        view
+        override
+        returns (uint24 swapFee)
+    {
+        (uint256 swapValsSlot, uint256 swapFeeMask) = (SWAP_VALS_SLOT, SWAP_FEE_MASK);
+        assembly {
+            let swapVals := tload(swapValsSlot)
+            swapFee := and(swapFeeMask, swapVals)
+        }
     }
 
     /// @inheritdoc IHookFeeManager
@@ -255,12 +268,19 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         bytes calldata
     ) external override poolManagerOnly returns (bytes4) {
         // withdraw liquidity from inactive ticks
-        int24 roundedTick = firstTickToRemove;
-        uint24 numTicksToRemove_ = numTicksToRemove;
-        if (numTicksToRemove_ != 0) {
-            delete firstTickToRemove;
-            delete numTicksToRemove;
+        (uint256 swapValsSlot, uint256 firstTickToRemoveMask, uint256 numTicksToRemoveMask) =
+            (SWAP_VALS_SLOT, FIRST_TICK_TO_REMOVE_MASK, NUM_TICKS_TO_REMOVE_MASK);
+        int24 roundedTick;
+        uint24 numTicksToRemove_;
 
+        assembly {
+            let swapVals := tload(swapValsSlot)
+            roundedTick := and(firstTickToRemoveMask, swapVals)
+            numTicksToRemove_ := and(numTicksToRemoveMask, swapVals)
+            tstore(swapValsSlot, 0)
+        }
+
+        if (numTicksToRemove_ != 0) {
             PoolId id = key.toId();
             LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
             for (uint256 i; i < numTicksToRemove_; i++) {
@@ -291,7 +311,12 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// -----------------------------------------------------------------------
 
     function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
-        if (numTicksToRemove != 0) revert BunniHook__SwapAlreadyInProgress();
+        uint256 swapValsSlot = SWAP_VALS_SLOT;
+        uint256 swapVals;
+        assembly {
+            swapVals := tload(swapValsSlot)
+        }
+        if (swapVals != 0) revert BunniHook__SwapAlreadyInProgress();
 
         PoolId id = key.toId();
         (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(id);
@@ -518,13 +543,19 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             }
         }
 
+        uint256 swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
         if (numTicksToRemove_ != 0) {
-            // consolidate same-slot storage writes to save gas
-            firstTickToRemove = roundedTick;
-            numTicksToRemove = numTicksToRemove_;
-            swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
+            assembly {
+                swapVals := or(swapVals, shl(232, roundedTick))
+                swapVals := or(swapVals, shl(208, numTicksToRemove_))
+                swapVals := or(swapVals, shl(184, swapFee))
+                tstore(swapValsSlot, swapVals)
+            }
         } else {
-            swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
+            assembly {
+                swapVals := or(swapVals, shl(184, swapFee))
+                tstore(swapValsSlot, swapVals)
+            }
         }
 
         // update dynamic fee
