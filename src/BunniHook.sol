@@ -397,28 +397,30 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         // totalLiquidity could exceed uint128 so .toUint128() is used
         uint128 updatedRoundedTickLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
-        // update current tick liquidity if necessary
         bytes memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
         uint256 bufferLength;
         bool updatedCurrentTick;
+
+        // update current tick liquidity if necessary
         if (
             (compoundThreshold == 0 && updatedRoundedTickLiquidity != liquidity) // always compound if threshold is 0 and there's a liquidity difference
                 || stdMath.percentDelta(updatedRoundedTickLiquidity, liquidity) * uint256(compoundThreshold) >= 0.1e18 // compound if delta >= 1 / (compoundThreshold * 10)
         ) {
-            buffer = bytes.concat(
-                buffer,
-                abi.encode(
-                    LiquidityDelta({
-                        tickLower: roundedTick,
-                        delta: int256(uint256(updatedRoundedTickLiquidity)) - int256(uint256(liquidity)) // both values are uint128 so cast is safe
-                    })
-                )
+            // ensure we have enough reserves to satisfy the delta
+            // round up updated balances to ensure that we can satisfy the delta
+            (uint256 updatedBalance0, uint256 updatedBalance1) = LiquidityAmounts.getAmountsForLiquidity(
+                sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, true
             );
-            unchecked {
-                ++bufferLength;
+            if (updatedBalance0 <= bunniState.reserve0 + balance0 || updatedBalance1 <= bunniState.reserve1 + balance1)
+            {
+                int256 delta = int256(uint256(updatedRoundedTickLiquidity)) - int256(uint256(liquidity)); // both values are uint128 so cast is safe
+                buffer = bytes.concat(buffer, abi.encode(LiquidityDelta({tickLower: roundedTick, delta: delta})));
+                unchecked {
+                    ++bufferLength;
+                }
+                liquidity = updatedRoundedTickLiquidity;
+                updatedCurrentTick = true;
             }
-            liquidity = updatedRoundedTickLiquidity;
-            updatedCurrentTick = true;
         }
 
         // simulate swap to see if current tick liquidity is sufficient
