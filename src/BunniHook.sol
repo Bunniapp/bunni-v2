@@ -532,7 +532,7 @@ contract BunniHook is BaseHook, IDynamicFeeManager {
         uint24 feeQuadraticMultiplier
     ) internal pure returns (uint24) {
         // special case for fixed fee pools
-        if (feeMin == feeMax || feeQuadraticMultiplier == 0) return feeMin;
+        if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return feeMin;
 
         uint256 ratio = uint256(postSwapSqrtPriceX96).mulDivDown(1e6, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
         ratio = ratio.mulDivDown(ratio, 1e6); // square the sqrtPrice ratio to get the price ratio
