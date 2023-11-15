@@ -30,6 +30,7 @@ import {IERC20} from "./interfaces/IERC20.sol";
 import {Multicallable} from "./lib/Multicallable.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
+import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 
@@ -39,7 +40,7 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable {
+contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, ReentrancyGuard {
     using SSTORE2 for bytes;
     using SSTORE2 for address;
     using SafeCastLib for int256;
@@ -119,6 +120,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable {
         payable
         virtual
         override
+        nonReentrant
         checkDeadline(params.deadline)
         returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1)
     {
@@ -260,6 +262,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable {
         external
         virtual
         override
+        nonReentrant
         checkDeadline(params.deadline)
         returns (uint128 removedLiquidity, uint256 amount0, uint256 amount1)
     {
@@ -344,7 +347,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable {
         IHooks hooks,
         bytes32 hookParams,
         uint160 sqrtPriceX96
-    ) external override returns (IBunniToken token, PoolKey memory key) {
+    ) external override nonReentrant returns (IBunniToken token, PoolKey memory key) {
         /// -----------------------------------------------------------------------
         /// Verification
         /// -----------------------------------------------------------------------
@@ -414,6 +417,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable {
     function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas)
         external
         override
+        nonReentrant
     {
         PoolId poolId = poolKey.toId();
         PoolState memory state = _getPoolState(poolId);
@@ -439,7 +443,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable {
     }
 
     /// @inheritdoc IBunniHub
-    function collectProtocolFees(Currency[] calldata currencies) external override {
+    function collectProtocolFees(Currency[] calldata currencies) external override nonReentrant {
         address protocolFeeRecipient_ = protocolFeeRecipient;
         for (uint256 i; i < currencies.length; i++) {
             Currency currency = currencies[i];
