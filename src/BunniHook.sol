@@ -3,7 +3,6 @@ pragma solidity ^0.8.19;
 
 import {stdMath} from "forge-std/StdMath.sol";
 
-import {Fees} from "@uniswap/v4-core/src/Fees.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -11,14 +10,12 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {IHookFeeManager} from "@uniswap/v4-core/src/interfaces/IHookFeeManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 
 import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
 
-import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
@@ -30,7 +27,7 @@ import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {IBunniHub, IBunniToken} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
-contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
+contract BunniHook is BaseHook, IDynamicFeeManager {
     using FullMath for uint256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
@@ -40,9 +37,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
     error BunniHook__NotBunniHub();
     error BunniHook__SwapAlreadyInProgress();
-
-    event SetHookFees(uint24 newFee);
-    event SetHookFeesRecipient(address newRecipient);
 
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
@@ -62,26 +56,18 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) public states;
 
-    uint24 public hookFees;
-    address public hookFeesRecipient;
-    /* int24 private firstTickToRemove;
+    /*
+    int24 private firstTickToRemove;
     uint24 private numTicksToRemove;
-    uint24 private swapFee; */
+    uint24 private swapFee;
+    */
     uint256 constant SWAP_VALS_SLOT = uint256(keccak256("SwapVals")) - 1;
     uint256 constant FIRST_TICK_TO_REMOVE_MASK = type(uint256).max << 232;
     uint256 constant NUM_TICKS_TO_REMOVE_MASK = type(uint256).max << 208;
     uint256 constant SWAP_FEE_MASK = type(uint256).max << 184;
 
-    constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, address hookFeesRecipient_, uint24 hookFees_)
-        BaseHook(_poolManager)
-    {
+    constructor(IPoolManager _poolManager, IBunniHub hub_) BaseHook(_poolManager) {
         hub = hub_;
-        hookFees = hookFees_;
-        hookFeesRecipient = hookFeesRecipient_;
-        _initializeOwner(owner_);
-
-        emit SetHookFees(hookFees_);
-        emit SetHookFeesRecipient(hookFeesRecipient_);
     }
 
     /// -----------------------------------------------------------------------
@@ -100,14 +86,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         cardinalityNextOld = state.cardinalityNext;
         cardinalityNextNew = observations[id].grow(cardinalityNextOld, cardinalityNext);
         state.cardinalityNext = cardinalityNextNew;
-    }
-
-    function collectHookFees(Currency[] calldata currencyList) external {
-        address recipient = hookFeesRecipient;
-        for (uint256 i; i < currencyList.length; i++) {
-            // setting `amount` to 0 claims all accrued fees
-            Fees(address(poolManager)).collectHookFees(recipient, currencyList[i], 0);
-        }
     }
 
     /// -----------------------------------------------------------------------
@@ -132,20 +110,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             return _getTwap(id, tick, twapSecondsAgo, updatedIndex, updatedCardinality);
         }
         return 0;
-    }
-
-    /// -----------------------------------------------------------------------
-    /// Owner functions
-    /// -----------------------------------------------------------------------
-
-    function setHookFees(uint24 newFee) external onlyOwner {
-        hookFees = newFee;
-        emit SetHookFees(newFee);
-    }
-
-    function setHookFeesRecipient(address newRecipient) external onlyOwner {
-        hookFeesRecipient = newRecipient;
-        emit SetHookFeesRecipient(newRecipient);
     }
 
     /// -----------------------------------------------------------------------
@@ -215,11 +179,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
             let swapVals := tload(swapValsSlot)
             swapFee := and(swapFeeMask, swapVals)
         }
-    }
-
-    /// @inheritdoc IHookFeeManager
-    function getHookFees(PoolKey calldata /* key */ ) external view override returns (uint24) {
-        return hookFees;
     }
 
     /// @inheritdoc IHooks
