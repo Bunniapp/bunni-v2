@@ -4,8 +4,8 @@ pragma solidity ^0.8.19;
 import {console2} from "forge-std/console2.sol";
 
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
 import "../lib/Math.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";

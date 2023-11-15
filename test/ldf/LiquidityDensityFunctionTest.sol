@@ -5,9 +5,9 @@ import "forge-std/Test.sol";
 
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
-import {FixedPoint96} from "@uniswap/v4-core/contracts/libraries/FixedPoint96.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 
 import "../../src/lib/Math.sol";
 import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityFunction.sol";

@@ -3,18 +3,18 @@ pragma solidity ^0.8.19;
 
 import {stdMath} from "forge-std/StdMath.sol";
 
-import {Fees} from "@uniswap/v4-core/contracts/Fees.sol";
-import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
-import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
-import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/contracts/libraries/FullMath.sol";
-import {SwapMath} from "@uniswap/v4-core/contracts/libraries/SwapMath.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
-import {IHookFeeManager} from "@uniswap/v4-core/contracts/interfaces/IHookFeeManager.sol";
-import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
-import {IDynamicFeeManager} from "@uniswap/v4-core/contracts/interfaces/IDynamicFeeManager.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
+import {Fees} from "@uniswap/v4-core/src/Fees.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {IHookFeeManager} from "@uniswap/v4-core/src/interfaces/IHookFeeManager.sol";
+import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 
 import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
 
@@ -200,12 +200,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     }
 
     /// @inheritdoc IDynamicFeeManager
-    function getFee(
-        address, /* sender */
-        PoolKey calldata, /* key */
-        IPoolManager.SwapParams calldata, /* params */
-        bytes calldata /* data */
-    ) external view override returns (uint24) {
+    function getFee(address, /* sender */ PoolKey calldata /* key */ ) external view override returns (uint24) {
         return swapFee;
     }
 
@@ -531,6 +526,9 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         } else {
             swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
         }
+
+        // update dynamic fee
+        poolManager.updateDynamicSwapFee(key);
 
         if (bufferLength != 0) {
             // call BunniHub to update liquidity

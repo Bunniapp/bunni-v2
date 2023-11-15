@@ -3,7 +3,7 @@
 pragma solidity >=0.6.0;
 pragma abicoder v2;
 
-import {PoolId} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
+import {PoolId} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";

@@ -4,12 +4,12 @@ pragma solidity ^0.8.15;
 
 import "forge-std/Test.sol";
 
-import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
-import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
-import {PoolManager} from "@uniswap/v4-core/contracts/PoolManager.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
-import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "../src/lib/Math.sol";
 import "../src/lib/Structs.sol";

@@ -4,15 +4,15 @@ pragma solidity ^0.8.19;
 
 import "forge-std/console2.sol";
 
-import "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
-import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
-import {FeeLibrary} from "@uniswap/v4-core/contracts/libraries/FeeLibrary.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
-import {FixedPoint96} from "@uniswap/v4-core/contracts/libraries/FixedPoint96.sol";
-import {Currency, CurrencyLibrary} from "@uniswap/v4-core/contracts/types/Currency.sol";
-import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
-import {ILockCallback} from "@uniswap/v4-core/contracts/interfaces/callback/ILockCallback.sol";
+import "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {FeeLibrary} from "@uniswap/v4-core/src/libraries/FeeLibrary.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
 import {CREATE3} from "solady/src/utils/CREATE3.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
@@ -641,9 +641,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver {
         if (amount > 0) {
             poolManager.mint(currency, address(this), uint256(amount));
         } else if (amount < 0) {
-            poolManager.safeTransferFrom(
-                address(this), address(poolManager), currency.toId(), uint256(-amount), bytes("")
-            );
+            poolManager.burn(currency, uint256(-amount));
         }
     }
 

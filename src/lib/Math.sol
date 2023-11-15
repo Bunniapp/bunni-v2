@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.19;
 
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 function min(uint256 a, uint256 b) pure returns (uint256) {
     return a > b ? b : a;
