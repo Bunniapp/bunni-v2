@@ -505,18 +505,11 @@ contract BunniHook is BaseHook, IDynamicFeeManager {
         }
 
         uint256 swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
-        if (numTicksToRemove_ != 0) {
-            assembly {
-                swapVals := or(swapVals, shl(232, roundedTick))
-                swapVals := or(swapVals, shl(208, numTicksToRemove_))
-                swapVals := or(swapVals, shl(184, swapFee))
-                tstore(swapValsSlot, swapVals)
-            }
-        } else {
-            assembly {
-                swapVals := or(swapVals, shl(184, swapFee))
-                tstore(swapValsSlot, swapVals)
-            }
+        assembly {
+            swapVals := or(swapVals, shl(232, roundedTick))
+            swapVals := or(swapVals, shl(208, numTicksToRemove_))
+            swapVals := or(swapVals, shl(184, swapFee))
+            tstore(swapValsSlot, swapVals)
         }
 
         // update dynamic fee
