@@ -23,7 +23,6 @@ import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
-import {Ownable} from "./lib/Ownable.sol";
 import {BunniHook} from "./BunniHook.sol";
 import {BunniToken} from "./BunniToken.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
@@ -40,7 +39,7 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, ReentrancyGuard {
+contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyGuard {
     using SSTORE2 for bytes;
     using SSTORE2 for address;
     using SafeCastLib for int256;
@@ -63,7 +62,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
     error BunniHub__ZeroSharesMinted();
     error BunniHub__InvalidLDFParams();
     error BunniHub__InvalidHookParams();
-    error BunniHub__ProtocolFeeTooBig();
     error BunniHub__BunniTokenNotInitialized();
 
     uint256 internal constant WAD = 1e18;
@@ -81,10 +79,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
     mapping(bytes32 bunniSubspace => uint24) public override nonce;
     mapping(IBunniToken bunniToken => PoolId) public override poolIdOfBunniToken;
 
-    uint96 public override protocolFee;
-    address public override protocolFeeRecipient;
-    mapping(Currency currency => uint256) public override protocolFeeAccrued;
-
     /// -----------------------------------------------------------
     /// Modifiers
     /// -----------------------------------------------------------
@@ -98,16 +92,8 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
     /// Constructor
     /// -----------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, uint96 protocolFee_, address protocolFeeRecipient_, address owner_) {
-        if (protocolFee_ > WAD) revert BunniHub__ProtocolFeeTooBig();
-
+    constructor(IPoolManager poolManager_) {
         poolManager = poolManager_;
-        protocolFee = protocolFee_;
-        protocolFeeRecipient = protocolFeeRecipient_;
-        _initializeOwner(owner_);
-
-        emit SetProtocolFee(protocolFee_);
-        emit SetProtocolFeeRecipient(protocolFeeRecipient_);
     }
 
     /// -----------------------------------------------------------
@@ -292,7 +278,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
         // type cast is safe because we know removedLiquidity <= existingLiquidity
         removedLiquidity = uint128(existingLiquidity.mulDivDown(params.shares, currentTotalSupply));
 
-        // reserves represent the amount of tokens not in the current tick
         uint256 removedReserve0 = state.reserve0.mulDivDown(params.shares, currentTotalSupply);
         uint256 removedReserve1 = state.reserve1.mulDivDown(params.shares, currentTotalSupply);
 
@@ -442,20 +427,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
         );
     }
 
-    /// @inheritdoc IBunniHub
-    function collectProtocolFees(Currency[] calldata currencies) external override nonReentrant {
-        address protocolFeeRecipient_ = protocolFeeRecipient;
-        for (uint256 i; i < currencies.length; i++) {
-            Currency currency = currencies[i];
-            uint256 amount = protocolFeeAccrued[currency];
-            if (amount != 0) {
-                protocolFeeAccrued[currency] = 0;
-                _pay(currency, address(this), protocolFeeRecipient_, amount);
-                emit CollectProtocolFee(currency, amount);
-            }
-        }
-    }
-
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
@@ -463,23 +434,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
     /// @inheritdoc IBunniHub
     function poolState(PoolId poolId) external view returns (PoolState memory) {
         return _getPoolState(poolId);
-    }
-
-    /// -----------------------------------------------------------------------
-    /// Owner functions
-    /// -----------------------------------------------------------------------
-
-    /// @inheritdoc IBunniHub
-    function setProtocolFee(uint24 newFee) external onlyOwner {
-        if (newFee > WAD) revert BunniHub__ProtocolFeeTooBig();
-        protocolFee = newFee;
-        emit SetProtocolFee(newFee);
-    }
-
-    /// @inheritdoc IBunniHub
-    function setProtocolFeeRecipient(address newRecipient) external onlyOwner {
-        protocolFeeRecipient = newRecipient;
-        emit SetProtocolFeeRecipient(newRecipient);
     }
 
     /// -----------------------------------------------------------------------
@@ -578,21 +532,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
             // add fees to the amount of pool tokens to mint/burn
             poolTokenDelta = poolTokenDelta + feeDelta;
 
-            uint256 protocolFee_ = protocolFee;
-            if (protocolFee_ != 0) {
-                // compute protocol fee
-                (uint128 fee0, uint128 fee1) = (uint128(feeDelta.amount0()), uint128(feeDelta.amount1()));
-                (uint128 protocolFee0, uint128 protocolFee1) =
-                    (uint128(fee0.mulDivDown(protocolFee_, WAD)), uint128(fee1.mulDivDown(protocolFee_, WAD)));
-
-                // deduct protocol fee from feeDelta
-                feeDelta = feeDelta - toBalanceDelta(int128(protocolFee0), int128(protocolFee1));
-
-                // update protocol fee accrued
-                protocolFeeAccrued[input.poolKey.currency0] += protocolFee0;
-                protocolFeeAccrued[input.poolKey.currency1] += protocolFee1;
-            }
-
+            // update return data
             returnData.feeDelta = feeDelta;
 
             // emit event
@@ -603,11 +543,14 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Ownable, Re
         params.liquidityDelta = input.liquidityDelta;
         BalanceDelta delta = poolManager.modifyPosition(input.poolKey, params, bytes(""));
 
+        // amount of tokens to pay/take
+        BalanceDelta settleDelta = input.reserveDelta + delta;
+
         // mint/burn pool tokens
         _updatePoolTokens(input.poolKey.currency0, input.poolKey.currency1, poolTokenDelta);
 
         // settle currency payments to zero out delta with PoolManager
-        _settleCurrencies(input.user, input.poolKey.currency0, input.poolKey.currency1, input.reserveDelta + delta);
+        _settleCurrencies(input.user, input.poolKey.currency0, input.poolKey.currency1, settleDelta);
 
         (returnData.amount0, returnData.amount1) = (abs(delta.amount0()), abs(delta.amount1()));
     }

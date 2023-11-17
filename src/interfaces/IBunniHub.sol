@@ -12,7 +12,6 @@ import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallb
 
 import "../lib/Structs.sol";
 import {IERC20} from "./IERC20.sol";
-import {IOwnable} from "./IOwnable.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {IMulticallable} from "./IMulticallable.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
@@ -23,7 +22,7 @@ import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 /// which is the ERC20 LP token for the Uniswap V3 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-interface IBunniHub is IMulticallable, ILockCallback, IOwnable {
+interface IBunniHub is IMulticallable, ILockCallback {
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
@@ -66,9 +65,6 @@ interface IBunniHub is IMulticallable, ILockCallback, IOwnable {
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
     event NewBunni(IBunniToken indexed bunniToken, PoolId indexed poolId);
-    event CollectProtocolFee(Currency indexed currency, uint256 amount);
-    event SetProtocolFee(uint96 newFee);
-    event SetProtocolFeeRecipient(address newRecipient);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param amount0Desired The desired amount of token0 to be spent,
@@ -154,16 +150,8 @@ interface IBunniHub is IMulticallable, ILockCallback, IOwnable {
 
     function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas) external;
 
-    function collectProtocolFees(Currency[] calldata currencies) external;
-
-    function setProtocolFee(uint24 newFee) external;
-    function setProtocolFeeRecipient(address newRecipient) external;
-
     function poolManager() external view returns (IPoolManager);
     function poolState(PoolId poolId) external view returns (PoolState memory);
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
     function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
-    function protocolFee() external view returns (uint96);
-    function protocolFeeRecipient() external view returns (address);
-    function protocolFeeAccrued(Currency currency) external view returns (uint256);
 }
