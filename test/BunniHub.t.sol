@@ -293,6 +293,73 @@ contract BunniHubTest is Test {
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
     }
 
+    function test_collectProtocolFees() public {
+        // create new bunni token with 0 compound threshold
+        (, PoolKey memory key_) = hub.deployBunniToken(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            TICK_SPACING,
+            0,
+            ldf,
+            bytes32(abi.encodePacked(int24(0), ALPHA)),
+            bunniHook,
+            bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
+            TickMath.getSqrtRatioAtTick(4)
+        );
+
+        // make initial deposit
+        uint256 depositAmount0 = PRECISION;
+        uint256 depositAmount1 = PRECISION;
+        _makeDeposit(key_, depositAmount0, depositAmount1, address(0x6969));
+
+        // increase oracle cardinality
+        bunniHook.increaseCardinalityNext(key_, 100);
+
+        // skip a bit to initialize oracle
+        skip(1 days);
+
+        // make swaps to accumulate fees
+        for (uint256 i = 0; i < 10; i++) {
+            // zero to one swap
+            uint256 inputAmount = PRECISION * 100;
+            token0.mint(address(this), inputAmount);
+            swapper.swap(
+                key_,
+                IPoolManager.SwapParams({
+                    zeroForOne: true,
+                    amountSpecified: int256(inputAmount),
+                    sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
+                })
+            );
+
+            // one to zero swap
+            token1.mint(address(this), inputAmount);
+            swapper.swap(
+                key_,
+                IPoolManager.SwapParams({
+                    zeroForOne: false,
+                    amountSpecified: int256(inputAmount),
+                    sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+                })
+            );
+        }
+
+        uint256 fee0 = poolManager.hookFeesAccrued(address(bunniHook), Currency.wrap(address(token0)));
+        uint256 fee1 = poolManager.hookFeesAccrued(address(bunniHook), Currency.wrap(address(token1)));
+        assertGt(fee0, 0, "protocol fee0 not accrued");
+        assertGt(fee1, 0, "protocol fee1 not accrued");
+
+        // collect fees
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = Currency.wrap(address(token0));
+        currencies[1] = Currency.wrap(address(token1));
+        bunniHook.collectHookFees(currencies);
+
+        // check balances
+        assertEq(token0.balanceOf(HOOK_FEES_RECIPIENT), fee0, "protocol fee0 not collected");
+        assertEq(token1.balanceOf(HOOK_FEES_RECIPIENT), fee1, "protocol fee1 not collected");
+    }
+
     /*
     function test_pricePerFullShare() public {
         // make deposit
@@ -312,10 +379,17 @@ contract BunniHubTest is Test {
         internal
         returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
     {
-        return _makeDeposit(depositAmount0, depositAmount1, address(this));
+        return _makeDeposit(key, depositAmount0, depositAmount1, address(this));
     }
 
     function _makeDeposit(uint256 depositAmount0, uint256 depositAmount1, address recipient)
+        internal
+        returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
+    {
+        return _makeDeposit(key, depositAmount0, depositAmount1, recipient);
+    }
+
+    function _makeDeposit(PoolKey memory key_, uint256 depositAmount0, uint256 depositAmount1, address recipient)
         internal
         returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
     {
@@ -325,7 +399,7 @@ contract BunniHubTest is Test {
 
         // deposit tokens
         IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
-            poolKey: key,
+            poolKey: key_,
             amount0Desired: depositAmount0,
             amount1Desired: depositAmount1,
             amount0Min: 0,

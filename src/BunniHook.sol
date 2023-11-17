@@ -68,9 +68,6 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     uint24 private numTicksToRemove;
     uint24 private swapFee; */
     uint256 constant SWAP_VALS_SLOT = uint256(keccak256("SwapVals")) - 1;
-    uint256 constant FIRST_TICK_TO_REMOVE_MASK = type(uint256).max << 232;
-    uint256 constant NUM_TICKS_TO_REMOVE_MASK = type(uint256).max << 208;
-    uint256 constant SWAP_FEE_MASK = type(uint256).max << 184;
 
     constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, address hookFeesRecipient_, uint24 hookFees_)
         BaseHook(_poolManager)
@@ -210,10 +207,11 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         override
         returns (uint24 swapFee)
     {
-        (uint256 swapValsSlot, uint256 swapFeeMask) = (SWAP_VALS_SLOT, SWAP_FEE_MASK);
+        uint256 swapVals;
+        uint256 swapValsSlot = SWAP_VALS_SLOT;
         assembly {
-            let swapVals := tload(swapValsSlot)
-            swapFee := and(swapFeeMask, swapVals)
+            swapVals := tload(swapValsSlot)
+            swapFee := shr(232, shl(48, swapVals))
         }
     }
 
@@ -268,15 +266,14 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         bytes calldata
     ) external override poolManagerOnly returns (bytes4) {
         // withdraw liquidity from inactive ticks
-        (uint256 swapValsSlot, uint256 firstTickToRemoveMask, uint256 numTicksToRemoveMask) =
-            (SWAP_VALS_SLOT, FIRST_TICK_TO_REMOVE_MASK, NUM_TICKS_TO_REMOVE_MASK);
+        uint256 swapValsSlot = SWAP_VALS_SLOT;
         int24 roundedTick;
         uint24 numTicksToRemove_;
 
         assembly {
             let swapVals := tload(swapValsSlot)
-            roundedTick := and(firstTickToRemoveMask, swapVals)
-            numTicksToRemove_ := and(numTicksToRemoveMask, swapVals)
+            roundedTick := shr(232, swapVals)
+            numTicksToRemove_ := shr(232, shl(24, swapVals))
             tstore(swapValsSlot, 0)
         }
 
