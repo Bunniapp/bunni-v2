@@ -148,8 +148,9 @@ contract BunniHubTest is Test, GasSnapshot {
             amount1Min: 0,
             deadline: block.timestamp
         });
+        IBunniHub hub_ = hub;
         snapStart("withdraw");
-        (, uint256 withdrawAmount0, uint256 withdrawAmount1) = hub.withdraw(withdrawParams);
+        (, uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
         snapEnd();
 
         // check return values
@@ -168,45 +169,39 @@ contract BunniHubTest is Test, GasSnapshot {
 
         token0.mint(address(this), inputAmount);
 
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
+        });
         snapStart("swap zeroForOne noTickCrossing, first swap");
-        swapper.swap(
-            key,
-            IPoolManager.SwapParams({
-                zeroForOne: true,
-                amountSpecified: int256(inputAmount),
-                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
-            })
-        );
+        swapper_.swap(key_, params);
         snapEnd();
     }
 
     function test_swap_zeroForOne_noTickCrossing_multiple() public {
         uint256 numSwaps = 10;
-        for (uint256 i; i < numSwaps; i++) {
-            uint256 inputAmount = PRECISION / 100;
+        uint256 inputAmount = PRECISION / 100;
 
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(0)
+        });
+
+        for (uint256 i; i < numSwaps; i++) {
             token0.mint(address(this), inputAmount);
 
             if (i == numSwaps - 1) {
                 snapStart("swap zeroForOne noTickCrossing, subsequent swap");
-                swapper.swap(
-                    key,
-                    IPoolManager.SwapParams({
-                        zeroForOne: true,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(0)
-                    })
-                );
+                swapper_.swap(key_, params);
                 snapEnd();
             } else {
-                swapper.swap(
-                    key,
-                    IPoolManager.SwapParams({
-                        zeroForOne: true,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(0)
-                    })
-                );
+                swapper_.swap(key_, params);
             }
         }
     }
@@ -218,16 +213,19 @@ contract BunniHubTest is Test, GasSnapshot {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+        });
+
         snapStart("swap zeroForOne oneTickCrossing, first swap");
-        swapper.swap(
-            key,
-            IPoolManager.SwapParams({
-                zeroForOne: true,
-                amountSpecified: int256(inputAmount),
-                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
-            })
-        );
+        swapper_.swap(key_, params);
         snapEnd();
+
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
@@ -240,16 +238,19 @@ contract BunniHubTest is Test, GasSnapshot {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
+        });
+
         snapStart("swap zeroForOne twoTickCrossing");
-        swapper.swap(
-            key,
-            IPoolManager.SwapParams({
-                zeroForOne: true,
-                amountSpecified: int256(inputAmount),
-                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
-            })
-        );
+        swapper_.swap(key_, params);
         snapEnd();
+
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
@@ -284,44 +285,40 @@ contract BunniHubTest is Test, GasSnapshot {
 
         token1.mint(address(this), inputAmount);
 
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
+
         snapStart("swap oneForZero noTickCrossing, first swap");
-        swapper.swap(
-            key,
-            IPoolManager.SwapParams({
-                zeroForOne: false,
-                amountSpecified: int256(inputAmount),
-                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-            })
-        );
+        swapper_.swap(key_, params);
+        snapEnd();
     }
 
     function test_swap_oneForZero_noTickCrossing_multiple() public {
         uint256 numSwaps = 10;
-        for (uint256 i; i < numSwaps; i++) {
-            uint256 inputAmount = PRECISION / 100;
+        uint256 inputAmount = PRECISION / 100;
 
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
+
+        for (uint256 i; i < numSwaps; i++) {
             token1.mint(address(this), inputAmount);
 
             if (i == numSwaps - 1) {
                 snapStart("swap oneForZero noTickCrossing, subsequent swap");
-                swapper.swap(
-                    key,
-                    IPoolManager.SwapParams({
-                        zeroForOne: false,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-                    })
-                );
+                swapper_.swap(key_, params);
                 snapEnd();
             } else {
-                swapper.swap(
-                    key,
-                    IPoolManager.SwapParams({
-                        zeroForOne: false,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-                    })
-                );
+                swapper_.swap(key_, params);
             }
         }
     }
@@ -333,16 +330,19 @@ contract BunniHubTest is Test, GasSnapshot {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
+        });
+
         snapStart("swap oneForZero oneTickCrossing, first swap");
-        swapper.swap(
-            key,
-            IPoolManager.SwapParams({
-                zeroForOne: false,
-                amountSpecified: int256(inputAmount),
-                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
-            })
-        );
+        swapper_.swap(key_, params);
         snapEnd();
+
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
@@ -355,16 +355,19 @@ contract BunniHubTest is Test, GasSnapshot {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
+        });
+
         snapStart("swap oneForZero twoTickCrossing");
-        swapper.swap(
-            key,
-            IPoolManager.SwapParams({
-                zeroForOne: false,
-                amountSpecified: int256(inputAmount),
-                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
-            })
-        );
+        swapper_.swap(key_, params);
         snapEnd();
+
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
@@ -383,6 +386,18 @@ contract BunniHubTest is Test, GasSnapshot {
             bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
             TickMath.getSqrtRatioAtTick(4)
         );
+        Uniswapper swapper_ = swapper;
+        uint256 inputAmount = PRECISION * 100;
+        IPoolManager.SwapParams memory paramsZeroToOne = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+        });
+        IPoolManager.SwapParams memory paramsOneToZero = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
 
         // make initial deposit
         uint256 depositAmount0 = PRECISION;
@@ -399,52 +414,23 @@ contract BunniHubTest is Test, GasSnapshot {
         uint256 numSwaps = 10;
         for (uint256 i; i < numSwaps; i++) {
             // zero to one swap
-            uint256 inputAmount = PRECISION * 100;
             token0.mint(address(this), inputAmount);
             if (i == numSwaps - 1) {
                 snapStart("swap zeroForOne oneTickCrossing, subsequent swap");
-                swapper.swap(
-                    key_,
-                    IPoolManager.SwapParams({
-                        zeroForOne: true,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
-                    })
-                );
+                swapper_.swap(key_, paramsZeroToOne);
                 snapEnd();
             } else {
-                swapper.swap(
-                    key_,
-                    IPoolManager.SwapParams({
-                        zeroForOne: true,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
-                    })
-                );
+                swapper_.swap(key_, paramsZeroToOne);
             }
 
             // one to zero swap
             token1.mint(address(this), inputAmount);
             if (i == numSwaps - 1) {
                 snapStart("swap oneForZero oneTickCrossing, subsequent swap");
-                swapper.swap(
-                    key_,
-                    IPoolManager.SwapParams({
-                        zeroForOne: false,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-                    })
-                );
+                swapper_.swap(key_, paramsOneToZero);
                 snapEnd();
             } else {
-                swapper.swap(
-                    key_,
-                    IPoolManager.SwapParams({
-                        zeroForOne: false,
-                        amountSpecified: int256(inputAmount),
-                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-                    })
-                );
+                swapper_.swap(key_, paramsOneToZero);
             }
         }
 
