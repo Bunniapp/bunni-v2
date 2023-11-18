@@ -4,6 +4,8 @@ pragma solidity ^0.8.15;
 
 import "forge-std/Test.sol";
 
+import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
+
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
@@ -21,7 +23,7 @@ import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 
-contract BunniHubTest is Test {
+contract BunniHubTest is Test, GasSnapshot {
     using PoolIdLibrary for PoolKey;
 
     uint256 internal constant PRECISION = 10 ** 18;
@@ -146,7 +148,9 @@ contract BunniHubTest is Test {
             amount1Min: 0,
             deadline: block.timestamp
         });
+        snapStart("withdraw");
         (, uint256 withdrawAmount0, uint256 withdrawAmount1) = hub.withdraw(withdrawParams);
+        snapEnd();
 
         // check return values
         // withdraw amount less than original due to rounding
@@ -164,6 +168,7 @@ contract BunniHubTest is Test {
 
         token0.mint(address(this), inputAmount);
 
+        snapStart("swap zeroForOne noTickCrossing, first swap");
         swapper.swap(
             key,
             IPoolManager.SwapParams({
@@ -172,6 +177,38 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
             })
         );
+        snapEnd();
+    }
+
+    function test_swap_zeroForOne_noTickCrossing_multiple() public {
+        uint256 numSwaps = 10;
+        for (uint256 i; i < numSwaps; i++) {
+            uint256 inputAmount = PRECISION / 100;
+
+            token0.mint(address(this), inputAmount);
+
+            if (i == numSwaps - 1) {
+                snapStart("swap zeroForOne noTickCrossing, subsequent swap");
+                swapper.swap(
+                    key,
+                    IPoolManager.SwapParams({
+                        zeroForOne: true,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(0)
+                    })
+                );
+                snapEnd();
+            } else {
+                swapper.swap(
+                    key,
+                    IPoolManager.SwapParams({
+                        zeroForOne: true,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(0)
+                    })
+                );
+            }
+        }
     }
 
     function test_swap_zeroForOne_oneTickCrossing() public {
@@ -181,6 +218,7 @@ contract BunniHubTest is Test {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        snapStart("swap zeroForOne oneTickCrossing, first swap");
         swapper.swap(
             key,
             IPoolManager.SwapParams({
@@ -189,6 +227,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
             })
         );
+        snapEnd();
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
@@ -201,6 +240,7 @@ contract BunniHubTest is Test {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        snapStart("swap zeroForOne twoTickCrossing");
         swapper.swap(
             key,
             IPoolManager.SwapParams({
@@ -209,6 +249,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
             })
         );
+        snapEnd();
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
@@ -243,6 +284,7 @@ contract BunniHubTest is Test {
 
         token1.mint(address(this), inputAmount);
 
+        snapStart("swap oneForZero noTickCrossing, first swap");
         swapper.swap(
             key,
             IPoolManager.SwapParams({
@@ -253,6 +295,37 @@ contract BunniHubTest is Test {
         );
     }
 
+    function test_swap_oneForZero_noTickCrossing_multiple() public {
+        uint256 numSwaps = 10;
+        for (uint256 i; i < numSwaps; i++) {
+            uint256 inputAmount = PRECISION / 100;
+
+            token1.mint(address(this), inputAmount);
+
+            if (i == numSwaps - 1) {
+                snapStart("swap oneForZero noTickCrossing, subsequent swap");
+                swapper.swap(
+                    key,
+                    IPoolManager.SwapParams({
+                        zeroForOne: false,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+                    })
+                );
+                snapEnd();
+            } else {
+                swapper.swap(
+                    key,
+                    IPoolManager.SwapParams({
+                        zeroForOne: false,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+                    })
+                );
+            }
+        }
+    }
+
     function test_swap_oneForZero_oneTickCrossing() public {
         uint256 inputAmount = PRECISION * 2;
 
@@ -260,6 +333,7 @@ contract BunniHubTest is Test {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        snapStart("swap oneForZero oneTickCrossing, first swap");
         swapper.swap(
             key,
             IPoolManager.SwapParams({
@@ -268,6 +342,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
             })
         );
+        snapEnd();
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
@@ -280,6 +355,7 @@ contract BunniHubTest is Test {
 
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        snapStart("swap oneForZero twoTickCrossing");
         swapper.swap(
             key,
             IPoolManager.SwapParams({
@@ -288,6 +364,7 @@ contract BunniHubTest is Test {
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
             })
         );
+        snapEnd();
         (, currentTick,,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
@@ -319,29 +396,56 @@ contract BunniHubTest is Test {
         skip(1 days);
 
         // make swaps to accumulate fees
-        for (uint256 i = 0; i < 10; i++) {
+        uint256 numSwaps = 10;
+        for (uint256 i; i < numSwaps; i++) {
             // zero to one swap
             uint256 inputAmount = PRECISION * 100;
             token0.mint(address(this), inputAmount);
-            swapper.swap(
-                key_,
-                IPoolManager.SwapParams({
-                    zeroForOne: true,
-                    amountSpecified: int256(inputAmount),
-                    sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
-                })
-            );
+            if (i == numSwaps - 1) {
+                snapStart("swap zeroForOne oneTickCrossing, subsequent swap");
+                swapper.swap(
+                    key_,
+                    IPoolManager.SwapParams({
+                        zeroForOne: true,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+                    })
+                );
+                snapEnd();
+            } else {
+                swapper.swap(
+                    key_,
+                    IPoolManager.SwapParams({
+                        zeroForOne: true,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+                    })
+                );
+            }
 
             // one to zero swap
             token1.mint(address(this), inputAmount);
-            swapper.swap(
-                key_,
-                IPoolManager.SwapParams({
-                    zeroForOne: false,
-                    amountSpecified: int256(inputAmount),
-                    sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-                })
-            );
+            if (i == numSwaps - 1) {
+                snapStart("swap oneForZero oneTickCrossing, subsequent swap");
+                swapper.swap(
+                    key_,
+                    IPoolManager.SwapParams({
+                        zeroForOne: false,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+                    })
+                );
+                snapEnd();
+            } else {
+                swapper.swap(
+                    key_,
+                    IPoolManager.SwapParams({
+                        zeroForOne: false,
+                        amountSpecified: int256(inputAmount),
+                        sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+                    })
+                );
+            }
         }
 
         uint256 fee0 = poolManager.hookFeesAccrued(address(bunniHook), Currency.wrap(address(token0)));
@@ -353,7 +457,9 @@ contract BunniHubTest is Test {
         Currency[] memory currencies = new Currency[](2);
         currencies[0] = Currency.wrap(address(token0));
         currencies[1] = Currency.wrap(address(token1));
+        snapStart("collect protocol fees");
         bunniHook.collectHookFees(currencies);
+        snapEnd();
 
         // check balances
         assertEq(token0.balanceOf(HOOK_FEES_RECIPIENT), fee0, "protocol fee0 not collected");
