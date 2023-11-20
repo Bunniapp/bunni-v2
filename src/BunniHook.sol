@@ -5,32 +5,28 @@ import {stdMath} from "forge-std/StdMath.sol";
 
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {IHookFeeManager} from "@uniswap/v4-core/src/interfaces/IHookFeeManager.sol";
-import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 
-import {BaseHook} from "@uniswap/v4-periphery/contracts/BaseHook.sol";
-
-import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
+import "./interfaces/IBunniHook.sol";
 import {Oracle} from "./lib/Oracle.sol";
+import {Ownable} from "./lib/Ownable.sol";
+import {BaseHook} from "./lib/BaseHook.sol";
+import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
-import {IBunniHub, IBunniToken} from "./interfaces/IBunniHub.sol";
 
 /// @notice Bunni Hook
-contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
+contract BunniHook is BaseHook, Ownable, IBunniHook {
     using FullMath for uint256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
@@ -38,36 +34,26 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     using BalanceDeltaLibrary for BalanceDelta;
     using Oracle for Oracle.Observation[65535];
 
-    error BunniHook__NotBunniHub();
-    error BunniHook__SwapAlreadyInProgress();
-
-    event SetHookFees(uint24 newFee);
-    event SetHookFeesRecipient(address newRecipient);
-
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
-    IBunniHub public immutable hub;
-
-    /// @member index The index of the last written observation for the pool
-    /// @member cardinality The cardinality of the observations array for the pool
-    /// @member cardinalityNext The cardinality target of the observations array for the pool, which will replace cardinality when enough observations are written
-    struct ObservationState {
-        uint16 index;
-        uint16 cardinality;
-        uint16 cardinalityNext;
-    }
+    /// @inheritdoc IBunniHook
+    IBunniHub public immutable override hub;
 
     /// @notice The list of observations for a given pool ID
-    mapping(PoolId => Oracle.Observation[65535]) public observations;
-    /// @notice The current observation array state for the given pool ID
-    mapping(PoolId => ObservationState) public states;
+    mapping(PoolId => Oracle.Observation[65535]) internal _observations;
 
-    uint24 public hookFees;
-    address public hookFeesRecipient;
+    /// @notice The current observation array state for the given pool ID
+    mapping(PoolId => ObservationState) internal _states;
+
+    /// @inheritdoc IBunniHook
+    uint24 public override hookFees;
+
+    /// @inheritdoc IBunniHook
+    address public override hookFeesRecipient;
     /* int24 private firstTickToRemove;
     uint24 private numTicksToRemove;
     uint24 private swapFee; */
-    uint256 constant SWAP_VALS_SLOT = uint256(keccak256("SwapVals")) - 1;
+    uint256 private constant SWAP_VALS_SLOT = uint256(keccak256("SwapVals")) - 1;
 
     constructor(IPoolManager _poolManager, IBunniHub hub_, address owner_, address hookFeesRecipient_, uint24 hookFees_)
         BaseHook(_poolManager)
@@ -85,21 +71,23 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// External functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Increase the cardinality target for the given pool
+    /// @inheritdoc IBunniHook
     function increaseCardinalityNext(PoolKey calldata key, uint16 cardinalityNext)
         external
+        override
         returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew)
     {
         PoolId id = PoolId.wrap(keccak256(abi.encode(key)));
 
-        ObservationState storage state = states[id];
+        ObservationState storage state = _states[id];
 
         cardinalityNextOld = state.cardinalityNext;
-        cardinalityNextNew = observations[id].grow(cardinalityNextOld, cardinalityNext);
+        cardinalityNextNew = _observations[id].grow(cardinalityNextOld, cardinalityNext);
         state.cardinalityNext = cardinalityNextNew;
     }
 
-    function collectHookFees(Currency[] calldata currencyList) external {
+    /// @inheritdoc IBunniHook
+    function collectHookFees(Currency[] calldata currencyList) external override {
         address recipient = hookFeesRecipient;
         for (uint256 i; i < currencyList.length; i++) {
             // setting `amount` to 0 claims all accrued fees
@@ -111,18 +99,19 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// BunniHub functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Update the TWAP oracle for the given pool. Only callable by BunniHub.
+    /// @inheritdoc IBunniHook
     function updateOracleAndObserve(PoolId id, int24 tick, uint24 twapSecondsAgo)
         external
+        override
         returns (int24 arithmeticMeanTick)
     {
         if (msg.sender != address(hub)) revert BunniHook__NotBunniHub();
 
         // update TWAP oracle
-        (uint16 updatedIndex, uint16 updatedCardinality) = observations[id].write(
-            states[id].index, uint32(block.timestamp), tick, states[id].cardinality, states[id].cardinalityNext
+        (uint16 updatedIndex, uint16 updatedCardinality) = _observations[id].write(
+            _states[id].index, uint32(block.timestamp), tick, _states[id].cardinality, _states[id].cardinalityNext
         );
-        (states[id].index, states[id].cardinality) = (updatedIndex, updatedCardinality);
+        (_states[id].index, _states[id].cardinality) = (updatedIndex, updatedCardinality);
 
         // observe if needed
         if (twapSecondsAgo != 0) {
@@ -135,11 +124,13 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// Owner functions
     /// -----------------------------------------------------------------------
 
+    /// @inheritdoc IBunniHook
     function setHookFees(uint24 newFee) external onlyOwner {
         hookFees = newFee;
         emit SetHookFees(newFee);
     }
 
+    /// @inheritdoc IBunniHook
     function setHookFeesRecipient(address newRecipient) external onlyOwner {
         hookFeesRecipient = newRecipient;
         emit SetHookFeesRecipient(newRecipient);
@@ -149,34 +140,37 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// View functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Returns the observation for the given pool key and observation index
+    /// @inheritdoc IBunniHook
     function getObservation(PoolKey calldata key, uint256 index)
         external
         view
+        override
         returns (Oracle.Observation memory observation)
     {
-        observation = observations[key.toId()][index];
+        observation = _observations[key.toId()][index];
     }
 
-    /// @notice Returns the state for the given pool key
-    function getState(PoolKey calldata key) external view returns (ObservationState memory state) {
-        state = states[key.toId()];
+    /// @inheritdoc IBunniHook
+    function getState(PoolKey calldata key) external view override returns (ObservationState memory state) {
+        state = _states[key.toId()];
     }
 
-    /// @notice Observe the given pool for the timestamps
+    /// @inheritdoc IBunniHook
     function observe(PoolKey calldata key, uint32[] calldata secondsAgos)
         external
         view
+        override
         returns (int56[] memory tickCumulatives)
     {
         PoolId id = key.toId();
-        ObservationState memory state = states[id];
+        ObservationState memory state = _states[id];
         (, int24 tick,,) = poolManager.getSlot0(id);
 
-        return observations[id].observe(uint32(block.timestamp), secondsAgos, tick, state.index, state.cardinality);
+        return _observations[id].observe(uint32(block.timestamp), secondsAgos, tick, state.index, state.cardinality);
     }
 
-    function isValidParams(bytes32 hookParams) external pure returns (bool) {
+    /// @inheritdoc IBunniHook
+    function isValidParams(bytes32 hookParams) external pure override returns (bool) {
         (, uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo) =
             _decodeParams(hookParams);
         return (feeMin <= feeMax) && (feeMax <= 1e6)
@@ -187,7 +181,8 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// Hooks
     /// -----------------------------------------------------------------------
 
-    function getHooksCalls() public pure override returns (Hooks.Calls memory) {
+    /// @inheritdoc IBaseHook
+    function getHooksCalls() public pure override(BaseHook, IBaseHook) returns (Hooks.Calls memory) {
         return Hooks.Calls({
             beforeInitialize: false,
             afterInitialize: true,
@@ -223,15 +218,15 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// @inheritdoc IHooks
     function afterInitialize(address caller, PoolKey calldata key, uint160, int24, bytes calldata)
         external
-        override
+        override(BaseHook, IHooks)
         poolManagerOnly
         returns (bytes4)
     {
         if (caller != address(hub)) revert BunniHook__NotBunniHub(); // prevents non-BunniHub contracts from initializing a pool using this hook
         PoolId id = key.toId();
         (, int24 tick,,) = poolManager.getSlot0(id);
-        (states[id].cardinality, states[id].cardinalityNext) =
-            observations[id].initialize(uint32(block.timestamp), tick);
+        (_states[id].cardinality, _states[id].cardinalityNext) =
+            _observations[id].initialize(uint32(block.timestamp), tick);
         return BunniHook.afterInitialize.selector;
     }
 
@@ -241,7 +236,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         PoolKey calldata, /* key */
         IPoolManager.ModifyPositionParams calldata,
         bytes calldata
-    ) external view override poolManagerOnly returns (bytes4) {
+    ) external view override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
         if (caller != address(hub)) revert BunniHook__NotBunniHub(); // prevents non-BunniHub contracts from modifying a position using this hook
         // Note: we don't need to update the oracle here because updateOracle() is called by BunniHub.deposit()
         return BunniHook.beforeModifyPosition.selector;
@@ -250,7 +245,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
     /// @inheritdoc IHooks
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         external
-        override
+        override(BaseHook, IHooks)
         poolManagerOnly
         returns (bytes4)
     {
@@ -258,13 +253,14 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         return BunniHook.beforeSwap.selector;
     }
 
+    /// @inheritdoc IHooks
     function afterSwap(
         address,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         BalanceDelta,
         bytes calldata
-    ) external override poolManagerOnly returns (bytes4) {
+    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
         // withdraw liquidity from inactive ticks
         uint256 swapValsSlot = SWAP_VALS_SLOT;
         int24 roundedTick;
@@ -334,10 +330,14 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
 
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
-        (uint16 updatedIndex, uint16 updatedCardinality) = observations[id].write(
-            states[id].index, uint32(block.timestamp), currentTick, states[id].cardinality, states[id].cardinalityNext
+        (uint16 updatedIndex, uint16 updatedCardinality) = _observations[id].write(
+            _states[id].index,
+            uint32(block.timestamp),
+            currentTick,
+            _states[id].cardinality,
+            _states[id].cardinalityNext
         );
-        (states[id].index, states[id].cardinality) = (updatedIndex, updatedCardinality);
+        (_states[id].index, _states[id].cardinality) = (updatedIndex, updatedCardinality);
 
         // get current tick token balances
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
@@ -589,7 +589,7 @@ contract BunniHook is BaseHook, IHookFeeManager, IDynamicFeeManager, Ownable {
         uint16 updatedIndex,
         uint16 updatedCardinality
     ) internal view returns (int24 arithmeticMeanTick) {
-        (int56 tickCumulative0, int56 tickCumulative1) = observations[id].observeDouble(
+        (int56 tickCumulative0, int56 tickCumulative1) = _observations[id].observeDouble(
             uint32(block.timestamp), twapSecondsAgo, 0, currentTick, updatedIndex, updatedCardinality
         );
         int56 tickCumulativesDelta = tickCumulative1 - tickCumulative0;
