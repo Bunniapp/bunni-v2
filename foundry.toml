@@ -1,11 +1,15 @@
 [profile.default]
+cancun = true
+ffi = true
+fs_permissions = [{access = "read-write", path = ".forge-snapshots/"}, {access = "read", path = "./out"}]
 optimizer_runs = 1000000
-verbosity = 1
 remappings = [
-  "@uniswap/v4-core/=lib/v4-core/",
+  "@uniswap/v4-core/src/=lib/v4-core/src/",
   "@uniswap/v4-periphery/=lib/v4-periphery/",
+  "@uniswap/v4-core/contracts/=lib/v4-core/src/",
 ]
-solc_version = "0.8.20"
+solc = "./lib/v4-core/bin/solc-mac"
+verbosity = 1
 via_ir = true
 
 # Extreme Fuzzing CI Profile :P

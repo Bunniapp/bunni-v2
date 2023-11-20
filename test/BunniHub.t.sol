@@ -3,34 +3,58 @@
 pragma solidity ^0.8.15;
 
 import "forge-std/Test.sol";
-import "forge-std/console2.sol";
 
-import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
-import {IPoolManager, PoolKey} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
-import {PoolManager} from "@uniswap/v4-core/contracts/PoolManager.sol";
-import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
-import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
+import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 
-import {BunniHook} from "../src/BunniHook.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+
+import "../src/lib/Math.sol";
+import "../src/lib/Structs.sol";
 import {BunniHub} from "../src/BunniHub.sol";
+import {BunniHook} from "../src/BunniHook.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
-import {IBunniHub, BunniTokenState, ShiftMode} from "../src/interfaces/IBunniHub.sol";
+import {Uniswapper} from "./mocks/Uniswapper.sol";
+import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
+import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 
-contract BunniHubTest is Test {
+contract BunniHubTest is Test, GasSnapshot {
+    using PoolIdLibrary for PoolKey;
+
     uint256 internal constant PRECISION = 10 ** 18;
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
+    uint24 internal constant HOOK_SWAP_FEE = 0x208000; // 12.5% in either direction
+    uint64 internal constant ALPHA = 0.7e18;
+    uint256 internal constant MAX_ERROR = 1e9;
+    uint24 internal constant FEE_MIN = 0.0001e6;
+    uint24 internal constant FEE_MAX = 0.1e6;
+    uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
+    uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
+    address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
     ERC20Mock internal token1;
     IBunniHub internal hub;
     IBunniToken internal bunniToken;
+    PoolKey internal key;
     BunniHook internal constant bunniHook = BunniHook(
-        address(uint160(Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_MODIFY_POSITION_FLAG + Hooks.BEFORE_SWAP_FLAG))
+        address(
+            uint160(
+                Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_MODIFY_POSITION_FLAG + Hooks.BEFORE_SWAP_FLAG
+                    + Hooks.AFTER_SWAP_FLAG
+            )
+        )
     );
+    DiscreteLaplaceDistribution internal ldf;
+    Uniswapper internal swapper;
 
     function setUp() public {
         // initialize uniswap
@@ -41,151 +65,394 @@ contract BunniHubTest is Test {
         }
         poolManager = new PoolManager(1e7);
 
+        // deploy swapper
+        swapper = new Uniswapper(poolManager);
+
         // initialize bunni hub
         hub = new BunniHub(poolManager);
 
         // initialize bunni hook
-        deployCodeTo("BunniHook.sol", abi.encode(poolManager, hub), address(bunniHook));
+        deployCodeTo(
+            "BunniHook.sol",
+            abi.encode(poolManager, hub, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
+            address(bunniHook)
+        );
+        vm.label(address(bunniHook), "BunniHook");
+
+        // initialize LDF
+        ldf = new DiscreteLaplaceDistribution();
 
         // initialize bunni
-        bunniToken = hub.deployBunniToken(
+        (bunniToken, key) = hub.deployBunniToken(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
             TICK_SPACING,
-            -100,
-            100,
-            ShiftMode.BOTH,
-            3600,
-            1 days,
+            0,
+            ldf,
+            bytes32(abi.encodePacked(int24(0), ALPHA)),
             bunniHook,
-            TickMath.getSqrtRatioAtTick(0)
+            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
+            TickMath.getSqrtRatioAtTick(4)
         );
+
+        // increase oracle cardinality
+        bunniHook.increaseCardinalityNext(key, 100);
 
         // approve tokens
         token0.approve(address(hub), type(uint256).max);
-        token0.approve(address(poolManager), type(uint256).max);
+        token0.approve(address(swapper), type(uint256).max);
         token1.approve(address(hub), type(uint256).max);
-        token1.approve(address(poolManager), type(uint256).max);
+        token1.approve(address(swapper), type(uint256).max);
 
         // make initial deposit to avoid accounting for MIN_INITIAL_SHARES
         uint256 depositAmount0 = PRECISION;
         uint256 depositAmount1 = PRECISION;
+        vm.startPrank(address(0x6969));
+        token0.approve(address(hub), type(uint256).max);
+        token1.approve(address(hub), type(uint256).max);
+        vm.stopPrank();
         _makeDeposit(depositAmount0, depositAmount1, address(0x6969));
+
+        // skip a bit to initialize oracle
+        skip(1 days);
     }
 
-    function test_deposit() public {
+    function test_deposit(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e3, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e3, type(uint64).max);
+
         // make deposit
-        uint256 depositAmount0 = PRECISION;
-        uint256 depositAmount1 = PRECISION;
-        (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1) =
-            _makeDeposit(depositAmount0, depositAmount1);
+        (uint256 shares,, uint256 amount0, uint256 amount1) = _makeDeposit(depositAmount0, depositAmount1);
+        uint256 actualDepositedAmount0 = depositAmount0 - token0.balanceOf(address(this));
+        uint256 actualDepositedAmount1 = depositAmount1 - token1.balanceOf(address(this));
 
         // check return values
-        assertEqDecimal(shares, newLiquidity, DECIMALS);
-        assertEqDecimal(amount0, depositAmount0, DECIMALS);
-        assertEqDecimal(amount1, depositAmount1, DECIMALS);
-
-        // check token balances
-        assertEqDecimal(token0.balanceOf(address(this)), 0, DECIMALS);
-        assertEqDecimal(token1.balanceOf(address(this)), 0, DECIMALS);
-        assertEqDecimal(bunniToken.balanceOf(address(this)), shares, DECIMALS);
+        assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS);
+        assertEqDecimal(amount1, actualDepositedAmount1, DECIMALS);
+        assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS);
     }
 
-    function test_withdraw() public {
+    function test_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e3, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e3, type(uint64).max);
+
         // make deposit
-        uint256 depositAmount0 = PRECISION;
-        uint256 depositAmount1 = PRECISION;
-        (uint256 shares,,,) = _makeDeposit(depositAmount0, depositAmount1);
+        (uint256 shares,, uint256 amount0, uint256 amount1) = _makeDeposit(depositAmount0, depositAmount1);
 
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
-            bunniToken: bunniToken,
+            poolKey: key,
             recipient: address(this),
             shares: shares,
             amount0Min: 0,
             amount1Min: 0,
             deadline: block.timestamp
         });
-        (, uint256 withdrawAmount0, uint256 withdrawAmount1) = hub.withdraw(withdrawParams);
+        IBunniHub hub_ = hub;
+        snapStart("withdraw");
+        (, uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
+        snapEnd();
 
         // check return values
         // withdraw amount less than original due to rounding
-        assertEqDecimal(withdrawAmount0, depositAmount0 - 1, DECIMALS, "withdrawAmount0 incorrect");
-        assertEqDecimal(withdrawAmount1, depositAmount1 - 1, DECIMALS, "withdrawAmount1 incorrect");
+        assertApproxEqAbs(withdrawAmount0, amount0, 10, "withdrawAmount0 incorrect");
+        assertApproxEqAbs(withdrawAmount1, amount1, 10, "withdrawAmount1 incorrect");
 
         // check token balances
-        assertEqDecimal(token0.balanceOf(address(this)), depositAmount0 - 1, DECIMALS, "token0 balance incorrect");
-        assertEqDecimal(token1.balanceOf(address(this)), depositAmount1 - 1, DECIMALS, "token1 balance incorrect");
+        assertApproxEqAbs(token0.balanceOf(address(this)), depositAmount0, 10, "token0 balance incorrect");
+        assertApproxEqAbs(token1.balanceOf(address(this)), depositAmount1, 10, "token1 balance incorrect");
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
     }
 
-    /*function test_compound() public {
-        // make deposit
-        uint256 depositAmount0 = PRECISION;
-        uint256 depositAmount1 = PRECISION;
-        _makeDeposit(depositAmount0, depositAmount1);
+    function test_swap_zeroForOne_noTickCrossing() public {
+        uint256 inputAmount = PRECISION / 10;
 
-        // do a few trades to generate fees
-        {
-            // swap token0 to token1
-            uint256 amountIn = PRECISION / 100;
-            token0.mint(address(this), amountIn);
-            ISwapRouter.ExactInputSingleParams memory swapParams = ISwapRouter.ExactInputSingleParams({
-                tokenIn: address(token0),
-                tokenOut: address(token1),
-                fee: fee,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: amountIn,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            });
-            router.exactInputSingle(swapParams);
-        }
+        token0.mint(address(this), inputAmount);
 
-        {
-            // swap token1 to token0
-            uint256 amountIn = PRECISION / 50;
-            token1.mint(address(this), amountIn);
-            ISwapRouter.ExactInputSingleParams memory swapParams = ISwapRouter.ExactInputSingleParams({
-                tokenIn: address(token1),
-                tokenOut: address(token0),
-                fee: fee,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: amountIn,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            });
-            router.exactInputSingle(swapParams);
-        }
-
-        // compound
-        uint256 beforeBalance0 = token0.balanceOf(address(this));
-        uint256 beforeBalance1 = token1.balanceOf(address(this));
-        vm.recordLogs();
-        (uint256 addedLiquidity, uint256 amount0, uint256 amount1) = hub.compound(key);
-
-        // check added liquidity
-        assertGtDecimal(addedLiquidity, 0, DECIMALS);
-        assertGtDecimal(amount0, 0, DECIMALS);
-        assertGtDecimal(amount1, 0, DECIMALS);
-
-        // check protocol fee
-        // fetch protocol fee directly from logs
-        (uint256 protocolFee0, uint256 protocolFee1) = abi.decode(vm.getRecordedLogs()[7].data, (uint256, uint256));
-        assertEqDecimal(
-            token0.balanceOf(address(hub)), protocolFee0, DECIMALS, "hub balance0 not equal to protocol fee"
-        );
-        assertEqDecimal(
-            token1.balanceOf(address(hub)), protocolFee1, DECIMALS, "hub balance1 not equal to protocol fee"
-        );
-
-        // check token balances
-        assertEqDecimal(token0.balanceOf(address(this)), beforeBalance0, DECIMALS, "sender balance0 changed");
-        assertEqDecimal(token1.balanceOf(address(this)), beforeBalance1, DECIMALS, "sender balance1 changed");
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
+        });
+        snapStart("swap zeroForOne noTickCrossing, first swap");
+        swapper_.swap(key_, params);
+        snapEnd();
     }
 
+    function test_swap_zeroForOne_noTickCrossing_multiple() public {
+        uint256 numSwaps = 10;
+        uint256 inputAmount = PRECISION / 100;
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(0)
+        });
+
+        for (uint256 i; i < numSwaps; i++) {
+            token0.mint(address(this), inputAmount);
+
+            if (i == numSwaps - 1) {
+                snapStart("swap zeroForOne noTickCrossing, subsequent swap");
+                swapper_.swap(key_, params);
+                snapEnd();
+            } else {
+                swapper_.swap(key_, params);
+            }
+        }
+    }
+
+    function test_swap_zeroForOne_oneTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token0.mint(address(this), inputAmount);
+
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+        });
+
+        snapStart("swap zeroForOne oneTickCrossing, first swap");
+        swapper_.swap(key_, params);
+        snapEnd();
+
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
+    }
+
+    function test_swap_zeroForOne_twoTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token0.mint(address(this), inputAmount);
+
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
+        });
+
+        snapStart("swap zeroForOne twoTickCrossing");
+        swapper_.swap(key_, params);
+        snapEnd();
+
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
+    }
+
+    function test_swap_zeroForOne_boundaryCondition() public {
+        // when swapping from token0 to token1, it's possible for the updated tick to exceed the tick
+        // specified by sqrtPriceLimitX96, so we need to handle this edge case properly by adding
+        // liquidity to the actual rounded tick
+
+        uint256 inputAmount = PRECISION * 2;
+
+        token0.mint(address(this), inputAmount);
+
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        swapper.swap(
+            key,
+            IPoolManager.SwapParams({
+                zeroForOne: true,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-10) // limit tick is -10 but we'll end up at -11
+            })
+        );
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
+    }
+
+    function test_swap_oneForZero_noTickCrossing() public {
+        uint256 inputAmount = PRECISION / 10;
+
+        token1.mint(address(this), inputAmount);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
+
+        snapStart("swap oneForZero noTickCrossing, first swap");
+        swapper_.swap(key_, params);
+        snapEnd();
+    }
+
+    function test_swap_oneForZero_noTickCrossing_multiple() public {
+        uint256 numSwaps = 10;
+        uint256 inputAmount = PRECISION / 100;
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
+
+        for (uint256 i; i < numSwaps; i++) {
+            token1.mint(address(this), inputAmount);
+
+            if (i == numSwaps - 1) {
+                snapStart("swap oneForZero noTickCrossing, subsequent swap");
+                swapper_.swap(key_, params);
+                snapEnd();
+            } else {
+                swapper_.swap(key_, params);
+            }
+        }
+    }
+
+    function test_swap_oneForZero_oneTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token1.mint(address(this), inputAmount);
+
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
+        });
+
+        snapStart("swap oneForZero oneTickCrossing, first swap");
+        swapper_.swap(key_, params);
+        snapEnd();
+
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
+    }
+
+    function test_swap_oneForZero_twoTickCrossing() public {
+        uint256 inputAmount = PRECISION * 2;
+
+        token1.mint(address(this), inputAmount);
+
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        Uniswapper swapper_ = swapper;
+        PoolKey memory key_ = key;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
+        });
+
+        snapStart("swap oneForZero twoTickCrossing");
+        swapper_.swap(key_, params);
+        snapEnd();
+
+        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
+    }
+
+    function test_collectProtocolFees() public {
+        // create new bunni token with 0 compound threshold
+        (, PoolKey memory key_) = hub.deployBunniToken(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            TICK_SPACING,
+            0,
+            ldf,
+            bytes32(abi.encodePacked(int24(0), ALPHA)),
+            bunniHook,
+            bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
+            TickMath.getSqrtRatioAtTick(4)
+        );
+        Uniswapper swapper_ = swapper;
+        uint256 inputAmount = PRECISION * 100;
+        IPoolManager.SwapParams memory paramsZeroToOne = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+        });
+        IPoolManager.SwapParams memory paramsOneToZero = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
+
+        // make initial deposit
+        uint256 depositAmount0 = PRECISION;
+        uint256 depositAmount1 = PRECISION;
+        _makeDeposit(key_, depositAmount0, depositAmount1, address(0x6969));
+
+        // increase oracle cardinality
+        bunniHook.increaseCardinalityNext(key_, 100);
+
+        // skip a bit to initialize oracle
+        skip(1 days);
+
+        // make swaps to accumulate fees
+        uint256 numSwaps = 10;
+        for (uint256 i; i < numSwaps; i++) {
+            // zero to one swap
+            token0.mint(address(this), inputAmount);
+            if (i == numSwaps - 1) {
+                snapStart("swap zeroForOne oneTickCrossing, subsequent swap");
+                swapper_.swap(key_, paramsZeroToOne);
+                snapEnd();
+            } else {
+                swapper_.swap(key_, paramsZeroToOne);
+            }
+
+            // one to zero swap
+            token1.mint(address(this), inputAmount);
+            if (i == numSwaps - 1) {
+                snapStart("swap oneForZero oneTickCrossing, subsequent swap");
+                swapper_.swap(key_, paramsOneToZero);
+                snapEnd();
+            } else {
+                swapper_.swap(key_, paramsOneToZero);
+            }
+        }
+
+        uint256 fee0 = poolManager.hookFeesAccrued(address(bunniHook), Currency.wrap(address(token0)));
+        uint256 fee1 = poolManager.hookFeesAccrued(address(bunniHook), Currency.wrap(address(token1)));
+        assertGt(fee0, 0, "protocol fee0 not accrued");
+        assertGt(fee1, 0, "protocol fee1 not accrued");
+
+        // collect fees
+        Currency[] memory currencies = new Currency[](2);
+        currencies[0] = Currency.wrap(address(token0));
+        currencies[1] = Currency.wrap(address(token1));
+        snapStart("collect protocol fees");
+        bunniHook.collectHookFees(currencies);
+        snapEnd();
+
+        // check balances
+        assertEq(token0.balanceOf(HOOK_FEES_RECIPIENT), fee0, "protocol fee0 not collected");
+        assertEq(token1.balanceOf(HOOK_FEES_RECIPIENT), fee1, "protocol fee1 not collected");
+    }
+
+    /*
     function test_pricePerFullShare() public {
         // make deposit
         uint256 depositAmount0 = PRECISION;
@@ -204,28 +471,39 @@ contract BunniHubTest is Test {
         internal
         returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
     {
-        return _makeDeposit(depositAmount0, depositAmount1, address(this));
+        return _makeDeposit(key, depositAmount0, depositAmount1, address(this));
     }
 
     function _makeDeposit(uint256 depositAmount0, uint256 depositAmount1, address recipient)
         internal
         returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
     {
+        return _makeDeposit(key, depositAmount0, depositAmount1, recipient);
+    }
+
+    function _makeDeposit(PoolKey memory key_, uint256 depositAmount0, uint256 depositAmount1, address recipient)
+        internal
+        returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
+    {
         // mint tokens
-        token0.mint(address(this), depositAmount0);
-        token1.mint(address(this), depositAmount1);
+        token0.mint(recipient, depositAmount0);
+        token1.mint(recipient, depositAmount1);
 
         // deposit tokens
-        // max slippage is 1%
         IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
-            bunniToken: bunniToken,
+            poolKey: key_,
             amount0Desired: depositAmount0,
             amount1Desired: depositAmount1,
-            amount0Min: (depositAmount0 * 99) / 100,
-            amount1Min: (depositAmount1 * 99) / 100,
+            amount0Min: 0,
+            amount1Min: 0,
             deadline: block.timestamp,
             recipient: recipient
         });
+        vm.prank(recipient);
         return hub.deposit(depositParams);
+    }
+
+    function _decodeHookFee(uint8 fee, bool zeroForOne) internal pure returns (uint8) {
+        return zeroForOne ? (fee % 16) : (fee >> 4);
     }
 }
