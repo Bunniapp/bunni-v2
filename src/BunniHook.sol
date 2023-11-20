@@ -204,7 +204,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     {
         uint256 swapVals;
         uint256 swapValsSlot = SWAP_VALS_SLOT;
-        assembly {
+        assembly ("memory-safe") {
             swapVals := tload(swapValsSlot)
             swapFee := shr(232, shl(48, swapVals))
         }
@@ -266,7 +266,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         int24 roundedTick;
         uint24 numTicksToRemove_;
 
-        assembly {
+        assembly ("memory-safe") {
             let swapVals := tload(swapValsSlot)
             roundedTick := shr(232, swapVals)
             numTicksToRemove_ := shr(232, shl(24, swapVals))
@@ -306,7 +306,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
         uint256 swapValsSlot = SWAP_VALS_SLOT;
         uint256 swapVals;
-        assembly {
+        assembly ("memory-safe") {
             swapVals := tload(swapValsSlot)
         }
         if (swapVals != 0) revert BunniHook__SwapAlreadyInProgress();
@@ -543,7 +543,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         }
 
         uint256 swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
-        assembly {
+        assembly ("memory-safe") {
             swapVals := or(swapVals, shl(232, roundedTick))
             swapVals := or(swapVals, shl(208, numTicksToRemove_))
             swapVals := or(swapVals, shl(184, swapFee))

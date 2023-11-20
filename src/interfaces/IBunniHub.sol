@@ -10,8 +10,11 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
+import {ERC4626} from "solmate/mixins/ERC4626.sol";
+
 import "../lib/Structs.sol";
 import {IERC20} from "./IERC20.sol";
+import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {IMulticallable} from "./IMulticallable.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
@@ -133,20 +136,26 @@ interface IBunniHub is IMulticallable, ILockCallback {
         external
         returns (uint128 removedLiquidity, uint256 amount0, uint256 amount1);
 
+    struct DeployBunniTokenParams {
+        Currency currency0;
+        Currency currency1;
+        int24 tickSpacing;
+        uint24 twapSecondsAgo;
+        ILiquidityDensityFunction liquidityDensityFunction;
+        bytes32 ldfParams;
+        IBunniHook hooks;
+        bytes32 hookParams;
+        ERC4626 vault0;
+        ERC4626 vault1;
+        uint160 sqrtPriceX96;
+    }
+
     /// @notice Deploys the BunniToken contract for a Bunni position. This token
     /// represents a user's share in the Uniswap V4 LP position.
     /// @return token The deployed BunniToken
-    function deployBunniToken(
-        Currency currency0,
-        Currency currency1,
-        int24 tickSpacing,
-        uint24 twapSecondsAgo,
-        ILiquidityDensityFunction liquidityDensityFunction,
-        bytes32 ldfParams,
-        IHooks hooks,
-        bytes32 hookParams,
-        uint160 sqrtPriceX96
-    ) external returns (IBunniToken token, PoolKey memory key);
+    function deployBunniToken(DeployBunniTokenParams calldata params)
+        external
+        returns (IBunniToken token, PoolKey memory key);
 
     function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas) external;
 

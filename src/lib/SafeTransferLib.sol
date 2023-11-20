@@ -15,7 +15,7 @@ library SafeTransferLib {
     function safeTransferETH(address to, uint256 amount) internal {
         bool success;
 
-        assembly {
+        assembly ("memory-safe") {
             // Transfer the ETH and store if it succeeded or not.
             success := call(gas(), to, amount, 0, 0, 0, 0)
         }
@@ -30,7 +30,7 @@ library SafeTransferLib {
     function safeTransferFrom(IERC20 token, address from, address to, uint256 amount) internal {
         bool success;
 
-        assembly {
+        assembly ("memory-safe") {
             // Get a pointer to some free memory.
             let freeMemoryPointer := mload(0x40)
 
@@ -59,7 +59,7 @@ library SafeTransferLib {
     function safeTransfer(IERC20 token, address to, uint256 amount) internal {
         bool success;
 
-        assembly {
+        assembly ("memory-safe") {
             // Get a pointer to some free memory.
             let freeMemoryPointer := mload(0x40)
 
@@ -87,7 +87,7 @@ library SafeTransferLib {
     function safeApprove(IERC20 token, address to, uint256 amount) internal {
         bool success;
 
-        assembly {
+        assembly ("memory-safe") {
             // Get a pointer to some free memory.
             let freeMemoryPointer := mload(0x40)
 

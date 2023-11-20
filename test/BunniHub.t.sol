@@ -13,6 +13,8 @@ import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import {ERC4626} from "solmate/mixins/ERC4626.sol";
+
 import "../src/lib/Math.sol";
 import "../src/lib/Structs.sol";
 import {BunniHub} from "../src/BunniHub.sol";
@@ -84,15 +86,19 @@ contract BunniHubTest is Test, GasSnapshot {
 
         // initialize bunni
         (bunniToken, key) = hub.deployBunniToken(
-            Currency.wrap(address(token0)),
-            Currency.wrap(address(token1)),
-            TICK_SPACING,
-            0,
-            ldf,
-            bytes32(abi.encodePacked(int24(0), ALPHA)),
-            bunniHook,
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
-            TickMath.getSqrtRatioAtTick(4)
+            IBunniHub.DeployBunniTokenParams(
+                Currency.wrap(address(token0)),
+                Currency.wrap(address(token1)),
+                TICK_SPACING,
+                0,
+                ldf,
+                bytes32(abi.encodePacked(int24(0), ALPHA)),
+                bunniHook,
+                bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
+                ERC4626(address(0)),
+                ERC4626(address(0)),
+                TickMath.getSqrtRatioAtTick(4)
+            )
         );
 
         // increase oracle cardinality
@@ -376,15 +382,19 @@ contract BunniHubTest is Test, GasSnapshot {
     function test_collectProtocolFees() public {
         // create new bunni token with 0 compound threshold
         (, PoolKey memory key_) = hub.deployBunniToken(
-            Currency.wrap(address(token0)),
-            Currency.wrap(address(token1)),
-            TICK_SPACING,
-            0,
-            ldf,
-            bytes32(abi.encodePacked(int24(0), ALPHA)),
-            bunniHook,
-            bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
-            TickMath.getSqrtRatioAtTick(4)
+            IBunniHub.DeployBunniTokenParams(
+                Currency.wrap(address(token0)),
+                Currency.wrap(address(token1)),
+                TICK_SPACING,
+                0,
+                ldf,
+                bytes32(abi.encodePacked(int24(0), ALPHA)),
+                bunniHook,
+                bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
+                ERC4626(address(0)),
+                ERC4626(address(0)),
+                TickMath.getSqrtRatioAtTick(4)
+            )
         );
         Uniswapper swapper_ = swapper;
         uint256 inputAmount = PRECISION * 100;
