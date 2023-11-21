@@ -6,6 +6,7 @@ import {console2} from "forge-std/console2.sol";
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "../lib/Math.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
@@ -21,7 +22,15 @@ contract GeometricDistribution is ILiquidityDensityFunction {
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
-    function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+    function query(
+        PoolKey calldata, /* key */
+        int24 roundedTick,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        int24 tickSpacing,
+        bool useTwap,
+        bytes32 ldfParams
+    )
         external
         pure
         override
@@ -134,12 +143,15 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         }
     }
 
-    function liquidityDensityX96(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
-        external
-        pure
-        override
-        returns (uint256)
-    {
+    function liquidityDensityX96(
+        PoolKey calldata, /* key */
+        int24 roundedTick,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        int24 tickSpacing,
+        bool useTwap,
+        bytes32 ldfParams
+    ) external pure override returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
         return _liquidityDensityX96(minTick, length, alphaX96, roundedTick, tickSpacing);
     }

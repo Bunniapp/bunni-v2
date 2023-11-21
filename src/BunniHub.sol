@@ -131,7 +131,13 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96
         ) = state.liquidityDensityFunction.query(
-            roundedTick, arithmeticMeanTick, params.poolKey.tickSpacing, useTwap, state.ldfParams
+            params.poolKey,
+            roundedTick,
+            arithmeticMeanTick,
+            currentTick,
+            params.poolKey.tickSpacing,
+            useTwap,
+            state.ldfParams
         );
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96,

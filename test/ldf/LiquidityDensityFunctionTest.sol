@@ -7,6 +7,7 @@ import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 
 import "../../src/lib/Math.sol";
@@ -33,8 +34,11 @@ abstract contract LiquidityDensityFunctionTest is Test {
         uint256 cumulativeLiquidityDensity;
         (int24 minTick, int24 maxTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
+        PoolKey memory key;
+        int24 spotPriceTick = 0;
         for (int24 tick = minTick; tick <= maxTick; tick += tickSpacing) {
-            cumulativeLiquidityDensity += ldf.liquidityDensityX96(tick, 0, tickSpacing, false, decodedLDFParams);
+            cumulativeLiquidityDensity +=
+                ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, tickSpacing, false, decodedLDFParams);
         }
 
         assertApproxEqRel(
@@ -44,8 +48,9 @@ abstract contract LiquidityDensityFunctionTest is Test {
 
     function _test_query_cumulativeAmounts(int24 currentTick, int24 tickSpacing, bytes32 decodedLDFParams) internal {
         int24 roundedTick = roundTickSingle(currentTick, tickSpacing);
+        PoolKey memory key;
         (, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96) =
-            ldf.query(roundedTick, 0, tickSpacing, false, decodedLDFParams);
+            ldf.query(key, roundedTick, 0, currentTick, tickSpacing, false, decodedLDFParams);
         uint256 bruteForceAmount0X96 =
             _bruteForceCumulativeAmount0Density(roundedTick + tickSpacing, tickSpacing, decodedLDFParams);
         uint256 bruteForceAmount1X96 =
@@ -71,9 +76,12 @@ abstract contract LiquidityDensityFunctionTest is Test {
         view
         returns (uint256 cumulativeAmount0DensityX96)
     {
+        PoolKey memory key;
+        int24 spotPriceTick = 0;
         int24 maxTick = TickMath.maxUsableTick(tickSpacing) - tickSpacing;
         for (int24 tick = roundedTick; tick <= maxTick; tick += tickSpacing) {
-            uint256 liquidityDensityX96 = ldf.liquidityDensityX96(tick, 0, tickSpacing, false, decodedLDFParams);
+            uint256 liquidityDensityX96 =
+                ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, tickSpacing, false, decodedLDFParams);
             uint256 amount0DensityX96 = _amount0DensityX96(tick, tickSpacing);
             cumulativeAmount0DensityX96 += FullMath.mulDiv(amount0DensityX96, liquidityDensityX96, FixedPoint96.Q96);
         }
@@ -94,9 +102,12 @@ abstract contract LiquidityDensityFunctionTest is Test {
         view
         returns (uint256 cumulativeAmount1DensityX96)
     {
+        PoolKey memory key;
+        int24 spotPriceTick = 0;
         int24 minTick = TickMath.minUsableTick(tickSpacing);
         for (int24 tick = minTick; tick <= roundedTick; tick += tickSpacing) {
-            uint256 liquidityDensityX96 = ldf.liquidityDensityX96(tick, 0, tickSpacing, false, decodedLDFParams);
+            uint256 liquidityDensityX96 =
+                ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, tickSpacing, false, decodedLDFParams);
             uint256 amount1DensityX96 = _amount1DensityX96(tick, tickSpacing);
             cumulativeAmount1DensityX96 += FullMath.mulDiv(amount1DensityX96, liquidityDensityX96, FixedPoint96.Q96);
         }

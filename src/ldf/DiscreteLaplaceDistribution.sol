@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "../lib/Math.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
@@ -19,7 +20,15 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
-    function query(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+    function query(
+        PoolKey calldata, /* key */
+        int24 roundedTick,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        int24 tickSpacing,
+        bool useTwap,
+        bytes32 ldfParams
+    )
         external
         pure
         override
@@ -94,12 +103,15 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         }
     }
 
-    function liquidityDensityX96(int24 roundedTick, int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
-        external
-        pure
-        override
-        returns (uint256)
-    {
+    function liquidityDensityX96(
+        PoolKey calldata, /* key */
+        int24 roundedTick,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        int24 tickSpacing,
+        bool useTwap,
+        bytes32 ldfParams
+    ) external pure override returns (uint256) {
         (int24 mu, uint256 alphaX96) = _decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
         uint256 totalDensityX96 = _totalDensityX96(
             alphaX96,

@@ -379,7 +379,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96
         ) = bunniState.liquidityDensityFunction.query(
-            roundedTick, arithmeticMeanTick, key.tickSpacing, useTwap, bunniState.ldfParams
+            key, roundedTick, arithmeticMeanTick, currentTick, key.tickSpacing, useTwap, bunniState.ldfParams
         );
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96,
@@ -495,7 +495,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             liquidity = (
                 (
                     bunniState.liquidityDensityFunction.liquidityDensityX96(
-                        tickLowerToAddLiquidityTo, arithmeticMeanTick, key.tickSpacing, useTwap, bunniState.ldfParams
+                        key,
+                        tickLowerToAddLiquidityTo,
+                        arithmeticMeanTick,
+                        currentTick,
+                        key.tickSpacing,
+                        useTwap,
+                        bunniState.ldfParams
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();
@@ -531,7 +537,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             liquidity = (
                 (
                     bunniState.liquidityDensityFunction.liquidityDensityX96(
-                        tickLowerToAddLiquidityTo, arithmeticMeanTick, key.tickSpacing, useTwap, bunniState.ldfParams
+                        key,
+                        tickLowerToAddLiquidityTo,
+                        arithmeticMeanTick,
+                        currentTick,
+                        key.tickSpacing,
+                        useTwap,
+                        bunniState.ldfParams
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();
