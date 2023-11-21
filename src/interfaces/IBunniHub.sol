@@ -30,7 +30,6 @@ interface IBunniHub is IMulticallable, ILockCallback {
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
     /// @param poolId The Uniswap V4 pool's ID
-    /// @param liquidity The amount by which liquidity was increased
     /// @param amount0 The amount of token0 that was paid for the increase in liquidity
     /// @param amount1 The amount of token1 that was paid for the increase in liquidity
     /// @param shares The amount of share tokens minted to the recipient
@@ -38,7 +37,6 @@ interface IBunniHub is IMulticallable, ILockCallback {
         address indexed sender,
         address indexed recipient,
         PoolId indexed poolId,
-        uint128 liquidity,
         uint256 amount0,
         uint256 amount1,
         uint256 shares
@@ -47,7 +45,6 @@ interface IBunniHub is IMulticallable, ILockCallback {
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the collected tokens
     /// @param poolId The Uniswap V4 pool's ID
-    /// @param liquidity The amount by which liquidity was decreased
     /// @param amount0 The amount of token0 that was accounted for the decrease in liquidity
     /// @param amount1 The amount of token1 that was accounted for the decrease in liquidity
     /// @param shares The amount of share tokens burnt from the sender
@@ -55,7 +52,6 @@ interface IBunniHub is IMulticallable, ILockCallback {
         address indexed sender,
         address indexed recipient,
         PoolId indexed poolId,
-        uint128 liquidity,
         uint256 amount0,
         uint256 amount1,
         uint256 shares

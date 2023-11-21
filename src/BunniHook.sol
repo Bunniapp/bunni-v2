@@ -18,6 +18,7 @@ import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
+import "./lib/VaultMath.sol";
 import "./interfaces/IBunniHook.sol";
 import {Oracle} from "./lib/Oracle.sol";
 import {Ownable} from "./lib/Ownable.sol";
@@ -350,7 +351,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
 
         // get reserves and add to balance
         PoolState memory bunniState = hub.poolState(id);
-        (balance0, balance1) = (balance0 + bunniState.reserve0, balance1 + bunniState.reserve1);
+        (uint256 reserve0InUnderlying, uint256 reserve1InUnderlying) = (
+            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+        (balance0, balance1) = (balance0 + reserve0InUnderlying, balance1 + reserve1InUnderlying);
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
@@ -408,8 +413,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             (uint256 updatedBalance0, uint256 updatedBalance1) = LiquidityAmounts.getAmountsForLiquidity(
                 sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, true
             );
-            if (updatedBalance0 <= bunniState.reserve0 + balance0 || updatedBalance1 <= bunniState.reserve1 + balance1)
-            {
+            if (
+                updatedBalance0 <= reserve0InUnderlying + balance0 || updatedBalance1 <= reserve1InUnderlying + balance1
+            ) {
                 int256 delta = int256(uint256(updatedRoundedTickLiquidity)) - int256(uint256(liquidity)); // both values are uint128 so cast is safe
                 buffer = bytes.concat(buffer, abi.encode(LiquidityDelta({tickLower: roundedTick, delta: delta})));
                 unchecked {
