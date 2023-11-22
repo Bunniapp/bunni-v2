@@ -18,12 +18,16 @@ struct PoolState {
     bytes32 hookParams;
     ERC4626 vault0;
     ERC4626 vault1;
+    bool poolCredit0Set;
+    bool poolCredit1Set;
     uint256 reserve0;
     uint256 reserve1;
 }
 
 struct RawPoolState {
     address immutableParamsPointer;
+    bool poolCredit0Set;
+    bool poolCredit1Set;
     uint256 reserve0;
     uint256 reserve1;
 }

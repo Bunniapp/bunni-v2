@@ -159,4 +159,6 @@ interface IBunniHub is IMulticallable, ILockCallback {
     function poolState(PoolId poolId) external view returns (PoolState memory);
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
     function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
+    function poolCredit0(PoolId poolId) external view returns (uint256);
+    function poolCredit1(PoolId poolId) external view returns (uint256);
 }

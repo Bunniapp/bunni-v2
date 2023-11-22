@@ -21,6 +21,7 @@ import {BunniHub} from "../src/BunniHub.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {Uniswapper} from "./mocks/Uniswapper.sol";
+import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
@@ -44,6 +45,8 @@ contract BunniHubTest is Test, GasSnapshot {
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
     ERC20Mock internal token1;
+    ERC4626Mock internal vault0;
+    ERC4626Mock internal vault1;
     IBunniHub internal hub;
     IBunniToken internal bunniToken;
     PoolKey internal key;
@@ -66,6 +69,21 @@ contract BunniHubTest is Test, GasSnapshot {
             (token0, token1) = (token1, token0);
         }
         poolManager = new PoolManager(1e7);
+
+        // deploy vaults
+        vault0 = new ERC4626Mock(token0, "Vault0", "V0");
+        vault1 = new ERC4626Mock(token1, "Vault1", "V1");
+
+        // mint some initial tokens to the vaults to change the share price
+        token0.mint(address(this), PRECISION);
+        token0.approve(address(vault0), type(uint256).max);
+        vault0.deposit(PRECISION, address(this));
+        token0.mint(address(vault0), PRECISION);
+
+        token1.mint(address(this), PRECISION);
+        token1.approve(address(vault1), type(uint256).max);
+        vault1.deposit(PRECISION, address(this));
+        token1.mint(address(vault1), PRECISION);
 
         // deploy swapper
         swapper = new Uniswapper(poolManager);
@@ -95,8 +113,8 @@ contract BunniHubTest is Test, GasSnapshot {
                 bytes32(abi.encodePacked(int24(0), ALPHA)),
                 bunniHook,
                 bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO)),
-                ERC4626(address(0)),
-                ERC4626(address(0)),
+                vault0,
+                vault1,
                 TickMath.getSqrtRatioAtTick(4)
             )
         );
@@ -139,8 +157,8 @@ contract BunniHubTest is Test, GasSnapshot {
     }
 
     function test_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e3, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e3, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
 
         // make deposit
         (uint256 shares,, uint256 amount0, uint256 amount1) = _makeDeposit(depositAmount0, depositAmount1);

@@ -356,6 +356,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
         (balance0, balance1) = (balance0 + reserve0InUnderlying, balance1 + reserve1InUnderlying);
+        if (bunniState.poolCredit0Set) balance0 += hub.poolCredit0(id);
+        if (bunniState.poolCredit1Set) balance1 += hub.poolCredit1(id);
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
