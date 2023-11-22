@@ -440,10 +440,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         PoolId poolId = poolKey.toId();
         PoolState memory state = _getPoolState(poolId);
 
-        (uint256 reserve0InUnderlying, uint256 reserve1InUnderlying) = (
-            getReservesInUnderlying(state.reserve0, state.vault0), getReservesInUnderlying(state.reserve1, state.vault1)
-        );
-
         HookCallbackReturnData memory returnData = abi.decode(
             poolManager.lock(
                 abi.encode(
@@ -453,8 +449,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
                             poolKey: poolKey,
                             vault0: state.vault0,
                             vault1: state.vault1,
-                            reserve0InUnderlying: reserve0InUnderlying,
-                            reserve1InUnderlying: reserve1InUnderlying,
                             poolCredit0Set: state.poolCredit0Set,
                             poolCredit1Set: state.poolCredit1Set,
                             liquidityDeltas: liquidityDeltas
@@ -609,8 +603,6 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         PoolKey poolKey;
         ERC4626 vault0;
         ERC4626 vault1;
-        uint256 reserve0InUnderlying;
-        uint256 reserve1InUnderlying;
         bool poolCredit0Set;
         bool poolCredit1Set;
         LiquidityDelta[] liquidityDeltas;
