@@ -66,26 +66,27 @@ interface IBunniHub is IMulticallable, ILockCallback {
     event NewBunni(IBunniToken indexed bunniToken, PoolId indexed poolId);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
+    /// @param recipient The recipient of the minted share tokens
     /// @param amount0Desired The desired amount of token0 to be spent,
     /// @param amount1Desired The desired amount of token1 to be spent,
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// @param amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
     /// @param deadline The time by which the transaction must be included to effect the change
-    /// @param recipient The recipient of the minted share tokens
     struct DepositParams {
         PoolKey poolKey;
+        address recipient;
         uint256 amount0Desired;
         uint256 amount1Desired;
         uint256 amount0Min;
         uint256 amount1Min;
         uint256 deadline;
-        address recipient;
     }
 
     /// @notice Increases the amount of liquidity in a position, with tokens paid by the `msg.sender`
     /// @dev Must be called after the corresponding BunniToken has been deployed via deployBunniToken()
     /// @param params The input parameters
-    /// bunniToken The BunniToken associated with the call
+    /// poolKey The PoolKey of the Uniswap V4 pool
+    /// recipient The recipient of the minted share tokens
     /// amount0Desired The desired amount of token0 to be spent,
     /// amount1Desired The desired amount of token1 to be spent,
     /// amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
@@ -101,7 +102,7 @@ interface IBunniHub is IMulticallable, ILockCallback {
         returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
-    /// @param recipient The user if not withdrawing ETH, address(0) if withdrawing ETH
+    /// @param recipient The recipient of the withdrawn tokens
     /// @param shares The amount of ERC20 tokens (this) to burn,
     /// @param amount0Min The minimum amount of token0 that should be accounted for the burned liquidity,
     /// @param amount1Min The minimum amount of token1 that should be accounted for the burned liquidity,
@@ -119,8 +120,8 @@ interface IBunniHub is IMulticallable, ILockCallback {
     /// If withdrawing ETH, need to follow up with unwrapWETH9() and sweepToken()
     /// @dev Must be called after the corresponding BunniToken has been deployed via deployBunniToken()
     /// @param params The input parameters
-    /// key The Bunni position's key
-    /// recipient The user if not withdrawing ETH, address(0) if withdrawing ETH
+    /// poolKey The Uniswap v4 pool's key
+    /// recipient The recipient of the withdrawn tokens
     /// shares The amount of share tokens to burn,
     /// amount0Min The minimum amount of token0 that should be accounted for the burned liquidity,
     /// amount1Min The minimum amount of token1 that should be accounted for the burned liquidity,
@@ -132,6 +133,17 @@ interface IBunniHub is IMulticallable, ILockCallback {
         external
         returns (uint128 removedLiquidity, uint256 amount0, uint256 amount1);
 
+    /// @param currency0 The token0 of the Uniswap V4 pool
+    /// @param currency1 The token1 of the Uniswap V4 pool
+    /// @param tickSpacing The tick spacing of the Uniswap V4 pool
+    /// @param twapSecondsAgo The TWAP time period to use for the liquidity density function
+    /// @param liquidityDensityFunction The liquidity density function to use
+    /// @param ldfParams The parameters for the liquidity density function
+    /// @param hooks The hooks to use for the Uniswap V4 pool
+    /// @param hookParams The parameters for the hooks
+    /// @param vault0 The vault for token0. If address(0), then a vault is not used.
+    /// @param vault1 The vault for token1. If address(0), then a vault is not used.
+    /// @param sqrtPriceX96 The initial sqrt price of the Uniswap V4 pool
     struct DeployBunniTokenParams {
         Currency currency0;
         Currency currency1;
@@ -148,16 +160,39 @@ interface IBunniHub is IMulticallable, ILockCallback {
 
     /// @notice Deploys the BunniToken contract for a Bunni position. This token
     /// represents a user's share in the Uniswap V4 LP position.
+    /// @param params The input parameters
+    /// currency0 The token0 of the Uniswap V4 pool
+    /// currency1 The token1 of the Uniswap V4 pool
+    /// tickSpacing The tick spacing of the Uniswap V4 pool
+    /// twapSecondsAgo The TWAP time period to use for the liquidity density function
+    /// liquidityDensityFunction The liquidity density function to use
+    /// ldfParams The parameters for the liquidity density function
+    /// hooks The hooks to use for the Uniswap V4 pool
+    /// hookParams The parameters for the hooks
+    /// vault0 The vault for token0. If address(0), then a vault is not used.
+    /// vault1 The vault for token1. If address(0), then a vault is not used.
+    /// sqrtPriceX96 The initial sqrt price of the Uniswap V4 pool
     /// @return token The deployed BunniToken
+    /// @return key The PoolKey of the Uniswap V4 pool
     function deployBunniToken(DeployBunniTokenParams calldata params)
         external
         returns (IBunniToken token, PoolKey memory key);
 
+    /// @notice Enables the hooks for a Uniswap V4 pool to modify the liquidity of that pool.
+    /// @param poolKey The PoolKey of the Uniswap V4 pool
+    /// @param liquidityDeltas The liquidity deltas to apply to the pool
     function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas) external;
 
+    /// @notice The Uniswap v4 pool manager
     function poolManager() external view returns (IPoolManager);
+
+    /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
+
+    /// @notice The nonce of the given Bunni subspace.
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
+
+    /// @notice The PoolId of a given BunniToken.
     function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
 
     /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
