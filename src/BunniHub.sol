@@ -721,6 +721,13 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
                 // set flag
                 if (currencyIdx == 0) _poolState[poolId].poolCredit0Set = false;
                 else _poolState[poolId].poolCredit1Set = false;
+
+                if (amount > 0) {
+                    // we burnt enough credits such that we will increase the reserve
+                    // take tokens from PoolManager so that _updateVaultReserve()
+                    // will deposit the tokens into the vault
+                    poolManager.take(currency, address(this), uint256(amount));
+                }
             }
 
             reserveChange = _updateVaultReserve({
