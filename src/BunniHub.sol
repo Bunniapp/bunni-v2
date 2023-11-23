@@ -5,6 +5,7 @@ pragma solidity ^0.8.19;
 import "forge-std/console2.sol";
 
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FeeLibrary} from "@uniswap/v4-core/src/libraries/FeeLibrary.sol";
@@ -77,17 +78,18 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     /// -----------------------------------------------------------
 
     mapping(PoolId poolId => RawPoolState) internal _poolState;
+
+    /// @inheritdoc IBunniHub
     mapping(bytes32 bunniSubspace => uint24) public override nonce;
+
+    /// @inheritdoc IBunniHub
     mapping(IBunniToken bunniToken => PoolId) public override poolIdOfBunniToken;
 
-    /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
-    /// the edge case where 1) a vault is used 2) a swap occurs that crosses a rounded tick boundary
-    /// 3) PoolManager doesn't have enough balance for paying out the tokens of the withdrawn liquidity
-    /// before the swapper settles the swap so that the tokens can be deposited into the vault as reserve.
-    /// In this case, we mint PoolManager claim tokens to the pool's reserves so that later the tokens can be deposited
-    /// into the vault.
-    mapping(PoolId poolId => uint256) public poolCredit0;
-    mapping(PoolId poolId => uint256) public poolCredit1;
+    /// @inheritdoc IBunniHub
+    mapping(PoolId poolId => uint256) public override poolCredit0;
+
+    /// @inheritdoc IBunniHub
+    mapping(PoolId poolId => uint256) public override poolCredit1;
 
     /// -----------------------------------------------------------
     /// Modifiers
@@ -123,126 +125,49 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = _getPoolState(poolId);
 
-        // update TWAP oracle and optionally observe
-        IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
         (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(poolId);
-        bool useTwap = state.twapSecondsAgo != 0;
-        int24 arithmeticMeanTick = hook.updateOracleAndObserve(poolId, currentTick, state.twapSecondsAgo);
-
-        // compute sqrt ratios
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, params.poolKey.tickSpacing);
-        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
 
-        // compute density
-        (
-            uint256 liquidityDensityOfRoundedTickX96,
-            uint256 density0RightOfRoundedTickX96,
-            uint256 density1LeftOfRoundedTickX96
-        ) = state.liquidityDensityFunction.query(
-            params.poolKey,
-            roundedTick,
-            arithmeticMeanTick,
-            currentTick,
-            params.poolKey.tickSpacing,
-            useTwap,
-            state.ldfParams
-        );
-        (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96,
-            roundedTickSqrtRatio,
-            nextRoundedTickSqrtRatio,
-            uint128(liquidityDensityOfRoundedTickX96),
-            false
-        );
-
-        // compute how much liquidity we'd get from the desired token amounts
-        uint256 totalLiquidity = min(
-            params.amount0Desired.mulDivDown(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
-            params.amount1Desired.mulDivDown(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
-        );
-        // totalLiquidity could exceed uint128 so .toUint128() is used
-        addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
-
-        // compute token amounts
-        (uint256 roundedTickAmount0, uint256 roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, addedLiquidity, true
-        );
-        (uint256 depositAmount0, uint256 depositAmount1) = (
-            totalLiquidity.mulDivUp(density0RightOfRoundedTickX96, Q96),
-            totalLiquidity.mulDivUp(density1LeftOfRoundedTickX96, Q96)
-        );
-        (amount0, amount1) = (roundedTickAmount0 + depositAmount0, roundedTickAmount1 + depositAmount1);
-
-        // sanity check against desired amounts
-        if ((amount0 > params.amount0Desired) || (amount1 > params.amount1Desired)) {
-            // scale down amounts and take minimum
-            (amount0, amount1, addedLiquidity) = (
-                min(params.amount0Desired, amount0.mulDivDown(params.amount1Desired, amount1)),
-                min(params.amount1Desired, amount1.mulDivDown(params.amount0Desired, amount0)),
-                uint128(
-                    min(
-                        addedLiquidity.mulDivDown(params.amount0Desired, amount0),
-                        addedLiquidity.mulDivDown(params.amount1Desired, amount1)
-                    )
-                    )
-            );
-
-            // update token amounts
-            (roundedTickAmount0, roundedTickAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, addedLiquidity, true
-            );
-            (depositAmount0, depositAmount1) = (amount0 - roundedTickAmount0, amount1 - roundedTickAmount1);
-        }
-
-        /// -----------------------------------------------------------------------
-        /// State updates
-        /// -----------------------------------------------------------------------
-
-        // mint shares
         uint128 currentLiquidity = poolManager.getLiquidity(poolId);
-        (uint256 existingAmount0, uint256 existingAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, currentLiquidity, false
+        DepositLogicReturnData memory depositReturnData = _depositLogic(
+            DepositLogicInputData({
+                state: state,
+                params: params,
+                poolId: poolId,
+                currentTick: currentTick,
+                currentLiquidity: currentLiquidity,
+                sqrtPriceX96: sqrtPriceX96,
+                roundedTick: roundedTick,
+                nextRoundedTick: nextRoundedTick
+            })
         );
-        // current tick tokens + reserve tokens
-        (uint256 assets0, uint256 assets1) = (
-            existingAmount0 + getReservesInUnderlying(state.reserve0, state.vault0),
-            existingAmount1 + getReservesInUnderlying(state.reserve1, state.vault1)
-        );
-        if (state.poolCredit0Set) {
-            assets0 += poolCredit0[poolId];
-        }
-        if (state.poolCredit1Set) {
-            assets1 += poolCredit1[poolId];
-        }
-        shares = _mintShares(state.bunniToken, params.recipient, amount0, assets0, amount1, assets1);
+        addedLiquidity = depositReturnData.addedLiquidity;
+        uint256 depositAmount0 = depositReturnData.depositAmount0;
+        uint256 depositAmount1 = depositReturnData.depositAmount1;
+        amount0 = depositReturnData.amount0;
+        amount1 = depositReturnData.amount1;
+        shares = depositReturnData.shares;
 
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
 
         // add liquidity and reserves
+        BalanceDelta reserveDeltaInUnderlying =
+            toBalanceDelta(depositAmount0.toInt256().toInt128(), depositAmount1.toInt256().toInt128());
+        ModifyLiquidityInputData memory inputData = ModifyLiquidityInputData({
+            poolKey: params.poolKey,
+            tickLower: roundedTick,
+            tickUpper: nextRoundedTick,
+            liquidityDelta: uint256(addedLiquidity).toInt256(),
+            user: msg.sender,
+            reserveDeltaInUnderlying: reserveDeltaInUnderlying,
+            currentLiquidity: currentLiquidity,
+            vault0: state.vault0,
+            vault1: state.vault1
+        });
         ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(
-                abi.encode(
-                    LockCallbackType.MODIFY_LIQUIDITY,
-                    abi.encode(
-                        ModifyLiquidityInputData({
-                            poolKey: params.poolKey,
-                            tickLower: roundedTick,
-                            tickUpper: nextRoundedTick,
-                            liquidityDelta: uint256(addedLiquidity).toInt256(),
-                            user: msg.sender,
-                            reserveDeltaInUnderlying: toBalanceDelta(
-                                depositAmount0.toInt256().toInt128(), depositAmount1.toInt256().toInt128()
-                                ),
-                            currentLiquidity: currentLiquidity,
-                            vault0: state.vault0,
-                            vault1: state.vault1
-                        })
-                    )
-                )
-            ),
+            poolManager.lock(abi.encode(LockCallbackType.MODIFY_LIQUIDITY, abi.encode(inputData))),
             (ModifyLiquidityReturnData)
         );
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
@@ -320,21 +245,21 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         BalanceDelta reserveDeltaInUnderlying = toBalanceDelta(
             -removedReserve0InUnderlying.toInt256().toInt128(), -removedReserve1InUnderlying.toInt256().toInt128()
         );
-        bytes memory inputData = abi.encode(
-            ModifyLiquidityInputData({
-                poolKey: params.poolKey,
-                tickLower: roundedTick,
-                tickUpper: nextRoundedTick,
-                liquidityDelta: -uint256(removedLiquidity).toInt256(),
-                user: msg.sender,
-                reserveDeltaInUnderlying: reserveDeltaInUnderlying,
-                currentLiquidity: existingLiquidity,
-                vault0: state.vault0,
-                vault1: state.vault1
-            })
-        );
+        ModifyLiquidityInputData memory inputData = ModifyLiquidityInputData({
+            poolKey: params.poolKey,
+            tickLower: roundedTick,
+            tickUpper: nextRoundedTick,
+            liquidityDelta: -uint256(removedLiquidity).toInt256(),
+            user: msg.sender,
+            reserveDeltaInUnderlying: reserveDeltaInUnderlying,
+            currentLiquidity: existingLiquidity,
+            vault0: state.vault0,
+            vault1: state.vault1
+        });
+
         ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(abi.encode(LockCallbackType.MODIFY_LIQUIDITY, inputData)), (ModifyLiquidityReturnData)
+            poolManager.lock(abi.encode(LockCallbackType.MODIFY_LIQUIDITY, abi.encode(inputData))),
+            (ModifyLiquidityReturnData)
         );
         (amount0, amount1) =
             (returnData.amount0 + removedReserve0InUnderlying, returnData.amount1 + removedReserve1InUnderlying);
@@ -504,6 +429,209 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     /// Internal functions
     /// -----------------------------------------------------------
 
+    struct DepositLogicInputData {
+        PoolState state;
+        DepositParams params;
+        PoolId poolId;
+        int24 currentTick;
+        uint128 currentLiquidity;
+        uint160 sqrtPriceX96;
+        int24 roundedTick;
+        int24 nextRoundedTick;
+    }
+
+    struct DepositLogicReturnData {
+        uint128 addedLiquidity;
+        uint256 depositAmount0;
+        uint256 depositAmount1;
+        uint256 amount0;
+        uint256 amount1;
+        uint256 shares;
+    }
+
+    /// @dev Separated to avoid stack too deep error
+    function _depositLogic(DepositLogicInputData memory inputData)
+        internal
+        returns (DepositLogicReturnData memory returnData)
+    {
+        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
+            (TickMath.getSqrtRatioAtTick(inputData.roundedTick), TickMath.getSqrtRatioAtTick(inputData.nextRoundedTick));
+
+        // query existing assets
+        // assets = urrent tick tokens + reserve tokens + pool credits
+        (uint256 existingAmount0, uint256 existingAmount1) = LiquidityAmounts.getAmountsForLiquidity(
+            inputData.sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, inputData.currentLiquidity, false
+        );
+        (uint256 assets0, uint256 assets1) = (
+            existingAmount0 + getReservesInUnderlying(inputData.state.reserve0, inputData.state.vault0),
+            existingAmount1 + getReservesInUnderlying(inputData.state.reserve1, inputData.state.vault1)
+        );
+        if (inputData.state.poolCredit0Set) {
+            assets0 += poolCredit0[inputData.poolId];
+        }
+        if (inputData.state.poolCredit1Set) {
+            assets1 += poolCredit1[inputData.poolId];
+        }
+
+        // update TWAP oracle and optionally observe
+        int24 arithmeticMeanTick;
+        bool requiresLDF = assets0 == 0 && assets1 == 0;
+        {
+            uint24 twapSecondsAgo = inputData.state.twapSecondsAgo;
+            // we only need to observe the TWAP if currentTotalSupply is zero
+            assembly ("memory-safe") {
+                twapSecondsAgo := mul(twapSecondsAgo, requiresLDF)
+            }
+            arithmeticMeanTick = IBunniHook(address(inputData.params.poolKey.hooks)).updateOracleAndObserve(
+                inputData.poolId, inputData.currentTick, twapSecondsAgo
+            );
+        }
+
+        if (requiresLDF) {
+            // use LDF to initialize token proportions
+
+            // compute density
+            bool useTwap = inputData.state.twapSecondsAgo != 0;
+            (
+                uint256 liquidityDensityOfRoundedTickX96,
+                uint256 density0RightOfRoundedTickX96,
+                uint256 density1LeftOfRoundedTickX96
+            ) = inputData.state.liquidityDensityFunction.query(
+                inputData.params.poolKey,
+                inputData.roundedTick,
+                arithmeticMeanTick,
+                inputData.currentTick,
+                inputData.params.poolKey.tickSpacing,
+                useTwap,
+                inputData.state.ldfParams
+            );
+            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
+                .getAmountsForLiquidity(
+                inputData.sqrtPriceX96,
+                roundedTickSqrtRatio,
+                nextRoundedTickSqrtRatio,
+                uint128(liquidityDensityOfRoundedTickX96),
+                false
+            );
+
+            // compute how much liquidity we'd get from the desired token amounts
+            uint256 totalLiquidity = min(
+                inputData.params.amount0Desired.mulDivDown(
+                    Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96
+                ),
+                inputData.params.amount1Desired.mulDivDown(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+            );
+            // totalLiquidity could exceed uint128 so .toUint128() is used
+            returnData.addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
+
+            // compute token amounts
+            (uint256 addedLiquidityAmount0, uint256 addedLiquidityAmount1) = LiquidityAmounts.getAmountsForLiquidity(
+                inputData.sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, returnData.addedLiquidity, true
+            );
+            (returnData.depositAmount0, returnData.depositAmount1) = (
+                totalLiquidity.mulDivUp(density0RightOfRoundedTickX96, Q96),
+                totalLiquidity.mulDivUp(density1LeftOfRoundedTickX96, Q96)
+            );
+            (returnData.amount0, returnData.amount1) =
+                (addedLiquidityAmount0 + returnData.depositAmount0, addedLiquidityAmount1 + returnData.depositAmount1);
+
+            // sanity check against desired amounts
+            // the amounts can exceed the desired amounts due to math errors
+            if (
+                (returnData.amount0 > inputData.params.amount0Desired)
+                    || (returnData.amount1 > inputData.params.amount1Desired)
+            ) {
+                // scale down amounts and take minimum
+                if (returnData.amount0 == 0) {
+                    (returnData.amount1, returnData.addedLiquidity) = (
+                        inputData.params.amount1Desired,
+                        uint128(
+                            returnData.addedLiquidity.mulDivDown(inputData.params.amount1Desired, returnData.amount1)
+                            )
+                    );
+                } else if (returnData.amount1 == 0) {
+                    (returnData.amount0, returnData.addedLiquidity) = (
+                        inputData.params.amount0Desired,
+                        uint128(
+                            returnData.addedLiquidity.mulDivDown(inputData.params.amount0Desired, returnData.amount0)
+                            )
+                    );
+                } else {
+                    // both are non-zero
+                    (returnData.amount0, returnData.amount1, returnData.addedLiquidity) = (
+                        min(
+                            inputData.params.amount0Desired,
+                            returnData.amount0.mulDivDown(inputData.params.amount1Desired, returnData.amount1)
+                            ),
+                        min(
+                            inputData.params.amount1Desired,
+                            returnData.amount1.mulDivDown(inputData.params.amount0Desired, returnData.amount0)
+                            ),
+                        uint128(
+                            min(
+                                returnData.addedLiquidity.mulDivDown(
+                                    inputData.params.amount0Desired, returnData.amount0
+                                ),
+                                returnData.addedLiquidity.mulDivDown(
+                                    inputData.params.amount1Desired, returnData.amount1
+                                )
+                            )
+                            )
+                    );
+                }
+
+                // update token amounts
+                (addedLiquidityAmount0, addedLiquidityAmount1) = LiquidityAmounts.getAmountsForLiquidity(
+                    inputData.sqrtPriceX96,
+                    roundedTickSqrtRatio,
+                    nextRoundedTickSqrtRatio,
+                    returnData.addedLiquidity,
+                    true
+                );
+                (returnData.depositAmount0, returnData.depositAmount1) =
+                    (returnData.amount0 - addedLiquidityAmount0, returnData.amount1 - addedLiquidityAmount1);
+            }
+        } else {
+            // already initialized liquidity shape
+            // simply add tokens at the current ratio
+            // need to update: addedLiquidity, depositAmount0, depositAmount1, amount0, amount1
+
+            // compute amount0 and amount1 such that the ratio is the same as the current ratio
+            returnData.amount0 = assets1 == 0
+                ? inputData.params.amount0Desired
+                : min(inputData.params.amount0Desired, inputData.params.amount1Desired.mulDivDown(assets0, assets1));
+            returnData.amount1 = assets0 == 0
+                ? inputData.params.amount1Desired
+                : min(inputData.params.amount1Desired, inputData.params.amount0Desired.mulDivDown(assets1, assets0));
+
+            // compute added liquidity using current liquidity
+            returnData.addedLiquidity = inputData.currentLiquidity.mulDivDown(
+                returnData.amount0 + returnData.amount1, assets0 + assets1
+            ).toUint128();
+
+            // remaining tokens will be deposited into the reserves
+            (uint256 addedLiquidityAmount0, uint256 addedLiquidityAmount1) = LiquidityAmounts.getAmountsForLiquidity(
+                inputData.sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, returnData.addedLiquidity, true
+            );
+            returnData.depositAmount0 = returnData.amount0 - addedLiquidityAmount0;
+            returnData.depositAmount1 = returnData.amount1 - addedLiquidityAmount1;
+        }
+
+        /// -----------------------------------------------------------------------
+        /// State updates
+        /// -----------------------------------------------------------------------
+
+        // mint shares
+        returnData.shares = _mintShares(
+            inputData.state.bunniToken,
+            inputData.params.recipient,
+            returnData.amount0,
+            assets0,
+            returnData.amount1,
+            assets1
+        );
+    }
+
     /// @notice Mints share tokens to the recipient based on the amount of liquidity added.
     /// @param shareToken The BunniToken to mint
     /// @param recipient The recipient of the share tokens
@@ -524,9 +652,10 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
             // see https://code4rena.com/reports/2022-01-sherlock/#h-01-first-user-can-steal-everyone-elses-tokens
             shareToken.mint(address(0), MIN_INITIAL_SHARES);
         } else {
+            // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
             shares = min(
-                existingShareSupply.mulDivDown(addedAmount0, existingAmount0),
-                existingShareSupply.mulDivDown(addedAmount1, existingAmount1)
+                existingAmount0 == 0 ? type(uint256).max : existingShareSupply.mulDivDown(addedAmount0, existingAmount0),
+                existingAmount1 == 0 ? type(uint256).max : existingShareSupply.mulDivDown(addedAmount1, existingAmount1)
             );
             if (shares == 0) revert BunniHub__ZeroSharesMinted();
         }

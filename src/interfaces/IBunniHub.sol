@@ -159,6 +159,20 @@ interface IBunniHub is IMulticallable, ILockCallback {
     function poolState(PoolId poolId) external view returns (PoolState memory);
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
     function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
+
+    /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
+    /// the edge case where 1) a vault is used 2) a swap occurs that crosses a rounded tick boundary
+    /// 3) PoolManager doesn't have enough balance for paying out the tokens of the withdrawn liquidity
+    /// before the swapper settles the swap so that the tokens can be deposited into the vault as reserve.
+    /// In this case, we mint PoolManager claim tokens to the pool's reserves so that later the tokens can be deposited
+    /// into the vault.
     function poolCredit0(PoolId poolId) external view returns (uint256);
+
+    /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
+    /// the edge case where 1) a vault is used 2) a swap occurs that crosses a rounded tick boundary
+    /// 3) PoolManager doesn't have enough balance for paying out the tokens of the withdrawn liquidity
+    /// before the swapper settles the swap so that the tokens can be deposited into the vault as reserve.
+    /// In this case, we mint PoolManager claim tokens to the pool's reserves so that later the tokens can be deposited
+    /// into the vault.
     function poolCredit1(PoolId poolId) external view returns (uint256);
 }
