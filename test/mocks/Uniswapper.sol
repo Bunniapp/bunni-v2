@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.15;
 
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
@@ -12,6 +12,8 @@ import {SafeTransferLib} from "../../src/lib/SafeTransferLib.sol";
 
 contract Uniswapper is ILockCallback {
     using SafeTransferLib for IERC20;
+    using SafeTransferLib for address;
+    using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
 
     IPoolManager internal immutable poolManager;
@@ -22,9 +24,15 @@ contract Uniswapper is ILockCallback {
 
     function swap(PoolKey calldata key, IPoolManager.SwapParams calldata params)
         external
+        payable
         returns (BalanceDelta delta)
     {
-        return abi.decode(poolManager.lock(abi.encode(key, params, msg.sender)), (BalanceDelta));
+        delta = abi.decode(poolManager.lock(abi.encode(key, params, msg.sender)), (BalanceDelta));
+
+        // refund ETH
+        if (address(this).balance > 0) {
+            msg.sender.safeTransferETH(address(this).balance);
+        }
     }
 
     function lockAcquired(bytes calldata data) external override returns (bytes memory) {
@@ -39,7 +47,7 @@ contract Uniswapper is ILockCallback {
             : (key.currency1, uint128(delta.amount1()), key.currency0, uint128(-delta.amount0()));
 
         // transfer input tokens to pool manager
-        IERC20(Currency.unwrap(inputToken)).safeTransferFrom(sender, address(poolManager), inputAmount);
+        _pay(inputToken, sender, address(poolManager), inputAmount);
 
         // take output tokens from manager
         poolManager.take(outputToken, sender, outputAmount);
@@ -48,5 +56,17 @@ contract Uniswapper is ILockCallback {
         poolManager.settle(inputToken);
 
         return abi.encode(delta);
+    }
+
+    /// @param token The token to pay
+    /// @param payer The entity that must pay
+    /// @param recipient The entity that will receive payment
+    /// @param value The amount to pay
+    function _pay(Currency token, address payer, address recipient, uint256 value) internal {
+        if (token.isNative()) {
+            recipient.safeTransferETH(value);
+        } else {
+            IERC20(Currency.unwrap(token)).safeTransferFrom(payer, recipient, value);
+        }
     }
 }

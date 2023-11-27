@@ -16,7 +16,7 @@ contract BunniToken is IBunniToken, ERC20 {
     error BunniToken__NotBunniHub();
 
     constructor(IBunniHub hub_, IERC20 token0, IERC20 token1)
-        ERC20(string(abi.encodePacked("Bunni ", token0.symbol(), "/", token1.symbol(), " LP")), "BUNNI-LP", 18)
+        ERC20(string(abi.encodePacked("Bunni ", _symbol(token0), "/", _symbol(token1), " LP")), "BUNNI-LP", 18)
     {
         hub = hub_;
     }
@@ -31,5 +31,10 @@ contract BunniToken is IBunniToken, ERC20 {
         if (msg.sender != address(hub)) revert BunniToken__NotBunniHub();
 
         _burn(from, amount);
+    }
+
+    function _symbol(IERC20 token) internal view returns (string memory) {
+        if (address(token) == address(0)) return "ETH";
+        return token.symbol();
     }
 }

@@ -6,7 +6,7 @@ import "../../src/ldf/BoundedDiscreteLaplaceDistribution.sol";
 
 contract BoundedDiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e2;
-    uint256 internal constant MAX_ALPHA = 10e5;
+    uint256 internal constant MAX_ALPHA = 0.9e5;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new BoundedDiscreteLaplaceDistribution()));

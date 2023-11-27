@@ -968,10 +968,8 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         // if the currency is ETH, the vault asset must be WETH
         if (address(vault) != address(0)) {
             bool isNative = currency.isNative();
-            if (
-                (isNative && address(vault) != address(weth))
-                    || (!isNative && address(vault.asset()) != Currency.unwrap(currency))
-            ) {
+            address vaultAsset = address(vault.asset());
+            if ((isNative && vaultAsset != address(weth)) || (!isNative && vaultAsset != Currency.unwrap(currency))) {
                 revert BunniHub__VaultAssetMismatch();
             }
         }
