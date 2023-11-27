@@ -10,6 +10,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
+import {WETH} from "solmate/tokens/WETH.sol";
 import {ERC4626} from "solmate/mixins/ERC4626.sol";
 
 import "../lib/Structs.sol";
@@ -185,6 +186,9 @@ interface IBunniHub is IMulticallable, ILockCallback {
 
     /// @notice The Uniswap v4 pool manager
     function poolManager() external view returns (IPoolManager);
+
+    /// @notice The WETH9 contract
+    function weth() external view returns (WETH);
 
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);

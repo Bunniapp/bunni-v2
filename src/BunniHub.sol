@@ -19,6 +19,7 @@ import {CREATE3} from "solady/src/utils/CREATE3.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
+import {WETH} from "solmate/tokens/WETH.sol";
 import {ERC1155TokenReceiver} from "solmate/tokens/ERC1155.sol";
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
@@ -64,6 +65,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     error BunniHub__ZeroSharesMinted();
     error BunniHub__InvalidLDFParams();
     error BunniHub__InvalidHookParams();
+    error BunniHub__VaultAssetMismatch();
     error BunniHub__BunniTokenNotInitialized();
 
     uint256 internal constant WAD = 1e18;
@@ -71,7 +73,11 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     uint256 internal constant MAX_NONCE = 0x0FFFFF;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
 
+    /// @inheritdoc IBunniHub
     IPoolManager public immutable override poolManager;
+
+    /// @inheritdoc IBunniHub
+    WETH public immutable override weth;
 
     /// -----------------------------------------------------------
     /// Storage variables
@@ -104,8 +110,9 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     /// Constructor
     /// -----------------------------------------------------------
 
-    constructor(IPoolManager poolManager_) {
+    constructor(IPoolManager poolManager_, WETH weth_) {
         poolManager = poolManager_;
+        weth = weth_;
     }
 
     /// -----------------------------------------------------------
@@ -307,6 +314,10 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         if (address(params.hooks) == address(0)) revert BunniHub__HookCannotBeZero();
         if (!params.hooks.isValidParams(params.hookParams)) revert BunniHub__InvalidHookParams();
 
+        // validate vaults
+        _validateVault(params.vault0, params.currency0);
+        _validateVault(params.vault1, params.currency1);
+
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
@@ -389,6 +400,8 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         _poolState[poolId].reserve0 = (state.reserve0.toInt256() + returnData.reserveChange0).toUint256();
         _poolState[poolId].reserve1 = (state.reserve1.toInt256() + returnData.reserveChange1).toUint256();
     }
+
+    receive() external payable {}
 
     /// -----------------------------------------------------------------------
     /// View functions
@@ -896,12 +909,36 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         returns (int256 reserveChange)
     {
         if (amount > 0) {
-            IERC20 token = IERC20(Currency.unwrap(currency));
-            if (pullTokensFromUser) token.safeTransferFrom(user, address(this), uint256(amount));
-            token.safeApprove(address(vault), uint256(amount));
-            return vault.deposit(uint256(amount), address(this)).toInt256();
+            IERC20 token;
+            uint256 absAmount = uint256(amount);
+            if (currency.isNative()) {
+                // wrap ETH
+                // no need to pull tokens from user since WETH is already in the contract
+                weth.deposit{value: absAmount}();
+                token = IERC20(address(weth));
+            } else {
+                // normal ERC20
+                token = IERC20(Currency.unwrap(currency));
+                if (pullTokensFromUser) token.safeTransferFrom(user, address(this), absAmount);
+            }
+
+            token.safeApprove(address(vault), absAmount);
+            return vault.deposit(absAmount, address(this)).toInt256();
         } else if (amount < 0) {
-            return -vault.withdraw(uint256(-amount), user, address(this)).toInt256();
+            if (currency.isNative()) {
+                // withdraw WETH from vault to address(this)
+                uint256 absAmount = uint256(-amount);
+                reserveChange = -vault.withdraw(absAmount, address(this), address(this)).toInt256();
+
+                // burn WETH for ETH
+                weth.withdraw(absAmount);
+
+                // transfer ETH to user
+                user.safeTransferETH(absAmount);
+            } else {
+                // normal ERC20
+                return -vault.withdraw(uint256(-amount), user, address(this)).toInt256();
+            }
         }
     }
 
@@ -923,6 +960,20 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
             recipient.safeTransferETH(value);
         } else {
             IERC20(Currency.unwrap(token)).safeTransferFrom(payer, recipient, value);
+        }
+    }
+
+    function _validateVault(ERC4626 vault, Currency currency) internal view {
+        // if vault is set, make sure the vault asset matches the currency
+        // if the currency is ETH, the vault asset must be WETH
+        if (address(vault) != address(0)) {
+            bool isNative = currency.isNative();
+            if (
+                (isNative && address(vault) != address(weth))
+                    || (!isNative && address(vault.asset()) != Currency.unwrap(currency))
+            ) {
+                revert BunniHub__VaultAssetMismatch();
+            }
         }
     }
 

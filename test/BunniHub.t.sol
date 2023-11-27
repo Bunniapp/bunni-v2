@@ -13,6 +13,7 @@ import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import {WETH} from "solmate/tokens/WETH.sol";
 import {ERC4626} from "solmate/mixins/ERC4626.sol";
 
 import "../src/lib/Math.sol";
@@ -60,8 +61,11 @@ contract BunniHubTest is Test, GasSnapshot {
     );
     DiscreteLaplaceDistribution internal ldf;
     Uniswapper internal swapper;
+    WETH internal weth;
 
     function setUp() public {
+        weth = new WETH();
+
         // initialize uniswap
         token0 = new ERC20Mock();
         token1 = new ERC20Mock();
@@ -89,7 +93,7 @@ contract BunniHubTest is Test, GasSnapshot {
         swapper = new Uniswapper(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager);
+        hub = new BunniHub(poolManager, weth);
 
         // initialize bunni hook
         deployCodeTo(
