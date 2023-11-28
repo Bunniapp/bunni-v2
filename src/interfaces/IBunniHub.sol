@@ -184,6 +184,10 @@ interface IBunniHub is IMulticallable, ILockCallback {
     /// @param liquidityDeltas The liquidity deltas to apply to the pool
     function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas) external;
 
+    /// @notice Clears the credits of a pool and deposit the assets into the vaults.
+    /// @param keys The PoolKeys of the Uniswap V4 pools
+    function clearPoolCredits(PoolKey[] calldata keys) external;
+
     /// @notice The Uniswap v4 pool manager
     function poolManager() external view returns (IPoolManager);
 

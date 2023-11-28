@@ -633,6 +633,90 @@ contract BunniHubTest is Test, GasSnapshot {
         assertEq(key.currency1.balanceOf(HOOK_FEES_RECIPIENT), fee1, "protocol fee1 not collected");
     }
 
+    function test_clearPoolCredits() public {
+        _execTestAcrossScenarios(_test_clearPoolCredits, 0, 0, "clear pool credits");
+    }
+
+    function _test_clearPoolCredits(
+        uint256,
+        uint256,
+        Currency currency0,
+        Currency currency1,
+        ERC4626 vault0_,
+        ERC4626 vault1_,
+        string memory snapLabel
+    ) internal {
+        if (address(vault0_) == address(0) && address(vault1_) == address(0)) {
+            return;
+        }
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
+
+        // swap and cross one tick
+        if (address(vault0_) == address(0)) {
+            // one to zero swap
+            uint256 inputAmount = PRECISION * 2;
+            uint256 value = key.currency1.isNative() ? inputAmount : 0;
+            _mint(key.currency1, address(this), inputAmount);
+            IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+                zeroForOne: false,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
+            });
+            swapper.swap{value: value}(key, params);
+        } else {
+            // zero to one swap
+            uint256 inputAmount = PRECISION * 2;
+            uint256 value = key.currency0.isNative() ? inputAmount : 0;
+            _mint(key.currency0, address(this), inputAmount);
+            IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+                zeroForOne: true,
+                amountSpecified: int256(inputAmount),
+                sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+            });
+            swapper.swap{value: value}(key, params);
+        }
+
+        // check pool credits
+        uint256 poolCredit0 = hub.poolCredit0(key.toId());
+        uint256 poolCredit1 = hub.poolCredit1(key.toId());
+        assertTrue(poolCredit0 > 0 || poolCredit1 > 0, "pool credit not accrued");
+
+        // clear pool credits
+        PoolKey[] memory keys = new PoolKey[](1);
+        keys[0] = key;
+        (uint256 beforeVault0Balance, uint256 beforeVault1Balance) =
+            (_vaultBalanceOf(vault0_, address(hub)), _vaultBalanceOf(vault1_, address(hub)));
+        snapStart(snapLabel);
+        hub.clearPoolCredits(keys);
+        snapEnd();
+        (uint256 vault0BalanceIncrease, uint256 vault1BalanceIncrease) = (
+            _vaultBalanceOf(vault0_, address(hub)) - beforeVault0Balance,
+            _vaultBalanceOf(vault1_, address(hub)) - beforeVault1Balance
+        );
+
+        // check balances
+        if (address(vault0_) != address(0)) {
+            assertEq(poolManager.balanceOf(address(hub), key.currency0), 0, "pool credit0 not cleared");
+            assertApproxEqRelDecimal(
+                _vaultPreviewRedeem(vault0_, vault0BalanceIncrease),
+                poolCredit0,
+                100,
+                18,
+                "didn't increase vault0 reserves"
+            );
+        }
+        if (address(vault1_) != address(0)) {
+            assertEq(poolManager.balanceOf(address(hub), key.currency1), 0, "pool credit1 not cleared");
+            assertApproxEqRelDecimal(
+                _vaultPreviewRedeem(vault1_, vault1BalanceIncrease),
+                poolCredit1,
+                100,
+                18,
+                "didn't increase vault1 reserves"
+            );
+        }
+    }
+
     /*
     function test_pricePerFullShare() public {
         // make deposit
@@ -701,6 +785,16 @@ contract BunniHubTest is Test, GasSnapshot {
 
     function _decodeHookFee(uint8 fee, bool zeroForOne) internal pure returns (uint8) {
         return zeroForOne ? (fee % 16) : (fee >> 4);
+    }
+
+    function _vaultBalanceOf(ERC4626 vault, address account) internal view returns (uint256) {
+        if (address(vault) == address(0)) return 0;
+        return vault.balanceOf(account);
+    }
+
+    function _vaultPreviewRedeem(ERC4626 vault, uint256 amount) internal view returns (uint256) {
+        if (address(vault) == address(0)) return 0;
+        return vault.previewRedeem(amount);
     }
 
     function _deployPoolAndInitLiquidity(Currency currency0, Currency currency1, ERC4626 vault0_, ERC4626 vault1_)
