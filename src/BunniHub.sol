@@ -800,38 +800,31 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
             PoolId poolId = key.toId();
             PoolState memory state = _getPoolState(poolId);
             if (state.poolCredit0Set) {
-                uint256 poolCreditAmount = poolCredit0[poolId];
-
-                // burn claim tokens
-                poolManager.burn(key.currency0, poolCreditAmount);
-
-                // take assets
-                poolManager.take(key.currency0, address(this), poolCreditAmount);
-
-                // deposit into reserves
-                _updateVaultReserve(poolCreditAmount.toInt256(), key.currency0, state.vault0, address(this), false);
-
-                // clear credit in state
-                poolCredit0[poolId] = 0;
-                _poolState[poolId].poolCredit0Set = false;
+                _clearPoolCredit(poolId, key.currency0, state.vault0, 0);
             }
             if (state.poolCredit1Set) {
-                uint256 poolCreditAmount = poolCredit1[poolId];
-
-                // burn claim tokens
-                poolManager.burn(key.currency1, poolCreditAmount);
-
-                // take assets
-                poolManager.take(key.currency1, address(this), poolCreditAmount);
-
-                // deposit into reserves
-                _updateVaultReserve(poolCreditAmount.toInt256(), key.currency1, state.vault1, address(this), false);
-
-                // clear credit in state
-                poolCredit1[poolId] = 0;
-                _poolState[poolId].poolCredit1Set = false;
+                _clearPoolCredit(poolId, key.currency1, state.vault1, 1);
             }
         }
+    }
+
+    function _clearPoolCredit(PoolId poolId, Currency currency, ERC4626 vault, uint256 currencyIdx) internal {
+        mapping(PoolId => uint256) storage poolCredit = currencyIdx == 0 ? poolCredit0 : poolCredit1;
+        uint256 poolCreditAmount = poolCredit[poolId];
+
+        // burn claim tokens
+        poolManager.burn(currency, poolCreditAmount);
+
+        // take assets
+        poolManager.take(currency, address(this), poolCreditAmount);
+
+        // deposit into reserves
+        _updateVaultReserve(poolCreditAmount.toInt256(), currency, vault, address(this), false);
+
+        // clear credit in state
+        poolCredit[poolId] = 0;
+        if (currencyIdx == 0) _poolState[poolId].poolCredit0Set = false;
+        else _poolState[poolId].poolCredit1Set = false;
     }
 
     /// @dev Zero out the delta for a token if the corresponding vault is non-zero.
