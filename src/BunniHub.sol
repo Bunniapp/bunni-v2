@@ -966,7 +966,9 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
             } else {
                 // normal ERC20
                 token = IERC20(Currency.unwrap(currency));
-                if (pullTokensFromUser) token.safeTransferFrom(user, address(this), absAmount);
+                if (pullTokensFromUser) {
+                    permit2.transferFrom(user, address(this), absAmount.toUint160(), address(token));
+                }
             }
 
             token.safeApprove(address(vault), absAmount);
@@ -991,22 +993,14 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
 
     function _settleCurrency(address user, Currency currency, int256 amount) internal {
         if (amount > 0) {
-            _pay(currency, user, address(poolManager), uint256(amount));
+            if (currency.isNative()) {
+                address(poolManager).safeTransferETH(uint256(amount));
+            } else {
+                permit2.transferFrom(user, address(poolManager), uint256(amount).toUint160(), Currency.unwrap(currency));
+            }
             poolManager.settle(currency);
         } else if (amount < 0) {
             poolManager.take(currency, user, uint256(-amount));
-        }
-    }
-
-    /// @param token The token to pay
-    /// @param payer The entity that must pay
-    /// @param recipient The entity that will receive payment
-    /// @param value The amount to pay
-    function _pay(Currency token, address payer, address recipient, uint256 value) internal {
-        if (token.isNative()) {
-            recipient.safeTransferETH(value);
-        } else {
-            IERC20(Currency.unwrap(token)).safeTransferFrom(payer, recipient, value);
         }
     }
 

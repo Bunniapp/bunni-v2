@@ -120,12 +120,17 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         ldf = new DiscreteLaplaceDistribution();
 
         // approve tokens
-        token0.approve(address(hub), type(uint256).max);
+        token0.approve(address(permit2), type(uint256).max);
         token0.approve(address(swapper), type(uint256).max);
-        token1.approve(address(hub), type(uint256).max);
+        token1.approve(address(permit2), type(uint256).max);
         token1.approve(address(swapper), type(uint256).max);
-        weth.approve(address(hub), type(uint256).max);
+        weth.approve(address(permit2), type(uint256).max);
         weth.approve(address(swapper), type(uint256).max);
+
+        // permit2 approve tokens to hub
+        permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
+        permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
+        permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
     }
 
     function test_deposit(uint256 depositAmount0, uint256 depositAmount1) public {
@@ -860,8 +865,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint256 depositAmount0 = PRECISION;
         uint256 depositAmount1 = PRECISION;
         vm.startPrank(address(0x6969));
-        token0.approve(address(hub), type(uint256).max);
-        token1.approve(address(hub), type(uint256).max);
+        token0.approve(address(permit2), type(uint256).max);
+        token1.approve(address(permit2), type(uint256).max);
+        permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
+        permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
+        permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
         _makeDeposit(key, depositAmount0, depositAmount1, address(0x6969), "");
 
