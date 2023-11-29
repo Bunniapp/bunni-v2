@@ -6,6 +6,8 @@ import "forge-std/Test.sol";
 
 import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 
+import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
+
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -25,10 +27,11 @@ import {Uniswapper} from "./mocks/Uniswapper.sol";
 import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
+import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 
-contract BunniHubTest is Test, GasSnapshot {
+contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
 
@@ -63,9 +66,11 @@ contract BunniHubTest is Test, GasSnapshot {
     DiscreteLaplaceDistribution internal ldf;
     Uniswapper internal swapper;
     WETH internal weth;
+    IPermit2 internal permit2;
 
     function setUp() public {
         weth = new WETH();
+        permit2 = _deployPermit2();
 
         // initialize uniswap
         token0 = new ERC20Mock();
@@ -101,7 +106,7 @@ contract BunniHubTest is Test, GasSnapshot {
         swapper = new Uniswapper(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth);
+        hub = new BunniHub(poolManager, weth, permit2);
 
         // initialize bunni hook
         deployCodeTo(

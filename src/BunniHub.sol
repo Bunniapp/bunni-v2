@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.19;
 
-import "forge-std/console2.sol";
+import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
@@ -30,6 +30,7 @@ import {BunniToken} from "./BunniToken.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {Multicallable} from "./lib/Multicallable.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
+import {Permit2Enabled} from "./lib/Permit2Enabled.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
@@ -42,7 +43,7 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyGuard {
+contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyGuard, Permit2Enabled {
     using SSTORE2 for bytes;
     using SSTORE2 for address;
     using SafeCastLib for int256;
@@ -73,11 +74,8 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     uint256 internal constant MAX_NONCE = 0x0FFFFF;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
 
-    /// @inheritdoc IBunniHub
-    IPoolManager public immutable override poolManager;
-
-    /// @inheritdoc IBunniHub
-    WETH public immutable override weth;
+    WETH internal immutable weth;
+    IPoolManager internal immutable poolManager;
 
     /// -----------------------------------------------------------
     /// Storage variables
@@ -110,7 +108,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     /// Constructor
     /// -----------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, WETH weth_) {
+    constructor(IPoolManager poolManager_, WETH weth_, IPermit2 permit2_) Permit2Enabled(permit2_) {
         poolManager = poolManager_;
         weth = weth_;
     }

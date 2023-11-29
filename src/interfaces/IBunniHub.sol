@@ -18,6 +18,7 @@ import {IERC20} from "./IERC20.sol";
 import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {IMulticallable} from "./IMulticallable.sol";
+import {IPermit2Enabled} from "./IPermit2Enabled.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 
 /// @title BunniHub
@@ -26,7 +27,7 @@ import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 /// which is the ERC20 LP token for the Uniswap V3 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-interface IBunniHub is IMulticallable, ILockCallback {
+interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
@@ -187,12 +188,6 @@ interface IBunniHub is IMulticallable, ILockCallback {
     /// @notice Clears the credits of a pool and deposit the assets into the vaults.
     /// @param keys The PoolKeys of the Uniswap V4 pools
     function clearPoolCredits(PoolKey[] calldata keys) external;
-
-    /// @notice The Uniswap v4 pool manager
-    function poolManager() external view returns (IPoolManager);
-
-    /// @notice The WETH9 contract
-    function weth() external view returns (WETH);
 
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
