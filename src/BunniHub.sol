@@ -845,19 +845,38 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         }
     }
 
+    /// @dev Updates the reserve for a token. The returned `reserveChange` must be applied to the corresponding reserve to ensure
+    /// we're only using funds belonging to the pool.
+    /// @param amount The amount of `currency` to add/subtract from the reserve. Positive for deposit, negative for withdraw.
+    /// @param currency The currency to deposit/withdraw.
+    /// @param vault The vault to deposit/withdraw from. address(0) if the reserve is stored as PoolManager claim tokens.
+    /// @param user The user to pull tokens from / withdraw tokens to
+    /// @param pullTokensFromUser Whether to pull tokens from the user or not in case of deposit.
+    /// @return reserveChange The change in reserves. Positive for deposit, negative for withdraw. Denominated in vault shares
+    /// if a vault is used. Denominated in PoolManager claim tokens otherwise.
     function _updateReserve(int256 amount, Currency currency, ERC4626 vault, address user, bool pullTokensFromUser)
         internal
         returns (int256 reserveChange)
     {
         if (address(vault) == address(0)) {
             // store reserve as PoolManager pool tokens
-            return _updatePoolToken(currency, amount);
+            return _updateClaimTokenReserve(currency, amount);
         } else {
             // store reserve in ERC4626 vault
             return _updateVaultReserve(amount, currency, vault, user, pullTokensFromUser);
         }
     }
 
+    /// @dev Updates the reserve for a token in a pool by shifting funds from/to PoolManager. The returned `reserveChange` must be applied to the corresponding reserve to ensure
+    /// we're only using funds belonging to the pool.
+    /// @param amount The amount of `currency` to add/subtract from the reserve. Positive for deposit, negative for withdraw.
+    /// @param currency The currency to deposit/withdraw.
+    /// @param vault The vault to deposit/withdraw from. address(0) if the reserve is stored as PoolManager claim tokens.
+    /// @param poolId The poolId of the pool.
+    /// @param currencyIdx The index of the currency in the pool. Should be 0 or 1.
+    /// @param poolCreditSet Whether the pool credit is set or not.
+    /// @return reserveChange The change in reserves. Positive for deposit, negative for withdraw. Denominated in vault shares
+    /// if a vault is used. Denominated in PoolManager claim tokens otherwise.
     function _updateReserveAndSettle(
         int256 amount,
         Currency currency,
@@ -868,6 +887,8 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
     ) internal returns (int256 reserveChange) {
         if (address(vault) != address(0)) {
             if (amount > 0) {
+                // we're depositing into the reserve vault using funds in PoolManager
+                // take tokens from PoolManager if possible, otherwise mint claim tokens
                 uint256 poolManagerBalance = currency.balanceOf(address(poolManager));
                 if (uint256(amount) <= poolManagerBalance) {
                     // PoolManager has enough balance to cover the take() operation
@@ -880,7 +901,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
                     amount = poolManagerBalance.toInt256();
                     poolManager.mint(currency, address(this), creditAmount);
 
-                    // update poolCredit
+                    // increase poolCredit
                     mapping(PoolId => uint256) storage poolCredit = currencyIdx == 0 ? poolCredit0 : poolCredit1;
                     uint256 existingCredit = poolCredit[poolId];
                     if (existingCredit == 0) {
@@ -892,7 +913,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
                     poolCredit[poolId] = existingCredit + creditAmount;
                 }
             } else if (amount < 0 && poolCreditSet) {
-                // we're withdrawing from the reserve and we have pool credit
+                // we're withdrawing from the reserve vault to PoolManager and we have pool credit
                 // burn the claim tokens first
                 mapping(PoolId => uint256) storage poolCredit = currencyIdx == 0 ? poolCredit0 : poolCredit1;
                 uint256 existingCredit = poolCredit[poolId];
@@ -921,14 +942,21 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
             });
 
             if (amount < 0) {
+                // we withdrew tokens from the reserve vault to PoolManager
+                // settle balances to zero out the delta with PoolManager
                 poolManager.settle(currency);
             }
         } else {
-            reserveChange = _updatePoolToken(currency, amount);
+            reserveChange = _updateClaimTokenReserve(currency, amount);
         }
     }
 
-    function _updatePoolToken(Currency currency, int256 amount) internal returns (int256 reserveChange) {
+    /// @dev Mints/burns PoolManager claim tokens.
+    /// @param currency The currency to mint/burn.
+    /// @param amount The amount to mint/burn. Positive for mint, negative for burn.
+    /// @return reserveChange The change in reserves. Positive for deposit, negative for withdraw.
+    /// Denominated in PoolManager claim tokens.
+    function _updateClaimTokenReserve(Currency currency, int256 amount) internal returns (int256 reserveChange) {
         if (amount > 0) {
             poolManager.mint(currency, address(this), uint256(amount));
         } else if (amount < 0) {
