@@ -152,10 +152,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         // make deposit
+        (uint256 beforeBalance0, uint256 beforeBalance1) =
+            (currency0.balanceOf(address(this)), currency1.balanceOf(address(this)));
         (uint256 shares,, uint256 amount0, uint256 amount1) =
             _makeDeposit(key, depositAmount0, depositAmount1, address(this), snapLabel);
-        uint256 actualDepositedAmount0 = depositAmount0 - currency0.balanceOf(address(this));
-        uint256 actualDepositedAmount1 = depositAmount1 - currency1.balanceOf(address(this));
+        uint256 actualDepositedAmount0 = beforeBalance0 + depositAmount0 - currency0.balanceOf(address(this));
+        uint256 actualDepositedAmount1 = beforeBalance1 + depositAmount1 - currency1.balanceOf(address(this));
 
         // check return values
         assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS);
@@ -194,6 +196,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             deadline: block.timestamp
         });
         IBunniHub hub_ = hub;
+        (uint256 beforeBalance0, uint256 beforeBalance1) =
+            (key.currency0.balanceOf(address(this)), key.currency1.balanceOf(address(this)));
         snapStart(snapLabel);
         (, uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
         snapEnd();
@@ -204,8 +208,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         assertApproxEqAbs(withdrawAmount1, amount1, 10, "withdrawAmount1 incorrect");
 
         // check token balances
-        assertApproxEqAbs(key.currency0.balanceOf(address(this)), depositAmount0, 10, "token0 balance incorrect");
-        assertApproxEqAbs(key.currency1.balanceOf(address(this)), depositAmount1, 10, "token1 balance incorrect");
+        assertApproxEqAbs(
+            key.currency0.balanceOf(address(this)) - beforeBalance0, withdrawAmount0, 10, "token0 balance incorrect"
+        );
+        assertApproxEqAbs(
+            key.currency1.balanceOf(address(this)) - beforeBalance1, withdrawAmount1, 10, "token1 balance incorrect"
+        );
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
     }
 
@@ -727,6 +735,51 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         }
     }
 
+    function test_multicall() external {
+        Currency currency0 = CurrencyLibrary.NATIVE;
+        Currency currency1 = Currency.wrap(address(token0));
+        (, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+
+        _mint(currency0, address(this), 3 ether);
+        _mint(currency1, address(this), 3 ether);
+
+        bytes[] memory data = new bytes[](2);
+        data[0] = abi.encodeWithSelector(
+            IBunniHub.deposit.selector,
+            IBunniHub.DepositParams({
+                poolKey: key,
+                amount0Desired: 1 ether,
+                amount1Desired: 1 ether,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp,
+                recipient: address(this),
+                refundETH: false
+            })
+        );
+        data[1] = abi.encodeWithSelector(
+            IBunniHub.deposit.selector,
+            IBunniHub.DepositParams({
+                poolKey: key,
+                amount0Desired: 2 ether,
+                amount1Desired: 2 ether,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp,
+                recipient: address(this),
+                refundETH: false
+            })
+        );
+        hub.multicall{value: 3 ether}(data);
+
+        // hub should have 0 ETH balance
+        assertEq(address(hub).balance, 0, "hub ETH balance not 0");
+
+        // hub should have 0 token0 balance
+        assertEq(token0.balanceOf(address(hub)), 0, "hub token0 balance not 0");
+    }
+
     /*
     function test_pricePerFullShare() public {
         // make deposit
@@ -760,16 +813,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint256 value;
         if (key_.currency0.isNative()) {
             value = depositAmount0;
-            vm.deal(depositor, value);
-        } else {
-            token0.mint(depositor, depositAmount0);
-        }
-        if (key_.currency1.isNative()) {
+        } else if (key_.currency1.isNative()) {
             value = depositAmount1;
-            vm.deal(depositor, value);
-        } else {
-            token1.mint(depositor, depositAmount1);
         }
+        _mint(key_.currency0, depositor, depositAmount0);
+        _mint(key_.currency1, depositor, depositAmount1);
 
         // deposit tokens
         IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
@@ -779,7 +827,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             amount0Min: 0,
             amount1Min: 0,
             deadline: block.timestamp,
-            recipient: depositor
+            recipient: depositor,
+            refundETH: true
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
@@ -829,7 +878,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             weth.deposit{value: amount}();
             weth.transfer(to, amount);
         } else {
-            deal(Currency.unwrap(currency), to, amount);
+            ERC20Mock(Currency.unwrap(currency)).mint(to, amount);
         }
     }
 

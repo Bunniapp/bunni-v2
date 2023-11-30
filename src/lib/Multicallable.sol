@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
+import {ReentrancyGuard} from "./ReentrancyGuard.sol";
 import {IMulticallable} from "../interfaces/IMulticallable.sol";
 
 /// @notice Contract that enables a single call to call multiple methods on itself.
 /// @author Solady (https://github.com/vectorized/solady/blob/main/src/utils/Multicallable.sol)
 /// @author Modified from Solmate (https://github.com/transmissions11/solmate/blob/main/src/utils/Multicallable.sol)
-abstract contract Multicallable is IMulticallable {
+abstract contract Multicallable is IMulticallable, ReentrancyGuard {
+    uint256 private constant STATUS_SLOT = uint256(keccak256("MULTICALL_STATUS")) - 1;
+
     /// @dev Apply `DELEGATECALL` with the current contract to each calldata in `data`,
     /// and store the `abi.encode` formatted results of each `DELEGATECALL` into `results`.
     /// If any of the `DELEGATECALL`s reverts, the entire context is reverted,
@@ -18,7 +21,13 @@ abstract contract Multicallable is IMulticallable {
     /// For efficiency, this function will directly return the results, terminating the context.
     /// If called internally, it must be called at the end of a function
     /// that returns `(bytes[] memory)`.
-    function multicall(bytes[] calldata data) public payable virtual returns (bytes[] memory) {
+    function multicall(bytes[] calldata data)
+        public
+        payable
+        virtual
+        nonReentrantUsingSlot(STATUS_SLOT)
+        returns (bytes[] memory)
+    {
         assembly {
             mstore(0x00, 0x20)
             mstore(0x20, data.length) // Store `data.length` into `results`.
@@ -61,6 +70,15 @@ abstract contract Multicallable is IMulticallable {
                 resultsOffset := and(add(add(resultsOffset, returndatasize()), 0x3f), 0xffffffffffffffe0)
                 if iszero(lt(results, end)) { break }
             }
+
+            // If ETH balance is non-zero, transfer it to the caller.
+            if gt(selfbalance(), 0) {
+                if iszero(call(gas(), caller(), selfbalance(), codesize(), 0x00, codesize(), 0x00)) {
+                    mstore(0x00, 0xb12d13eb) // `ETHTransferFailed()`.
+                    revert(0x1c, 0x04)
+                }
+            }
+
             return(0x00, add(resultsOffset, 0x40))
         }
     }

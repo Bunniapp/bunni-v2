@@ -43,7 +43,7 @@ import {IBunniHub, ILiquidityDensityFunction} from "./interfaces/IBunniHub.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyGuard, Permit2Enabled {
+contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enabled {
     using SSTORE2 for bytes;
     using SSTORE2 for address;
     using SafeCastLib for int256;
@@ -185,9 +185,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, ReentrancyG
         _poolState[poolId].reserve1 = (state.reserve1.toInt256() + returnData.reserveChange1).toUint256();
 
         // refund excess ETH
-        // Note: since we transfer the entire balance, multicalls can only contain a single
-        // deposit() call that uses ETH.
-        if (address(this).balance != 0) {
+        if (params.refundETH && address(this).balance != 0) {
             payable(msg.sender).transfer(address(this).balance);
         }
 

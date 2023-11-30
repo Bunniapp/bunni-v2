@@ -74,6 +74,7 @@ interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// @param amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
     /// @param deadline The time by which the transaction must be included to effect the change
+    /// @param refundETH Whether to refund excess ETH to the sender. Should be false when part of a multicall.
     struct DepositParams {
         PoolKey poolKey;
         address recipient;
@@ -82,6 +83,7 @@ interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
         uint256 amount0Min;
         uint256 amount1Min;
         uint256 deadline;
+        bool refundETH;
     }
 
     /// @notice Increases the amount of liquidity in a position, with tokens paid by the `msg.sender`
@@ -94,6 +96,7 @@ interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
     /// amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
     /// deadline The time by which the transaction must be included to effect the change
+    /// refundETH Whether to refund excess ETH to the sender. Should be false when part of a multicall.
     /// @return shares The new share tokens minted to the sender
     /// @return addedLiquidity The new liquidity amount as a result of the increase
     /// @return amount0 The amount of token0 to acheive resulting liquidity
