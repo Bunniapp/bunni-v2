@@ -903,12 +903,10 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 hookParams,
                 vault0_,
                 vault1_,
-                TickMath.getSqrtRatioAtTick(4)
+                TickMath.getSqrtRatioAtTick(4),
+                100
             )
         );
-
-        // increase oracle cardinality
-        bunniHook.increaseCardinalityNext(key, 100);
 
         // make initial deposit to avoid accounting for MIN_INITIAL_SHARES
         uint256 depositAmount0 = PRECISION;

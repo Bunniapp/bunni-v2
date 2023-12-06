@@ -149,6 +149,7 @@ interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
     /// @param vault0 The vault for token0. If address(0), then a vault is not used.
     /// @param vault1 The vault for token1. If address(0), then a vault is not used.
     /// @param sqrtPriceX96 The initial sqrt price of the Uniswap V4 pool
+    /// @param cardinalityNext The cardinality target for the Uniswap V4 pool
     struct DeployBunniTokenParams {
         Currency currency0;
         Currency currency1;
@@ -161,6 +162,7 @@ interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
         ERC4626 vault0;
         ERC4626 vault1;
         uint160 sqrtPriceX96;
+        uint16 cardinalityNext;
     }
 
     /// @notice Deploys the BunniToken contract for a Bunni position. This token

@@ -358,6 +358,11 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
         // initialize Uniswap v4 pool
         poolManager.initialize(key, params.sqrtPriceX96, bytes(""));
 
+        // initialize cardinality target
+        if (params.cardinalityNext != 0) {
+            params.hooks.increaseCardinalityNext(key, params.cardinalityNext);
+        }
+
         emit NewBunni(token, poolId);
     }
 
