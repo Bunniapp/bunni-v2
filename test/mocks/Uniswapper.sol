@@ -27,7 +27,7 @@ contract Uniswapper is ILockCallback {
         payable
         returns (BalanceDelta delta)
     {
-        delta = abi.decode(poolManager.lock(abi.encode(key, params, msg.sender)), (BalanceDelta));
+        delta = abi.decode(poolManager.lock(address(this), abi.encode(key, params, msg.sender)), (BalanceDelta));
 
         // refund ETH
         if (address(this).balance > 0) {
@@ -35,7 +35,7 @@ contract Uniswapper is ILockCallback {
         }
     }
 
-    function lockAcquired(bytes calldata data) external override returns (bytes memory) {
+    function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
         require(msg.sender == address(poolManager), "Not poolManager");
 
         (PoolKey memory key, IPoolManager.SwapParams memory params, address sender) =

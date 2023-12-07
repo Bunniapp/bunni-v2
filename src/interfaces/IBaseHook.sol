@@ -15,5 +15,5 @@ interface IBaseHook is IHooks {
 
     function poolManager() external view returns (IPoolManager);
 
-    function getHooksCalls() external view returns (Hooks.Calls memory);
+    function getHooksCalls() external view returns (Hooks.Permissions memory);
 }

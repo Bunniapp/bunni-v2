@@ -33,13 +33,13 @@ abstract contract BaseHook is IBaseHook {
         _;
     }
 
-    function getHooksCalls() public pure virtual returns (Hooks.Calls memory);
+    function getHooksCalls() public pure virtual returns (Hooks.Permissions memory);
 
     // this function is virtual so that we can override it during testing,
     // which allows us to deploy an implementation to any address
     // and then etch the bytecode into the correct address
     function validateHookAddress(BaseHook _this) internal pure virtual {
-        Hooks.validateHookAddress(_this, getHooksCalls());
+        Hooks.validateHookPermissions(_this, getHooksCalls());
     }
 
     function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external virtual returns (bytes4) {

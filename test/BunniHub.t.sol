@@ -59,7 +59,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         address(
             uint160(
                 Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_MODIFY_POSITION_FLAG + Hooks.BEFORE_SWAP_FLAG
-                    + Hooks.AFTER_SWAP_FLAG
+                    + Hooks.AFTER_SWAP_FLAG + Hooks.ACCESS_LOCK_FLAG
             )
         )
     );

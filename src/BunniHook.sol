@@ -183,8 +183,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBaseHook
-    function getHooksCalls() public pure override(BaseHook, IBaseHook) returns (Hooks.Calls memory) {
-        return Hooks.Calls({
+    function getHooksCalls() public pure override(BaseHook, IBaseHook) returns (Hooks.Permissions memory) {
+        return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: true,
             beforeModifyPosition: true,
@@ -192,7 +192,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             beforeSwap: true,
             afterSwap: true,
             beforeDonate: false,
-            afterDonate: false
+            afterDonate: false,
+            noOp: false,
+            accessLock: true
         });
     }
 

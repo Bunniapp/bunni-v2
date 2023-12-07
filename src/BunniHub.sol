@@ -172,7 +172,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
             vault1: state.vault1
         });
         ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(abi.encode(LockCallbackType.MODIFY_LIQUIDITY, abi.encode(inputData))),
+            poolManager.lock(address(this), abi.encode(LockCallbackType.MODIFY_LIQUIDITY, abi.encode(inputData))),
             (ModifyLiquidityReturnData)
         );
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
@@ -261,7 +261,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
         });
 
         ModifyLiquidityReturnData memory returnData = abi.decode(
-            poolManager.lock(abi.encode(LockCallbackType.MODIFY_LIQUIDITY, abi.encode(inputData))),
+            poolManager.lock(address(this), abi.encode(LockCallbackType.MODIFY_LIQUIDITY, abi.encode(inputData))),
             (ModifyLiquidityReturnData)
         );
         (amount0, amount1) =
@@ -356,7 +356,9 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
         /// -----------------------------------------------------------------------
 
         // initialize Uniswap v4 pool
-        poolManager.initialize(key, params.sqrtPriceX96, bytes(""));
+        poolManager.lock(
+            address(this), abi.encode(LockCallbackType.INITIALIZE_POOL, abi.encode(key, params.sqrtPriceX96))
+        );
 
         // initialize cardinality target
         if (params.cardinalityNext != 0) {
@@ -379,6 +381,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
 
         HookCallbackReturnData memory returnData = abi.decode(
             poolManager.lock(
+                address(this),
                 abi.encode(
                     LockCallbackType.HOOK_MODIFY_LIQUIDITY,
                     abi.encode(
@@ -404,7 +407,7 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
 
     /// @inheritdoc IBunniHub
     function clearPoolCredits(PoolKey[] calldata keys) external override nonReentrant {
-        poolManager.lock(abi.encode(LockCallbackType.CLEAR_POOL_CREDITS, abi.encode(keys)));
+        poolManager.lock(address(this), abi.encode(LockCallbackType.CLEAR_POOL_CREDITS, abi.encode(keys)));
     }
 
     receive() external payable {}
@@ -423,25 +426,29 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
     /// -----------------------------------------------------------------------
 
     enum LockCallbackType {
-        MODIFY_LIQUIDITY,
         HOOK_MODIFY_LIQUIDITY,
-        CLEAR_POOL_CREDITS
+        MODIFY_LIQUIDITY,
+        CLEAR_POOL_CREDITS,
+        INITIALIZE_POOL
     }
 
-    function lockAcquired(bytes calldata data) external override returns (bytes memory) {
+    function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
         // verify sender
-        if (msg.sender != address(poolManager)) revert BunniHub__Unauthorized();
+        if (msg.sender != address(poolManager) || lockCaller != address(this)) revert BunniHub__Unauthorized();
 
         // decode input
         (LockCallbackType t, bytes memory callbackData) = abi.decode(data, (LockCallbackType, bytes));
 
         // redirect to respective callback
-        if (t == LockCallbackType.MODIFY_LIQUIDITY) {
-            return abi.encode(_modifyLiquidityLockCallback(abi.decode(callbackData, (ModifyLiquidityInputData))));
-        } else if (t == LockCallbackType.HOOK_MODIFY_LIQUIDITY) {
+        if (t == LockCallbackType.HOOK_MODIFY_LIQUIDITY) {
             return abi.encode(_hookModifyLiquidityLockCallback(abi.decode(callbackData, (HookCallbackInputData))));
+        } else if (t == LockCallbackType.MODIFY_LIQUIDITY) {
+            return abi.encode(_modifyLiquidityLockCallback(abi.decode(callbackData, (ModifyLiquidityInputData))));
         } else if (t == LockCallbackType.CLEAR_POOL_CREDITS) {
             _clearPoolCreditsLockCallback(abi.decode(callbackData, (PoolKey[])));
+        } else if (t == LockCallbackType.INITIALIZE_POOL) {
+            (PoolKey memory key, uint160 sqrtPriceX96) = abi.decode(callbackData, (PoolKey, uint160));
+            _initializePoolLockCallback(key, sqrtPriceX96);
         }
         // fallback
         return bytes("");
@@ -828,6 +835,10 @@ contract BunniHub is IBunniHub, Multicallable, ERC1155TokenReceiver, Permit2Enab
         poolCredit[poolId] = 0;
         if (currencyIdx == 0) _poolState[poolId].poolCredit0Set = false;
         else _poolState[poolId].poolCredit1Set = false;
+    }
+
+    function _initializePoolLockCallback(PoolKey memory key, uint160 sqrtPriceX96) internal {
+        poolManager.initialize(key, sqrtPriceX96, bytes(""));
     }
 
     /// @dev Zero out the delta for a token if the corresponding vault is non-zero.
