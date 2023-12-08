@@ -9,18 +9,13 @@ abstract contract ReentrancyGuard {
     uint256 private constant ENTERED = 1;
 
     modifier nonReentrant() {
-        _nonReentrantBefore(STATUS_SLOT);
+        _nonReentrantBefore();
         _;
-        _nonReentrantAfter(STATUS_SLOT);
+        _nonReentrantAfter();
     }
 
-    modifier nonReentrantUsingSlot(uint256 statusSlot) {
-        _nonReentrantBefore(statusSlot);
-        _;
-        _nonReentrantAfter(statusSlot);
-    }
-
-    function _nonReentrantBefore(uint256 statusSlot) internal {
+    function _nonReentrantBefore() internal {
+        uint256 statusSlot = STATUS_SLOT;
         uint256 status;
         assembly ("memory-safe") {
             status := tload(statusSlot)
@@ -33,7 +28,8 @@ abstract contract ReentrancyGuard {
         }
     }
 
-    function _nonReentrantAfter(uint256 statusSlot) internal {
+    function _nonReentrantAfter() internal {
+        uint256 statusSlot = STATUS_SLOT;
         uint256 notEntered = NOT_ENTERED;
         assembly ("memory-safe") {
             tstore(statusSlot, notEntered)

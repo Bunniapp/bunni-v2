@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.19;
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
+
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -21,9 +23,10 @@ import "./Structs.sol";
 import "./VaultMath.sol";
 import "../interfaces/IBunniHub.sol";
 import {BunniToken} from "../BunniToken.sol";
+import {SafeTransferLib} from "./SafeTransferLib.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
-import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
+import {IBunniToken} from "../interfaces/IBunniToken.sol";
 
 library BunniHubLogic {
     using SSTORE2 for bytes;
@@ -31,6 +34,7 @@ library BunniHubLogic {
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
+    using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint128;
     using FixedPointMathLib for uint256;
@@ -58,6 +62,7 @@ library BunniHubLogic {
         mapping(PoolId => uint256) storage poolCredit0,
         mapping(PoolId => uint256) storage poolCredit1
     ) external returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1) {
+        address msgSender = LibMulticaller.senderOrSigner();
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = _getPoolState(poolId, _poolState);
 
@@ -98,7 +103,7 @@ library BunniHubLogic {
             tickLower: roundedTick,
             tickUpper: nextRoundedTick,
             liquidityDelta: uint256(addedLiquidity).toInt256(),
-            user: msg.sender,
+            user: msgSender,
             reserveDeltaInUnderlying: reserveDeltaInUnderlying,
             currentLiquidity: currentLiquidity,
             vault0: state.vault0,
@@ -118,12 +123,12 @@ library BunniHubLogic {
         _poolState[poolId].reserve1 = (state.reserve1.toInt256() + returnData.reserveChange1).toUint256();
 
         // refund excess ETH
-        if (params.refundETH && address(this).balance != 0) {
-            payable(msg.sender).transfer(address(this).balance);
+        if (address(this).balance != 0) {
+            params.refundETHRecipient.safeTransferETH(address(this).balance);
         }
 
         // emit event
-        emit IBunniHub.Deposit(msg.sender, params.recipient, poolId, amount0, amount1, shares);
+        emit IBunniHub.Deposit(msgSender, params.recipient, poolId, amount0, amount1, shares);
     }
 
     struct DepositLogicInputData {
@@ -374,16 +379,17 @@ library BunniHubLogic {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = _getPoolState(poolId, _poolState);
 
-        uint256 currentTotalSupply = state.bunniToken.totalSupply();
-        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
-        uint128 existingLiquidity = poolManager.getLiquidity(poolId);
-
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
 
+        uint256 currentTotalSupply = state.bunniToken.totalSupply();
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+        uint128 existingLiquidity = poolManager.getLiquidity(poolId);
+        address msgSender = LibMulticaller.senderOrSigner();
+
         // burn shares
-        state.bunniToken.burn(msg.sender, params.shares);
+        state.bunniToken.burn(msgSender, params.shares);
         // at this point of execution we know params.shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 
@@ -416,7 +422,7 @@ library BunniHubLogic {
             tickLower: roundedTick,
             tickUpper: nextRoundedTick,
             liquidityDelta: -uint256(removedLiquidity).toInt256(),
-            user: msg.sender,
+            user: msgSender,
             reserveDeltaInUnderlying: reserveDeltaInUnderlying,
             currentLiquidity: existingLiquidity,
             vault0: state.vault0,
@@ -438,7 +444,7 @@ library BunniHubLogic {
         _poolState[poolId].reserve0 = (state.reserve0.toInt256() + returnData.reserveChange0).toUint256();
         _poolState[poolId].reserve1 = (state.reserve1.toInt256() + returnData.reserveChange1).toUint256();
 
-        emit IBunniHub.Withdraw(msg.sender, params.recipient, poolId, amount0, amount1, params.shares);
+        emit IBunniHub.Withdraw(msgSender, params.recipient, poolId, amount0, amount1, params.shares);
     }
 
     /// -----------------------------------------------------------------------

@@ -17,7 +17,6 @@ import "../lib/Structs.sol";
 import {IERC20} from "./IERC20.sol";
 import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
-import {IMulticallable} from "./IMulticallable.sol";
 import {IPermit2Enabled} from "./IPermit2Enabled.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 
@@ -40,7 +39,7 @@ error BunniHub__BunniTokenNotInitialized();
 /// which is the ERC20 LP token for the Uniswap V3 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
+interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
@@ -82,21 +81,21 @@ interface IBunniHub is IMulticallable, ILockCallback, IPermit2Enabled {
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
+    /// @param refundETHRecipient The recipient of the refunded ETH
     /// @param amount0Desired The desired amount of token0 to be spent,
     /// @param amount1Desired The desired amount of token1 to be spent,
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// @param amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
     /// @param deadline The time by which the transaction must be included to effect the change
-    /// @param refundETH Whether to refund excess ETH to the sender. Should be false when part of a multicall.
     struct DepositParams {
         PoolKey poolKey;
         address recipient;
+        address refundETHRecipient;
         uint256 amount0Desired;
         uint256 amount1Desired;
         uint256 amount0Min;
         uint256 amount1Min;
         uint256 deadline;
-        bool refundETH;
     }
 
     /// @notice Increases the amount of liquidity in a position, with tokens paid by the `msg.sender`

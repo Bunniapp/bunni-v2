@@ -6,6 +6,11 @@ import "forge-std/Test.sol";
 
 import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
+import {MulticallerEtcher} from "multicaller/MulticallerEtcher.sol";
+import {MulticallerWithSender} from "multicaller/MulticallerWithSender.sol";
+import {MulticallerWithSigner} from "multicaller/MulticallerWithSigner.sol";
+
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -71,6 +76,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     function setUp() public {
         weth = new WETH();
         permit2 = _deployPermit2();
+        MulticallerEtcher.multicallerWithSender();
+        MulticallerEtcher.multicallerWithSigner();
 
         // initialize uniswap
         token0 = new ERC20Mock();
@@ -744,6 +751,10 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         _mint(currency0, address(this), 3 ether);
         _mint(currency1, address(this), 3 ether);
 
+        address[] memory targets = new address[](2);
+        targets[0] = address(hub);
+        targets[1] = address(hub);
+
         bytes[] memory data = new bytes[](2);
         data[0] = abi.encodeWithSelector(
             IBunniHub.deposit.selector,
@@ -755,7 +766,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 amount1Min: 0,
                 deadline: block.timestamp,
                 recipient: address(this),
-                refundETH: false
+                refundETHRecipient: address(this)
             })
         );
         data[1] = abi.encodeWithSelector(
@@ -768,10 +779,32 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 amount1Min: 0,
                 deadline: block.timestamp,
                 recipient: address(this),
-                refundETH: false
+                refundETHRecipient: address(this)
             })
         );
-        hub.multicall{value: 3 ether}(data);
+
+        uint256[] memory values = new uint256[](2);
+        values[0] = 1 ether;
+        values[1] = 2 ether;
+
+        (uint256 beforeBalance0, uint256 beforeBalance1) =
+            (currency0.balanceOf(address(this)), currency1.balanceOf(address(this)));
+        bytes[] memory results = MulticallerWithSender(payable(LibMulticaller.MULTICALLER_WITH_SENDER))
+            .aggregateWithSender{value: 3 ether}(targets, data, values);
+        (,, uint256 amount0Call0, uint256 amount1Call0) = abi.decode(results[0], (uint256, uint128, uint256, uint256));
+        (,, uint256 amount0Call1, uint256 amount1Call1) = abi.decode(results[1], (uint256, uint128, uint256, uint256));
+
+        // tokens taken should match sum of returned values
+        assertEq(
+            beforeBalance0 - currency0.balanceOf(address(this)),
+            amount0Call0 + amount0Call1,
+            "amount0Call0 + amount0Call1 != amount taken"
+        );
+        assertEq(
+            beforeBalance1 - currency1.balanceOf(address(this)),
+            amount1Call0 + amount1Call1,
+            "amount1Call0 + amount1Call1 != amount taken"
+        );
 
         // hub should have 0 ETH balance
         assertEq(address(hub).balance, 0, "hub ETH balance not 0");
@@ -828,7 +861,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             amount1Min: 0,
             deadline: block.timestamp,
             recipient: depositor,
-            refundETH: true
+            refundETHRecipient: depositor
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);

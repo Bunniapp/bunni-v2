@@ -19,7 +19,6 @@ import "./lib/Structs.sol";
 import "./interfaces/IBunniHub.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {BunniHubLogic} from "./lib/BunniHubLogic.sol";
-import {Multicallable} from "./lib/Multicallable.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
 import {Permit2Enabled} from "./lib/Permit2Enabled.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
@@ -31,7 +30,7 @@ import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Multicallable, Permit2Enabled {
+contract BunniHub is IBunniHub, Permit2Enabled {
     using SSTORE2 for address;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
