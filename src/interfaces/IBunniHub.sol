@@ -21,6 +21,19 @@ import {IMulticallable} from "./IMulticallable.sol";
 import {IPermit2Enabled} from "./IPermit2Enabled.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 
+error BunniHub__ZeroInput();
+error BunniHub__PastDeadline();
+error BunniHub__Unauthorized();
+error BunniHub__LDFCannotBeZero();
+error BunniHub__MaxNonceReached();
+error BunniHub__SlippageTooHigh();
+error BunniHub__HookCannotBeZero();
+error BunniHub__ZeroSharesMinted();
+error BunniHub__InvalidLDFParams();
+error BunniHub__InvalidHookParams();
+error BunniHub__VaultAssetMismatch();
+error BunniHub__BunniTokenNotInitialized();
+
 /// @title BunniHub
 /// @author zefram.eth
 /// @notice The main contract LPs interact with. Each BunniKey corresponds to a BunniToken,
