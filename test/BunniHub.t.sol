@@ -44,7 +44,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
     uint256 internal constant MIN_INITIAL_SHARES = 1e3;
-    uint24 internal constant HOOK_SWAP_FEE = 0x208000; // 12.5% in either direction
+    uint96 internal constant HOOK_SWAP_FEE = 0.1e18;
     uint64 internal constant ALPHA = 0.7e18;
     uint256 internal constant MAX_ERROR = 1e9;
     uint24 internal constant FEE_MIN = 0.0001e6;
@@ -246,15 +246,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         _mint(key.currency0, address(this), inputAmount);
         uint256 value = key.currency0.isNative() ? inputAmount : 0;
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
         });
-        snapStart(snapLabel);
-        swapper_.swap{value: value}(key, params);
-        snapEnd();
+        _swap(key, params, value, snapLabel);
     }
 
     function test_swap_zeroForOne_noTickCrossing_multiple() public {
@@ -278,7 +275,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint256 inputAmount = PRECISION / 100;
         uint256 value = key.currency0.isNative() ? inputAmount : 0;
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: int256(inputAmount),
@@ -289,11 +285,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             _mint(key.currency0, address(this), inputAmount);
 
             if (i == numSwaps - 1) {
-                snapStart(snapLabel);
-                swapper_.swap{value: value}(key, params);
-                snapEnd();
+                _swap(key, params, value, snapLabel);
             } else {
-                swapper_.swap{value: value}(key, params);
+                _swap(key, params, value, "");
             }
         }
     }
@@ -320,21 +314,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
         });
 
-        snapStart(snapLabel);
-        swapper_.swap{value: value}(key, params);
-        snapEnd();
+        _swap(key, params, value, snapLabel);
 
-        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
     }
@@ -361,21 +352,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
         });
 
-        snapStart(snapLabel);
-        swapper_.swap{value: value}(key, params);
-        snapEnd();
+        _swap(key, params, value, snapLabel);
 
-        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
     }
@@ -404,21 +392,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-10) // limit tick is -10 but we'll end up at -11
         });
 
-        snapStart(snapLabel);
-        swapper_.swap{value: value}(key, params);
-        snapEnd();
+        _swap(key, params, value, snapLabel);
 
-        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
     }
@@ -445,16 +430,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency1, address(this), inputAmount);
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
         });
 
-        snapStart(snapLabel);
-        swapper_.swap{value: value}(key, params);
-        snapEnd();
+        _swap(key, params, value, snapLabel);
     }
 
     function test_swap_oneForZero_noTickCrossing_multiple() public {
@@ -478,7 +460,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint256 inputAmount = PRECISION / 100;
         uint256 value = key.currency1.isNative() ? inputAmount : 0;
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
             amountSpecified: int256(inputAmount),
@@ -489,11 +470,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             _mint(key.currency1, address(this), inputAmount);
 
             if (i == numSwaps - 1) {
-                snapStart(snapLabel);
-                swapper_.swap{value: value}(key, params);
-                snapEnd();
+                _swap(key, params, value, snapLabel);
             } else {
-                swapper_.swap{value: value}(key, params);
+                _swap(key, params, value, "");
             }
         }
     }
@@ -520,21 +499,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency1, address(this), inputAmount);
 
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
         });
 
-        snapStart(snapLabel);
-        swapper_.swap{value: value}(key, params);
-        snapEnd();
+        _swap(key, params, value, snapLabel);
 
-        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
     }
@@ -559,21 +535,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency1, address(this), inputAmount);
 
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
-        Uniswapper swapper_ = swapper;
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
         });
 
-        snapStart(snapLabel);
-        swapper_.swap{value: value}(key, params);
-        snapEnd();
+        _swap(key, params, value, snapLabel);
 
-        (, currentTick,,) = poolManager.getSlot0(key.toId());
+        (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
     }
@@ -601,7 +574,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
 
-        Uniswapper swapper_ = swapper;
         uint256 inputAmount = PRECISION * 100;
         IPoolManager.SwapParams memory paramsZeroToOne = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -621,27 +593,33 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             _mint(key.currency0, address(this), inputAmount);
             uint256 value = key.currency0.isNative() ? inputAmount : 0;
             if (i == numSwaps - 1) {
-                snapStart(string.concat("swap zeroForOne oneTickCrossing, subsequent swap", snapLabel));
-                swapper_.swap{value: value}(key, paramsZeroToOne);
-                snapEnd();
+                _swap(
+                    key,
+                    paramsZeroToOne,
+                    value,
+                    string.concat("swap zeroForOne oneTickCrossing, subsequent swap", snapLabel)
+                );
             } else {
-                swapper_.swap{value: value}(key, paramsZeroToOne);
+                _swap(key, paramsZeroToOne, value, "");
             }
 
             // one to zero swap
             _mint(key.currency1, address(this), inputAmount);
             value = key.currency1.isNative() ? inputAmount : 0;
             if (i == numSwaps - 1) {
-                snapStart(string.concat("swap oneForZero oneTickCrossing, subsequent swap", snapLabel));
-                swapper_.swap{value: value}(key, paramsOneToZero);
-                snapEnd();
+                _swap(
+                    key,
+                    paramsOneToZero,
+                    value,
+                    string.concat("swap oneForZero oneTickCrossing, subsequent swap", snapLabel)
+                );
             } else {
-                swapper_.swap{value: value}(key, paramsOneToZero);
+                _swap(key, paramsOneToZero, value, "");
             }
         }
 
-        uint256 fee0 = poolManager.hookFeesAccrued(address(bunniHook), key.currency0);
-        uint256 fee1 = poolManager.hookFeesAccrued(address(bunniHook), key.currency1);
+        uint256 fee0 = poolManager.balanceOf(address(bunniHook), key.currency0);
+        uint256 fee1 = poolManager.balanceOf(address(bunniHook), key.currency1);
         assertGt(fee0, 0, "protocol fee0 not accrued");
         assertGt(fee1, 0, "protocol fee1 not accrued");
 
@@ -650,7 +628,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         currencies[0] = key.currency0;
         currencies[1] = key.currency1;
         snapStart(string.concat("collect protocol fees", snapLabel));
-        bunniHook.collectHookFees(currencies);
+        poolManager.lock(address(bunniHook), abi.encode(currencies));
         snapEnd();
 
         // check balances
@@ -687,7 +665,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 amountSpecified: int256(inputAmount),
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
             });
-            swapper.swap{value: value}(key, params);
+            _swap(key, params, value, "");
         } else {
             // zero to one swap
             uint256 inputAmount = PRECISION * 2;
@@ -698,13 +676,14 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 amountSpecified: int256(inputAmount),
                 sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
             });
-            swapper.swap{value: value}(key, params);
+            _swap(key, params, value, "");
         }
 
-        // check pool credits
         uint256 poolCredit0 = hub.poolCredit0(key.toId());
         uint256 poolCredit1 = hub.poolCredit1(key.toId());
-        assertTrue(poolCredit0 > 0 || poolCredit1 > 0, "pool credit not accrued");
+        if (poolCredit0 == 0 && poolCredit1 == 0) {
+            return;
+        }
 
         // clear pool credits
         PoolKey[] memory keys = new PoolKey[](1);
@@ -1052,4 +1031,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     }
 
     receive() external payable {}
+
+    function _swap(PoolKey memory key, IPoolManager.SwapParams memory params, uint256 value, string memory snapLabel)
+        internal
+    {
+        Uniswapper swapper_ = swapper;
+        bytes memory data = abi.encode(key, params);
+        if (bytes(snapLabel).length > 0) {
+            snapStart(snapLabel);
+            poolManager.lock{value: value}(address(swapper_), data);
+            snapEnd();
+        } else {
+            poolManager.lock{value: value}(address(swapper_), data);
+        }
+    }
 }

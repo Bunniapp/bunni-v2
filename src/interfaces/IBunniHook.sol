@@ -7,7 +7,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {IHookFeeManager} from "@uniswap/v4-core/src/interfaces/IHookFeeManager.sol";
+import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
 
 import {IOwnable} from "./IOwnable.sol";
@@ -15,19 +15,19 @@ import {Oracle} from "../lib/Oracle.sol";
 import {IBunniHub} from "./IBunniHub.sol";
 import {IBaseHook} from "./IBaseHook.sol";
 
-interface IBunniHook is IBaseHook, IHookFeeManager, IDynamicFeeManager, IOwnable {
+interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// -----------------------------------------------------------------------
     /// Errors
     /// -----------------------------------------------------------------------
 
-    error BunniHook__NotBunniHub();
+    error BunniHook__Unauthorized();
     error BunniHook__SwapAlreadyInProgress();
 
     /// -----------------------------------------------------------------------
     /// Events
     /// -----------------------------------------------------------------------
 
-    event SetHookFees(uint24 newFee);
+    event SetHookFeesModifier(uint96 newFee);
     event SetHookFeesRecipient(address newRecipient);
 
     /// -----------------------------------------------------------------------
@@ -47,11 +47,8 @@ interface IBunniHook is IBaseHook, IHookFeeManager, IDynamicFeeManager, IOwnable
     /// View functions
     /// -----------------------------------------------------------------------
 
-    /// @notice The BunniHub contract
-    function hub() external view returns (IBunniHub);
-
-    /// @notice The hookFees value provided to PoolManager
-    function hookFees() external view returns (uint24);
+    /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
+    function hookFeesModifier() external view returns (uint96);
 
     /// @notice The recipient of collected hook fees
     function hookFeesRecipient() external view returns (address);
@@ -97,10 +94,6 @@ interface IBunniHook is IBaseHook, IHookFeeManager, IDynamicFeeManager, IOwnable
         external
         returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew);
 
-    /// @notice Collects hook fees in the given currencies
-    /// @param currencyList The list of currencies to collect fees in
-    function collectHookFees(Currency[] calldata currencyList) external;
-
     /// -----------------------------------------------------------------------
     /// BunniHub functions
     /// -----------------------------------------------------------------------
@@ -118,9 +111,9 @@ interface IBunniHook is IBaseHook, IHookFeeManager, IDynamicFeeManager, IOwnable
     /// Owner functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Set the hook fees. Only callable by the owner.
-    /// @param newFee The new fee
-    function setHookFees(uint24 newFee) external;
+    /// @notice Set the hook fees modifier. Only callable by the owner.
+    /// @param newFee The new fee modifier
+    function setHookFeesModifier(uint96 newFee) external;
 
     /// @notice Set the hook fees recipient. Only callable by the owner.
     /// @param newRecipient The new recipient

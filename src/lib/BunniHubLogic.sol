@@ -66,7 +66,7 @@ library BunniHubLogic {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = _getPoolState(poolId, _poolState);
 
-        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(poolId);
+        (uint160 sqrtPriceX96, int24 currentTick,) = poolManager.getSlot0(poolId);
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, params.poolKey.tickSpacing);
 
         uint128 currentLiquidity = poolManager.getLiquidity(poolId);
@@ -189,21 +189,23 @@ library BunniHubLogic {
         );
 
         // update TWAP oracle and optionally observe
-        vars.arithmeticMeanTick;
         bool requiresLDF = vars.assets0 == 0 && vars.assets1 == 0;
-        {
-            uint24 twapSecondsAgo = inputData.state.twapSecondsAgo;
-            // we only need to observe the TWAP if currentTotalSupply is zero
-            assembly ("memory-safe") {
-                twapSecondsAgo := mul(twapSecondsAgo, requiresLDF)
-            }
-            vars.arithmeticMeanTick = IBunniHook(address(inputData.params.poolKey.hooks)).updateOracleAndObserve(
-                inputData.poolId, inputData.currentTick, twapSecondsAgo
-            );
-        }
 
         if (requiresLDF) {
             // use LDF to initialize token proportions
+
+            // update TWAP oracle and optionally observe
+            // need to update oracle before using it in the LDF
+            {
+                uint24 twapSecondsAgo = inputData.state.twapSecondsAgo;
+                // we only need to observe the TWAP if currentTotalSupply is zero
+                assembly ("memory-safe") {
+                    twapSecondsAgo := mul(twapSecondsAgo, requiresLDF)
+                }
+                vars.arithmeticMeanTick = IBunniHook(address(inputData.params.poolKey.hooks)).updateOracleAndObserve(
+                    inputData.poolId, inputData.currentTick, twapSecondsAgo
+                );
+            }
 
             // compute density
             bool useTwap = inputData.state.twapSecondsAgo != 0;
@@ -384,7 +386,7 @@ library BunniHubLogic {
         /// -----------------------------------------------------------------------
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
-        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+        (, int24 currentTick,) = poolManager.getSlot0(poolId);
         uint128 existingLiquidity = poolManager.getLiquidity(poolId);
         address msgSender = LibMulticaller.senderOrSigner();
 

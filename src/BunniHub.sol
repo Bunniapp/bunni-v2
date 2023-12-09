@@ -38,7 +38,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     using SafeTransferLib for IERC20;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
-    using BalanceDeltaLibrary for BalanceDelta;
 
     uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
@@ -246,7 +245,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         BalanceDelta poolTokenDelta = input.reserveDeltaInUnderlying;
         if (input.currentLiquidity != 0) {
             // negate pool delta to get fees owed
-            BalanceDelta feeDelta = BalanceDelta.wrap(0) - poolManager.modifyPosition(input.poolKey, params, bytes(""));
+            BalanceDelta feeDelta =
+                BalanceDelta.wrap(0) - poolManager.modifyPosition(input.poolKey, params, abi.encode(true));
 
             if (BalanceDelta.unwrap(feeDelta) != 0) {
                 // add fees to the amount of pool tokens to mint/burn
@@ -259,7 +259,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
         // update liquidity
         params.liquidityDelta = input.liquidityDelta;
-        BalanceDelta delta = poolManager.modifyPosition(input.poolKey, params, bytes(""));
+        BalanceDelta delta = poolManager.modifyPosition(input.poolKey, params, abi.encode(input.currentLiquidity == 0));
 
         // amount of tokens to pay/take
         BalanceDelta settleDelta = _zeroDeltaIfVault(input.reserveDeltaInUnderlying, input.vault0, input.vault1) + delta;
@@ -307,7 +307,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             params.tickUpper = data.liquidityDeltas[i].tickLower + data.poolKey.tickSpacing;
             params.liquidityDelta = data.liquidityDeltas[i].delta;
 
-            BalanceDelta balanceDelta = poolManager.modifyPosition(data.poolKey, params, bytes(""));
+            // only update the oracle before the first modifyPosition call
+            BalanceDelta balanceDelta = poolManager.modifyPosition(data.poolKey, params, abi.encode(i == 0));
 
             reserveChange0InUnderlying -= balanceDelta.amount0();
             reserveChange1InUnderlying -= balanceDelta.amount1();
@@ -423,7 +424,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             if (amount > 0) {
                 // we're depositing into the reserve vault using funds in PoolManager
                 // take tokens from PoolManager if possible, otherwise mint claim tokens
-                uint256 poolManagerBalance = currency.balanceOf(address(poolManager));
+                uint256 poolManagerBalance = poolManager.reservesOf(currency);
                 if (uint256(amount) <= poolManagerBalance) {
                     // PoolManager has enough balance to cover the take() operation
                     poolManager.take(currency, address(this), uint256(amount));
