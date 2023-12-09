@@ -54,9 +54,6 @@ abstract contract Ownable is IOwnable {
     /*                     INTERNAL FUNCTIONS                     */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Override to return true to make `_initializeOwner` prevent double-initialization.
-    function _guardInitializeOwner() internal pure virtual returns (bool guard) {}
-
     /// @dev Initializes the owner directly without authorization guard.
     /// This function must be called upon initialization,
     /// regardless of whether the contract is upgradeable or not.
@@ -65,58 +62,28 @@ abstract contract Ownable is IOwnable {
     /// For performance reasons, this function will not check if there
     /// is an existing owner.
     function _initializeOwner(address newOwner) internal virtual {
-        if (_guardInitializeOwner()) {
-            /// @solidity memory-safe-assembly
-            assembly {
-                let ownerSlot := _OWNER_SLOT
-                if sload(ownerSlot) {
-                    mstore(0x00, 0x0dc149f0) // `AlreadyInitialized()`.
-                    revert(0x1c, 0x04)
-                }
-                // Clean the upper 96 bits.
-                newOwner := shr(96, shl(96, newOwner))
-                // Store the new value.
-                sstore(ownerSlot, or(newOwner, shl(255, iszero(newOwner))))
-                // Emit the {OwnershipTransferred} event.
-                log3(0, 0, _OWNERSHIP_TRANSFERRED_EVENT_SIGNATURE, 0, newOwner)
-            }
-        } else {
-            /// @solidity memory-safe-assembly
-            assembly {
-                // Clean the upper 96 bits.
-                newOwner := shr(96, shl(96, newOwner))
-                // Store the new value.
-                sstore(_OWNER_SLOT, newOwner)
-                // Emit the {OwnershipTransferred} event.
-                log3(0, 0, _OWNERSHIP_TRANSFERRED_EVENT_SIGNATURE, 0, newOwner)
-            }
+        /// @solidity memory-safe-assembly
+        assembly {
+            // Clean the upper 96 bits.
+            newOwner := shr(96, shl(96, newOwner))
+            // Store the new value.
+            sstore(_OWNER_SLOT, newOwner)
+            // Emit the {OwnershipTransferred} event.
+            log3(0, 0, _OWNERSHIP_TRANSFERRED_EVENT_SIGNATURE, 0, newOwner)
         }
     }
 
     /// @dev Sets the owner directly without authorization guard.
     function _setOwner(address newOwner) internal virtual {
-        if (_guardInitializeOwner()) {
-            /// @solidity memory-safe-assembly
-            assembly {
-                let ownerSlot := _OWNER_SLOT
-                // Clean the upper 96 bits.
-                newOwner := shr(96, shl(96, newOwner))
-                // Emit the {OwnershipTransferred} event.
-                log3(0, 0, _OWNERSHIP_TRANSFERRED_EVENT_SIGNATURE, sload(ownerSlot), newOwner)
-                // Store the new value.
-                sstore(ownerSlot, or(newOwner, shl(255, iszero(newOwner))))
-            }
-        } else {
-            /// @solidity memory-safe-assembly
-            assembly {
-                let ownerSlot := _OWNER_SLOT
-                // Clean the upper 96 bits.
-                newOwner := shr(96, shl(96, newOwner))
-                // Emit the {OwnershipTransferred} event.
-                log3(0, 0, _OWNERSHIP_TRANSFERRED_EVENT_SIGNATURE, sload(ownerSlot), newOwner)
-                // Store the new value.
-                sstore(ownerSlot, newOwner)
-            }
+        /// @solidity memory-safe-assembly
+        assembly {
+            let ownerSlot := _OWNER_SLOT
+            // Clean the upper 96 bits.
+            newOwner := shr(96, shl(96, newOwner))
+            // Emit the {OwnershipTransferred} event.
+            log3(0, 0, _OWNERSHIP_TRANSFERRED_EVENT_SIGNATURE, sload(ownerSlot), newOwner)
+            // Store the new value.
+            sstore(ownerSlot, newOwner)
         }
     }
 

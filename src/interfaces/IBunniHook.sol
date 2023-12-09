@@ -27,8 +27,7 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// Events
     /// -----------------------------------------------------------------------
 
-    event SetHookFeesModifier(uint96 newFee);
-    event SetHookFeesRecipient(address newRecipient);
+    event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
 
     /// -----------------------------------------------------------------------
     /// Structs
@@ -47,11 +46,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// View functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
-    function hookFeesModifier() external view returns (uint96);
-
-    /// @notice The recipient of collected hook fees
-    function hookFeesRecipient() external view returns (address);
+    /// @notice Returns hook fees params
+    function getHookFeesParams() external view returns (uint96 modifierVal, address recipient);
 
     /// @notice Returns the observation for the given pool key and observation index
     /// @param key The pool key
@@ -111,11 +107,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// Owner functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Set the hook fees modifier. Only callable by the owner.
-    /// @param newFee The new fee modifier
-    function setHookFeesModifier(uint96 newFee) external;
-
-    /// @notice Set the hook fees recipient. Only callable by the owner.
+    /// @notice Set the hook fees params. Only callable by the owner.
+    /// @param newModifier The new fee modifier
     /// @param newRecipient The new recipient
-    function setHookFeesRecipient(address newRecipient) external;
+    function setHookFeesParams(uint96 newModifier, address newRecipient) external;
 }

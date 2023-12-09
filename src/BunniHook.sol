@@ -6,10 +6,10 @@ import {stdMath} from "forge-std/StdMath.sol";
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
@@ -46,11 +46,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
 
-    /// @inheritdoc IBunniHook
-    uint96 public override hookFeesModifier;
+    /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
+    uint96 internal _hookFeesModifier;
 
-    /// @inheritdoc IBunniHook
-    address public override hookFeesRecipient;
+    /// @notice The recipient of collected hook fees
+    address internal _hookFeesRecipient;
+
     /* int24 private firstTickToRemove;
     uint24 private numTicksToRemove;
     uint24 private swapFee; */
@@ -64,12 +65,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         uint96 hookFeesModifier_
     ) BaseHook(_poolManager) {
         hub = hub_;
-        hookFeesModifier = hookFeesModifier_;
-        hookFeesRecipient = hookFeesRecipient_;
+        _hookFeesModifier = hookFeesModifier_;
+        _hookFeesRecipient = hookFeesRecipient_;
         _initializeOwner(owner_);
 
-        emit SetHookFeesModifier(hookFeesModifier_);
-        emit SetHookFeesRecipient(hookFeesRecipient_);
+        emit SetHookFeesParams(hookFeesModifier_, hookFeesRecipient_);
     }
 
     /// -----------------------------------------------------------------------
@@ -82,7 +82,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         override
         returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew)
     {
-        PoolId id = PoolId.wrap(keccak256(abi.encode(key)));
+        PoolId id = key.toId();
 
         ObservationState storage state = _states[id];
 
@@ -106,7 +106,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         Currency[] memory currencyList = abi.decode(data, (Currency[]));
 
         // claim protocol fees
-        address recipient = hookFeesRecipient;
+        address recipient = _hookFeesRecipient;
         for (uint256 i; i < currencyList.length; i++) {
             Currency currency = currencyList[i];
             uint256 balance = poolManager.balanceOf(address(this), currency);
@@ -144,20 +144,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHook
-    function setHookFeesModifier(uint96 newFee) external onlyOwner {
-        hookFeesModifier = newFee;
-        emit SetHookFeesModifier(newFee);
-    }
+    function setHookFeesParams(uint96 newModifier, address newRecipient) external onlyOwner {
+        _hookFeesModifier = newModifier;
+        _hookFeesRecipient = newRecipient;
 
-    /// @inheritdoc IBunniHook
-    function setHookFeesRecipient(address newRecipient) external onlyOwner {
-        hookFeesRecipient = newRecipient;
-        emit SetHookFeesRecipient(newRecipient);
+        emit SetHookFeesParams(newModifier, newRecipient);
     }
 
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IBunniHook
+    function getHookFeesParams() external view override returns (uint96 modifierVal, address recipient) {
+        return (_hookFeesModifier, _hookFeesRecipient);
+    }
 
     /// @inheritdoc IBunniHook
     function getObservation(PoolKey calldata key, uint256 index)
@@ -273,99 +274,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         poolManagerOnly
         returns (bytes4)
     {
-        _beforeSwapUpdatePool(key, params);
-        return BunniHook.beforeSwap.selector;
-    }
-
-    /// @inheritdoc IHooks
-    function afterSwap(
-        address,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        BalanceDelta delta,
-        bytes calldata
-    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
-        // withdraw liquidity from inactive ticks
-        uint256 swapValsSlot = SWAP_VALS_SLOT;
-        int24 roundedTick;
-        uint24 numTicksToRemove_;
-        uint24 swapFee;
-
-        assembly ("memory-safe") {
-            let swapVals := tload(swapValsSlot)
-            roundedTick := shr(232, swapVals)
-            numTicksToRemove_ := shr(232, shl(24, swapVals))
-            swapFee := shr(232, shl(48, swapVals))
-            tstore(swapValsSlot, 0)
-        }
-
-        if (numTicksToRemove_ != 0) {
-            PoolId id = key.toId();
-            LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
-            for (uint256 i; i < numTicksToRemove_; i++) {
-                // buffer remove liquidity
-                liquidityDeltas[i] = LiquidityDelta({
-                    tickLower: roundedTick,
-                    delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256(
-                    )
-                });
-
-                unchecked {
-                    roundedTick = boundTick(
-                        params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing,
-                        key.tickSpacing
-                    );
-                }
-            }
-
-            // call BunniHub to remove liquidity
-            hub.hookModifyLiquidity({poolKey: key, liquidityDeltas: liquidityDeltas});
-        }
-
-        // charge hook fees by minting claim tokens to the hook
-        uint256 hookFeesModifier_ = hookFeesModifier;
-        if (hookFeesModifier_ != 0) {
-            // fee is taken in output token for exact input swaps and input token for exact output swaps
-            Currency currency;
-            int256 amount;
-            bool exactInput = params.amountSpecified > 0;
-            if (exactInput) {
-                // exact input swap
-                // take fee by minting output currency claim tokens
-                if (params.zeroForOne) {
-                    currency = key.currency1;
-                    amount = -delta.amount1();
-                } else {
-                    currency = key.currency0;
-                    amount = -delta.amount0();
-                }
-            } else {
-                // exact output swap
-                // take fee by minting input currency claim tokens
-                if (params.zeroForOne) {
-                    currency = key.currency0;
-                    amount = delta.amount0();
-                } else {
-                    currency = key.currency1;
-                    amount = delta.amount1();
-                }
-            }
-            if (amount > 0) {
-                uint256 hookFeeAmount = uint256(amount).mulDivDown(swapFee, SWAP_FEE_BASE).mulWadDown(hookFeesModifier_);
-                if (hookFeeAmount != 0) {
-                    poolManager.mint(currency, address(this), hookFeeAmount);
-                }
-            }
-        }
-
-        return BunniHook.afterSwap.selector;
-    }
-
-    /// -----------------------------------------------------------------------
-    /// Internal functions
-    /// -----------------------------------------------------------------------
-
-    function _beforeSwapUpdatePool(PoolKey calldata key, IPoolManager.SwapParams calldata params) private {
         uint256 swapValsSlot = SWAP_VALS_SLOT;
         uint256 swapVals;
         assembly ("memory-safe") {
@@ -387,7 +295,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 )
         ) {
             // if the swap is invalid, do nothing and let PoolManager handle the revert
-            return;
+            return BunniHook.beforeSwap.selector;
         }
 
         // update TWAP oracle
@@ -473,7 +381,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 updatedBalance0 <= reserve0InUnderlying + balance0 || updatedBalance1 <= reserve1InUnderlying + balance1
             ) {
                 int256 delta = int256(uint256(updatedRoundedTickLiquidity)) - int256(uint256(liquidity)); // both values are uint128 so cast is safe
-                buffer = bytes.concat(buffer, abi.encode(LiquidityDelta({tickLower: roundedTick, delta: delta})));
+                buffer = _appendLiquidityDeltaToBuffer(buffer, roundedTick, delta);
                 unchecked {
                     ++bufferLength;
                 }
@@ -563,9 +471,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             ).toUint128();
 
             // buffer add liquidity to tickLowerToAddLiquidityTo
-            buffer = bytes.concat(
+            buffer = _appendLiquidityDeltaToBuffer(
                 buffer,
-                abi.encode(LiquidityDelta({tickLower: tickLowerToAddLiquidityTo, delta: int256(uint256(liquidity))})) // updatedLiquidity is uint128 so cast is safe
+                tickLowerToAddLiquidityTo,
+                int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
             );
 
             unchecked {
@@ -605,9 +514,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             ).toUint128();
 
             // buffer add liquidity to tickLowerToAddLiquidityTo
-            buffer = bytes.concat(
+            buffer = _appendLiquidityDeltaToBuffer(
                 buffer,
-                abi.encode(LiquidityDelta({tickLower: tickLowerToAddLiquidityTo, delta: int256(uint256(liquidity))})) // updatedLiquidity is uint128 so cast is safe
+                tickLowerToAddLiquidityTo,
+                int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
             );
 
             unchecked {
@@ -634,7 +544,96 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 liquidityDeltas: abi.decode(abi.encodePacked(uint256(0x20), bufferLength, buffer), (LiquidityDelta[])) // uint256(0x20) denotes the location of the start of the array in the calldata
             });
         }
+        return BunniHook.beforeSwap.selector;
     }
+
+    /// @inheritdoc IHooks
+    function afterSwap(
+        address,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        BalanceDelta delta,
+        bytes calldata
+    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
+        // withdraw liquidity from inactive ticks
+        uint256 swapValsSlot = SWAP_VALS_SLOT;
+        int24 roundedTick;
+        uint24 numTicksToRemove_;
+        uint24 swapFee;
+
+        assembly ("memory-safe") {
+            let swapVals := tload(swapValsSlot)
+            roundedTick := shr(232, swapVals)
+            numTicksToRemove_ := shr(232, shl(24, swapVals))
+            swapFee := shr(232, shl(48, swapVals))
+            tstore(swapValsSlot, 0)
+        }
+
+        if (numTicksToRemove_ != 0) {
+            PoolId id = key.toId();
+            LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
+            for (uint256 i; i < numTicksToRemove_; i++) {
+                // buffer remove liquidity
+                liquidityDeltas[i] = LiquidityDelta({
+                    tickLower: roundedTick,
+                    delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256(
+                    )
+                });
+
+                unchecked {
+                    roundedTick = boundTick(
+                        params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing,
+                        key.tickSpacing
+                    );
+                }
+            }
+
+            // call BunniHub to remove liquidity
+            hub.hookModifyLiquidity({poolKey: key, liquidityDeltas: liquidityDeltas});
+        }
+
+        // charge hook fees by minting claim tokens to the hook
+        uint256 hookFeesModifier_ = _hookFeesModifier;
+        if (hookFeesModifier_ != 0) {
+            // fee is taken in output token for exact input swaps and input token for exact output swaps
+            Currency currency;
+            int256 amount;
+            bool exactInput = params.amountSpecified > 0;
+            if (exactInput) {
+                // exact input swap
+                // take fee by minting output currency claim tokens
+                if (params.zeroForOne) {
+                    currency = key.currency1;
+                    amount = -delta.amount1();
+                } else {
+                    currency = key.currency0;
+                    amount = -delta.amount0();
+                }
+            } else {
+                // exact output swap
+                // take fee by minting input currency claim tokens
+                if (params.zeroForOne) {
+                    currency = key.currency0;
+                    amount = delta.amount0();
+                } else {
+                    currency = key.currency1;
+                    amount = delta.amount1();
+                }
+            }
+            if (amount > 0) {
+                uint256 hookFeeAmount = uint256(amount).mulDivDown(swapFee, SWAP_FEE_BASE).mulWadDown(hookFeesModifier_);
+                if (hookFeeAmount != 0) {
+                    poolManager.mint(currency, address(this), hookFeeAmount);
+                }
+            }
+        }
+
+        return BunniHook.afterSwap.selector;
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Internal functions
+    /// -----------------------------------------------------------------------
 
     function _getFee(
         uint160 postSwapSqrtPriceX96,
@@ -696,5 +695,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             state.index, uint32(block.timestamp), tick, state.cardinality, state.cardinalityNext
         );
         (_states[id].index, _states[id].cardinality) = (updatedIndex, updatedCardinality);
+    }
+
+    function _appendLiquidityDeltaToBuffer(bytes memory buffer, int24 tickLower, int256 liquidityDelta)
+        internal
+        returns (bytes memory)
+    {
+        return bytes.concat(buffer, abi.encode(LiquidityDelta({tickLower: tickLower, delta: liquidityDelta})));
     }
 }
