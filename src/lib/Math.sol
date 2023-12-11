@@ -46,3 +46,7 @@ function boundTick(int24 tick, int24 tickSpacing) pure returns (int24 boundedTic
     }
     return tick;
 }
+
+function weightedSum(uint256 value0, uint256 weight0, uint256 value1, uint256 weight1) pure returns (uint256) {
+    return (value0 * weight0 + value1 * weight1) / (weight0 + weight1);
+}

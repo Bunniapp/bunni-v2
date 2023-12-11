@@ -2,7 +2,7 @@
 cancun = true
 ffi = true
 fs_permissions = [{access = "read-write", path = ".forge-snapshots/"}, {access = "read", path = "./out"}]
-optimizer_runs = 10000
+optimizer_runs = 30000
 remappings = [
   "@uniswap/v4-core/=lib/v4-core/",
 ]

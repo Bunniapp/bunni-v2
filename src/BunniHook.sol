@@ -699,6 +699,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
 
     function _appendLiquidityDeltaToBuffer(bytes memory buffer, int24 tickLower, int256 liquidityDelta)
         internal
+        pure
         returns (bytes memory)
     {
         return bytes.concat(buffer, abi.encode(LiquidityDelta({tickLower: tickLower, delta: liquidityDelta})));
