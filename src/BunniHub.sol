@@ -203,8 +203,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         } else if (t == LockCallbackType.CLEAR_POOL_CREDITS) {
             _clearPoolCreditsLockCallback(abi.decode(callbackData, (PoolKey[])));
         } else if (t == LockCallbackType.INITIALIZE_POOL) {
-            (PoolKey memory key, uint160 sqrtPriceX96) = abi.decode(callbackData, (PoolKey, uint160));
-            _initializePoolLockCallback(key, sqrtPriceX96);
+            _initializePoolLockCallback(abi.decode(callbackData, (InitializePoolCallbackInputData)));
         }
         // fallback
         return bytes("");
@@ -213,28 +212,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// -----------------------------------------------------------
     /// Internal functions
     /// -----------------------------------------------------------
-
-    /// @param state The state associated with the Bunni token
-    /// @param liquidityDelta The amount of liquidity to add/subtract
-    /// @param user The address to pay/receive the tokens
-    struct ModifyLiquidityInputData {
-        PoolKey poolKey;
-        int24 tickLower;
-        int24 tickUpper;
-        int256 liquidityDelta;
-        BalanceDelta reserveDeltaInUnderlying;
-        uint128 currentLiquidity;
-        address user;
-        ERC4626 vault0;
-        ERC4626 vault1;
-    }
-
-    struct ModifyLiquidityReturnData {
-        uint256 amount0;
-        uint256 amount1;
-        int256 reserveChange0;
-        int256 reserveChange1;
-    }
 
     function _modifyLiquidityLockCallback(ModifyLiquidityInputData memory input)
         internal
@@ -277,20 +254,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         _settleCurrency(input.user, input.poolKey.currency1, settleDelta.amount1());
 
         (returnData.amount0, returnData.amount1) = (abs(delta.amount0()), abs(delta.amount1()));
-    }
-
-    struct HookCallbackInputData {
-        PoolKey poolKey;
-        ERC4626 vault0;
-        ERC4626 vault1;
-        bool poolCredit0Set;
-        bool poolCredit1Set;
-        LiquidityDelta[] liquidityDeltas;
-    }
-
-    struct HookCallbackReturnData {
-        int256 reserveChange0;
-        int256 reserveChange1;
     }
 
     /// @dev Adds liquidity using a pool's reserves. Expected to be called by the pool's hook.
@@ -362,8 +325,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         else _poolState[poolId].poolCredit1Set = false;
     }
 
-    function _initializePoolLockCallback(PoolKey memory key, uint160 sqrtPriceX96) internal {
-        poolManager.initialize(key, sqrtPriceX96, bytes(""));
+    function _initializePoolLockCallback(InitializePoolCallbackInputData memory data) internal {
+        poolManager.initialize(data.poolKey, data.sqrtPriceX96, abi.encode(data.twapSecondsAgo, data.hookParams));
     }
 
     /// @dev Zero out the delta for a token if the corresponding vault is non-zero.

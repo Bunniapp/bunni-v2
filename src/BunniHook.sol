@@ -235,7 +235,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     }
 
     /// @inheritdoc IHooks
-    function afterInitialize(address caller, PoolKey calldata key, uint160, int24, bytes calldata)
+    function afterInitialize(address caller, PoolKey calldata key, uint160, int24 tick, bytes calldata hookData)
         external
         override(BaseHook, IHooks)
         poolManagerOnly
@@ -243,9 +243,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     {
         if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from initializing a pool using this hook
         PoolId id = key.toId();
-        (, int24 tick,) = poolManager.getSlot0(id);
+
+        // initialize first observation to be dated in the past
+        // so that we can immediately start querying the oracle
+        (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
+        (,,,, uint24 feeTwapSecondsAgo) = _decodeParams(hookParams);
         (_states[id].cardinality, _states[id].cardinalityNext) =
-            _observations[id].initialize(uint32(block.timestamp), tick);
+            _observations[id].initialize(uint32(block.timestamp - max(twapSecondsAgo, feeTwapSecondsAgo)), tick);
+
         return BunniHook.afterInitialize.selector;
     }
 

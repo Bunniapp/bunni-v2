@@ -76,6 +76,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     IPermit2 internal permit2;
 
     function setUp() public {
+        vm.warp(443814060); // init block timestamp to reasonable value
+
         weth = new WETH();
         permit2 = _deployPermit2();
         MulticallerEtcher.multicallerWithSender();
@@ -993,9 +995,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
         _makeDeposit(key, depositAmount0, depositAmount1, address(0x6969), "");
-
-        // skip a bit to initialize oracle
-        skip(1 days);
     }
 
     function _execTestAcrossScenarios(

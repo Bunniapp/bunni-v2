@@ -533,7 +533,13 @@ library BunniHubLogic {
 
         // initialize Uniswap v4 pool
         poolManager.lock(
-            address(this), abi.encode(LockCallbackType.INITIALIZE_POOL, abi.encode(key, params.sqrtPriceX96))
+            address(this),
+            abi.encode(
+                LockCallbackType.INITIALIZE_POOL,
+                abi.encode(
+                    InitializePoolCallbackInputData(key, params.sqrtPriceX96, params.twapSecondsAgo, params.hookParams)
+                )
+            )
         );
 
         // initialize cardinality target
@@ -547,28 +553,6 @@ library BunniHubLogic {
     /// -----------------------------------------------------------------------
     /// Utilities
     /// -----------------------------------------------------------------------
-
-    /// @param state The state associated with the Bunni token
-    /// @param liquidityDelta The amount of liquidity to add/subtract
-    /// @param user The address to pay/receive the tokens
-    struct ModifyLiquidityInputData {
-        PoolKey poolKey;
-        int24 tickLower;
-        int24 tickUpper;
-        int256 liquidityDelta;
-        BalanceDelta reserveDeltaInUnderlying;
-        uint128 currentLiquidity;
-        address user;
-        ERC4626 vault0;
-        ERC4626 vault1;
-    }
-
-    struct ModifyLiquidityReturnData {
-        uint256 amount0;
-        uint256 amount1;
-        int256 reserveChange0;
-        int256 reserveChange1;
-    }
 
     /// @notice Mints share tokens to the recipient based on the amount of liquidity added.
     /// @param shareToken The BunniToken to mint
