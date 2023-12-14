@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import {stdMath} from "forge-std/StdMath.sol";
+
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -62,12 +64,12 @@ library LibGeometricDistribution {
             } else {
                 int24 xPlus1 = x + 1; // the rounded tick to the right of the current rounded tick
 
-                uint256 numerator = absDiffSimple(
+                uint256 numerator = stdMath.delta(
                     alphaInvX96.rpow(uint24(length - xPlus1), Q96),
                     (-tickSpacing * (length - xPlus1)).getSqrtRatioAtTick()
                 ) * (-tickSpacing * xPlus1).getSqrtRatioAtTick();
 
-                uint256 denominator = absDiffSimple(Q96, alphaX96.mulDivDown(sqrtRatioNegTickSpacing, Q96))
+                uint256 denominator = stdMath.delta(Q96, alphaX96.mulDivDown(sqrtRatioNegTickSpacing, Q96))
                     * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
 
                 cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).mulDiv(numerator, denominator).mulDivDown(
@@ -120,11 +122,11 @@ library LibGeometricDistribution {
                 cumulativeAmount1DensityX96 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDivDown(sqrtRatioTickSpacing, Q96);
-                uint256 numerator = absDiffSimple(
+                uint256 numerator = stdMath.delta(
                     sqrtRatioMinTick,
                     alphaX96.rpow(uint24(x), Q96).mulDivDown((x * tickSpacing + minTick).getSqrtRatioAtTick(), Q96)
                 ) * (Q96 - alphaX96);
-                uint256 denominator = absDiffSimple(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
+                uint256 denominator = stdMath.delta(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
                 cumulativeAmount1DensityX96 = (sqrtRatioTickSpacing - Q96).mulDiv(numerator, denominator);
             }
         }

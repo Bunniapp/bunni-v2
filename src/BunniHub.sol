@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.19;
 
+import {stdMath} from "forge-std/StdMath.sol";
+
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
@@ -303,6 +305,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
         // modify the liquidity of all specified ticks
         for (uint256 i; i < data.liquidityDeltas.length; i++) {
+            if (data.liquidityDeltas[i].delta == 0) continue;
+
             params.tickLower = data.liquidityDeltas[i].tickLower;
             params.tickUpper = data.liquidityDeltas[i].tickLower + data.poolKey.tickSpacing;
             params.liquidityDelta = data.liquidityDeltas[i].delta;
@@ -511,9 +515,9 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         internal
         returns (int256 reserveChange)
     {
+        uint256 absAmount = stdMath.abs(amount);
         if (amount > 0) {
             IERC20 token;
-            uint256 absAmount = uint256(amount);
             if (currency.isNative()) {
                 // wrap ETH
                 // no need to pull tokens from user since WETH is already in the contract
@@ -532,7 +536,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         } else if (amount < 0) {
             if (currency.isNative()) {
                 // withdraw WETH from vault to address(this)
-                uint256 absAmount = uint256(-amount);
                 reserveChange = -vault.withdraw(absAmount, address(this), address(this)).toInt256();
 
                 // burn WETH for ETH

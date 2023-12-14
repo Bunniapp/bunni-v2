@@ -20,10 +20,6 @@ function absDiff(uint256 a, uint256 b) pure returns (bool positive, uint256 diff
     return a > b ? (true, a - b) : (false, b - a);
 }
 
-function absDiffSimple(uint256 a, uint256 b) pure returns (uint256 diff) {
-    return a > b ? a - b : b - a;
-}
-
 function roundTick(int24 currentTick, int24 tickSpacing) pure returns (int24 roundedTick, int24 nextRoundedTick) {
     int24 compressed = currentTick / tickSpacing;
     if (currentTick < 0 && currentTick % tickSpacing != 0) compressed--; // round towards negative infinity

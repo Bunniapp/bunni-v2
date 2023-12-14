@@ -21,7 +21,6 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// -----------------------------------------------------------------------
 
     error BunniHook__Unauthorized();
-    error BunniHook__SwapAlreadyInProgress();
 
     /// -----------------------------------------------------------------------
     /// Events

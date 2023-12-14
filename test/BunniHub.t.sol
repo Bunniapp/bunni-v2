@@ -25,6 +25,7 @@ import {ERC4626} from "solmate/mixins/ERC4626.sol";
 
 import "../src/lib/Math.sol";
 import "../src/lib/Structs.sol";
+import {MockLDF} from "./mocks/MockLDF.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
@@ -35,6 +36,7 @@ import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
+import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
 contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     using PoolIdLibrary for PoolKey;
@@ -387,7 +389,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
-        uint256 inputAmount = PRECISION * 2;
+        uint256 inputAmount = PRECISION * 20;
         uint256 value = key.currency0.isNative() ? inputAmount : 0;
 
         _mint(key.currency0, address(this), inputAmount);
@@ -792,6 +794,35 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         assertEq(token0.balanceOf(address(hub)), 0, "hub token0 balance not 0");
     }
 
+    function test_hookHasInsufficientTokens() external {
+        MockLDF ldf_ = new MockLDF();
+
+        // set mu to be far to the left of rounded tick 0
+        // so that the pool will have mostly token1
+        ldf_.setMu(-100);
+
+        // deploy pool and init liquidity
+        Currency currency0 = CurrencyLibrary.NATIVE;
+        Currency currency1 = Currency.wrap(address(token0));
+        (, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)), ldf_);
+
+        // set mu to rounded tick 0
+        // so that the pool has less token0 than the LDF suggests
+        ldf_.setMu(0);
+
+        // make a big swap from token1 to token0
+        // such that the pool has insufficient tokens to output
+        uint256 inputAmount = 100 * PRECISION;
+        _mint(key.currency1, address(this), inputAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(100)
+        });
+        _swap(key, params, 0, "");
+    }
+
     /*
     function test_pricePerFullShare() public {
         // make deposit
@@ -868,20 +899,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         return vault.previewRedeem(amount);
     }
 
-    function _deployPoolAndInitLiquidity(Currency currency0, Currency currency1, ERC4626 vault0_, ERC4626 vault1_)
-        internal
-        returns (IBunniToken bunniToken, PoolKey memory key)
-    {
-        return _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            vault0_,
-            vault1_,
-            bytes32(abi.encodePacked(int24(0), ALPHA)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
-        );
-    }
-
     function _mint(Currency currency, address to, uint256 amount) internal {
         if (currency.isNative()) {
             vm.deal(to, to.balance + amount);
@@ -894,11 +911,56 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         }
     }
 
+    function _deployPoolAndInitLiquidity(Currency currency0, Currency currency1, ERC4626 vault0_, ERC4626 vault1_)
+        internal
+        returns (IBunniToken bunniToken, PoolKey memory key)
+    {
+        return _deployPoolAndInitLiquidity(
+            currency0,
+            currency1,
+            vault0_,
+            vault1_,
+            ldf,
+            bytes32(abi.encodePacked(int24(0), ALPHA)),
+            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+        );
+    }
+
     function _deployPoolAndInitLiquidity(
         Currency currency0,
         Currency currency1,
         ERC4626 vault0_,
         ERC4626 vault1_,
+        ILiquidityDensityFunction ldf_
+    ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
+        return _deployPoolAndInitLiquidity(
+            currency0,
+            currency1,
+            vault0_,
+            vault1_,
+            ldf_,
+            bytes32(abi.encodePacked(int24(0), ALPHA)),
+            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+        );
+    }
+
+    function _deployPoolAndInitLiquidity(
+        Currency currency0,
+        Currency currency1,
+        ERC4626 vault0_,
+        ERC4626 vault1_,
+        bytes32 ldfParams,
+        bytes32 hookParams
+    ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
+        return _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_, ldf, ldfParams, hookParams);
+    }
+
+    function _deployPoolAndInitLiquidity(
+        Currency currency0,
+        Currency currency1,
+        ERC4626 vault0_,
+        ERC4626 vault1_,
+        ILiquidityDensityFunction ldf_,
         bytes32 ldfParams,
         bytes32 hookParams
     ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
@@ -909,7 +971,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 currency1,
                 TICK_SPACING,
                 0,
-                ldf,
+                ldf_,
                 ldfParams,
                 bunniHook,
                 hookParams,

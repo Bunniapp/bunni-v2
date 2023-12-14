@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import "forge-std/console.sol";
 import {stdMath} from "forge-std/StdMath.sol";
 
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -279,7 +281,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         assembly ("memory-safe") {
             swapVals := tload(swapValsSlot)
         }
-        if (swapVals != 0) revert BunniHook__SwapAlreadyInProgress();
+        if (swapVals != 0) return bytes4(0); // swap already in progress, tell PoolManager to revert
 
         PoolId id = key.toId();
         (uint160 sqrtPriceX96, int24 currentTick,) = poolManager.getSlot0(id);
@@ -317,9 +319,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
             getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
+        if (bunniState.poolCredit0Set) reserve0InUnderlying += hub.poolCredit0(id);
+        if (bunniState.poolCredit1Set) reserve1InUnderlying += hub.poolCredit1(id);
         (balance0, balance1) = (balance0 + reserve0InUnderlying, balance1 + reserve1InUnderlying);
-        if (bunniState.poolCredit0Set) balance0 += hub.poolCredit0(id);
-        if (bunniState.poolCredit1Set) balance1 += hub.poolCredit1(id);
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
@@ -370,16 +372,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         // update current tick liquidity if necessary
         if (
             (compoundThreshold == 0 && updatedRoundedTickLiquidity != liquidity) // always compound if threshold is 0 and there's a liquidity difference
-                || stdMath.percentDelta(updatedRoundedTickLiquidity, liquidity) * uint256(compoundThreshold) >= 0.1e18 // compound if delta >= 1 / (compoundThreshold * 10)
+                || _percentDelta(updatedRoundedTickLiquidity, liquidity) * uint256(compoundThreshold) >= 0.1e18 // compound if delta >= 1 / (compoundThreshold * 10)
         ) {
             // ensure we have enough reserves to satisfy the delta
             // round up updated balances to ensure that we can satisfy the delta
-            (uint256 updatedBalance0, uint256 updatedBalance1) = LiquidityAmounts.getAmountsForLiquidity(
+            (uint256 updatedCurrentTickBalance0, uint256 updatedCurrentTickBalance1) = LiquidityAmounts
+                .getAmountsForLiquidity(
                 sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, true
             );
-            if (
-                updatedBalance0 <= reserve0InUnderlying + balance0 || updatedBalance1 <= reserve1InUnderlying + balance1
-            ) {
+            if (updatedCurrentTickBalance0 <= balance0 && updatedCurrentTickBalance1 <= balance1) {
                 int256 delta = int256(uint256(updatedRoundedTickLiquidity)) - int256(uint256(liquidity)); // both values are uint128 so cast is safe
                 buffer = _appendLiquidityDeltaToBuffer(buffer, roundedTick, delta);
                 unchecked {
@@ -399,11 +400,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         bool exactInput = amountSpecifiedRemaining > 0;
         uint160 sqrtPriceStartX96;
         uint160 sqrtPriceNextX96;
+        uint256 feeAmount;
         while (true) {
             // compute sqrtPriceX96 and amountSpecifiedRemaining
             sqrtPriceStartX96 = sqrtPriceX96;
             sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
-            (sqrtPriceX96, amountIn, amountOut,) = SwapMath.computeSwapStep(
+            (sqrtPriceX96, amountIn, amountOut, feeAmount) = SwapMath.computeSwapStep(
                 sqrtPriceX96,
                 (
                     params.zeroForOne
@@ -412,11 +414,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
                 liquidity,
                 params.amountSpecified,
-                0
+                feeMin // use min possible fee to overestimate the number of ticks we need to add liquidity to
             );
             unchecked {
                 if (exactInput) {
-                    amountSpecifiedRemaining -= amountIn.toInt256();
+                    amountSpecifiedRemaining -= (amountIn + feeAmount).toInt256();
                 } else {
                     amountSpecifiedRemaining += amountOut.toInt256();
                 }
@@ -434,7 +436,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             }
 
             // break if the input has been exhausted or the price limit has been reached
-            if (amountSpecifiedRemaining == 0 || sqrtPriceX96 == params.sqrtPriceLimitX96) break;
+            // or if we have no reserves left to add to the next tick
+            if (
+                amountSpecifiedRemaining == 0 || sqrtPriceX96 == params.sqrtPriceLimitX96
+                    || (params.zeroForOne && reserve1InUnderlying == 0) || (!params.zeroForOne && reserve0InUnderlying == 0)
+            ) break;
 
             // current tick liquidity insufficient, add liquidity to the next tick and repeat
             // update tickNext, liquidity, and buffer
@@ -470,15 +476,58 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 ) >> 96
             ).toUint128();
 
-            // buffer add liquidity to tickLowerToAddLiquidityTo
-            buffer = _appendLiquidityDeltaToBuffer(
-                buffer,
-                tickLowerToAddLiquidityTo,
-                int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
-            );
-
+            // ensure we have sufficient reserves
             unchecked {
-                ++bufferLength;
+                (uint160 sqrtPriceLowerX96, uint160 sqrtPriceUpperX96) = (
+                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo),
+                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo + key.tickSpacing)
+                );
+                if (params.zeroForOne) {
+                    // ensure token1 reserves are sufficient
+                    uint256 amount1ToAddToLiquidity =
+                        SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, true);
+                    if (reserve1InUnderlying < amount1ToAddToLiquidity) {
+                        // insufficient reserves
+                        // add as much as possible liquidity
+                        liquidity = LiquidityAmounts.getLiquidityForAmount1(
+                            sqrtPriceLowerX96, sqrtPriceUpperX96, reserve1InUnderlying
+                        );
+                        reserve1InUnderlying = 0;
+                    } else {
+                        // sufficient reserves
+                        // deduct amount1ToAddToLiquidity from reserve1InUnderlying
+                        reserve1InUnderlying -= amount1ToAddToLiquidity;
+                    }
+                } else {
+                    // ensure token0 reserves are sufficient
+                    uint256 amount0ToAddToLiquidity =
+                        SqrtPriceMath.getAmount0Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, true);
+                    if (reserve0InUnderlying < amount0ToAddToLiquidity) {
+                        // insufficient reserves
+                        // add as much as possible liquidity
+                        liquidity = LiquidityAmounts.getLiquidityForAmount0(
+                            sqrtPriceLowerX96, sqrtPriceUpperX96, reserve0InUnderlying
+                        );
+                        reserve0InUnderlying = 0;
+                    } else {
+                        // sufficient reserves
+                        // deduct amount0ToAddToLiquidity from reserve0InUnderlying
+                        reserve0InUnderlying -= amount0ToAddToLiquidity;
+                    }
+                }
+            }
+
+            if (liquidity != 0) {
+                // buffer add liquidity to tickLowerToAddLiquidityTo
+                buffer = _appendLiquidityDeltaToBuffer(
+                    buffer,
+                    tickLowerToAddLiquidityTo,
+                    int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
+                );
+
+                unchecked {
+                    ++bufferLength;
+                }
             }
         }
 
@@ -513,16 +562,36 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 ) >> 96
             ).toUint128();
 
-            // buffer add liquidity to tickLowerToAddLiquidityTo
-            buffer = _appendLiquidityDeltaToBuffer(
-                buffer,
-                tickLowerToAddLiquidityTo,
-                int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
-            );
-
+            // ensure we have sufficient reserves
             unchecked {
-                ++bufferLength;
-                ++numTicksToRemove_;
+                (uint160 sqrtPriceLowerX96, uint160 sqrtPriceUpperX96) = (
+                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo),
+                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo + key.tickSpacing)
+                );
+                // ensure token1 reserves are sufficient
+                uint256 amount1ToAddToLiquidity =
+                    SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, true);
+                if (reserve1InUnderlying < amount1ToAddToLiquidity) {
+                    // insufficient reserves
+                    // add as much as possible liquidity
+                    liquidity = LiquidityAmounts.getLiquidityForAmount1(
+                        sqrtPriceLowerX96, sqrtPriceUpperX96, reserve1InUnderlying
+                    );
+                }
+            }
+
+            if (liquidity != 0) {
+                // buffer add liquidity to tickLowerToAddLiquidityTo
+                buffer = _appendLiquidityDeltaToBuffer(
+                    buffer,
+                    tickLowerToAddLiquidityTo,
+                    int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
+                );
+
+                unchecked {
+                    ++bufferLength;
+                    ++numTicksToRemove_;
+                }
             }
         }
 
@@ -648,7 +717,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         uint256 ratio =
             uint256(postSwapSqrtPriceX96).mulDivDown(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
         ratio = ratio.mulDivDown(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
-        uint256 delta = absDiffSimple(ratio, SWAP_FEE_BASE);
+        uint256 delta = stdMath.delta(ratio, SWAP_FEE_BASE);
         // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
         unchecked {
             uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);
@@ -703,5 +772,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         returns (bytes memory)
     {
         return bytes.concat(buffer, abi.encode(LiquidityDelta({tickLower: tickLower, delta: liquidityDelta})));
+    }
+
+    function _percentDelta(uint256 a, uint256 b) internal pure returns (uint256 delta) {
+        if (b == 0) return a != 0 ? 1e18 : 0;
+        return stdMath.percentDelta(a, b);
     }
 }
