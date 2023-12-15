@@ -9,6 +9,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import "./ShiftMode.sol";
 import "../lib/Math.sol";
 
 library LibGeometricDistribution {
@@ -198,22 +199,24 @@ library LibGeometricDistribution {
     function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
         internal
         pure
-        returns (int24 minTick, int24 length, uint256 alphaX96)
+        returns (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode)
     {
         uint256 alpha;
         if (useTwap) {
             // use rounded TWAP value + offset as minTick
-            // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes |
+            // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes | shiftMode - 1 byte |
             int24 offset = int24(int16(uint16(bytes2(ldfParams)))); // the offset applied to the twap tick to get the minTick
             minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
             length = int24(int16(uint16(bytes2(ldfParams << 16))));
             alpha = uint32(bytes4(ldfParams << 32));
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 64)));
         } else {
             // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes |
+            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | shiftMode - 1 byte |
             minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
             length = int24(int16(uint16(bytes2(ldfParams << 24))));
             alpha = uint32(bytes4(ldfParams << 40));
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 72)));
         }
         alphaX96 = alpha.mulDivDown(Q96, ALPHA_BASE);
 

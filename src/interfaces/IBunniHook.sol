@@ -76,6 +76,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// @return isValid True if the hook params are valid
     function isValidParams(bytes32 hookParams) external view returns (bool);
 
+    function ldfStates(PoolId id) external view returns (bytes32);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------
@@ -101,6 +103,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     function updateOracleAndObserve(PoolId id, int24 tick, uint24 twapSecondsAgo)
         external
         returns (int24 arithmeticMeanTick);
+
+    function updateLdfState(PoolId id, bytes32 newState) external;
 
     /// -----------------------------------------------------------------------
     /// Owner functions

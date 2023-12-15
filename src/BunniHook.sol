@@ -48,6 +48,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
 
+    mapping(PoolId => bytes32) public ldfStates;
+
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
     uint96 internal _hookFeesModifier;
 
@@ -139,6 +141,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             return _getTwap(id, tick, twapSecondsAgo, updatedIndex, updatedCardinality);
         }
         return 0;
+    }
+
+    function updateLdfState(PoolId id, bytes32 newState) external override {
+        if (msg.sender != address(hub)) revert BunniHook__Unauthorized();
+
+        ldfStates[id] = newState;
     }
 
     /// -----------------------------------------------------------------------
@@ -345,13 +353,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         }
 
         // get densities
+        bytes32 ldfState = bunniState.statefulLdf ? ldfStates[id] : bytes32(0);
         (
             uint256 liquidityDensityOfRoundedTickX96,
             uint256 density0RightOfRoundedTickX96,
-            uint256 density1LeftOfRoundedTickX96
+            uint256 density1LeftOfRoundedTickX96,
+            bytes32 newLdfState
         ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, currentTick, key.tickSpacing, useTwap, bunniState.ldfParams
+            key, roundedTick, arithmeticMeanTick, currentTick, key.tickSpacing, useTwap, bunniState.ldfParams, ldfState
         );
+        if (bunniState.statefulLdf) ldfStates[id] = newLdfState;
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96,
             roundedTickSqrtRatio,
@@ -476,7 +487,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                         currentTick,
                         key.tickSpacing,
                         useTwap,
-                        bunniState.ldfParams
+                        bunniState.ldfParams,
+                        ldfState
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();
@@ -562,7 +574,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                         currentTick,
                         key.tickSpacing,
                         useTwap,
-                        bunniState.ldfParams
+                        bunniState.ldfParams,
+                        ldfState
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();

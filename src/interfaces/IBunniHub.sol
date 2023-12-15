@@ -168,6 +168,7 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         int24 tickSpacing;
         uint24 twapSecondsAgo;
         ILiquidityDensityFunction liquidityDensityFunction;
+        bool statefulLdf;
         bytes32 ldfParams;
         IBunniHook hooks;
         bytes32 hookParams;

@@ -3,12 +3,15 @@ pragma solidity ^0.8.19;
 
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import "../../src/ldf/ShiftMode.sol";
 import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityFunction.sol";
 import {LibDiscreteLaplaceDistribution} from "../../src/ldf/LibDiscreteLaplaceDistribution.sol";
 
 /// @dev DiscreteLaplaceDistribution with a modifiable mu for testing
 contract MockLDF is ILiquidityDensityFunction {
     int24 internal _mu;
+
+    uint32 internal constant INITIALIZED_STATE = 1 << 24;
 
     function query(
         PoolKey calldata, /* key */
@@ -17,15 +20,30 @@ contract MockLDF is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         int24 tickSpacing,
         bool useTwap,
-        bytes32 ldfParams
+        bytes32 ldfParams,
+        bytes32 ldfState
     )
         external
         view
         override
-        returns (uint256 liquidityDensityX96_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
+        returns (
+            uint256 liquidityDensityX96_,
+            uint256 cumulativeAmount0DensityX96,
+            uint256 cumulativeAmount1DensityX96,
+            bytes32 newLdfState
+        )
     {
-        (, uint256 alphaX96) = LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
-        return LibDiscreteLaplaceDistribution.query(roundedTick, tickSpacing, _mu, alphaX96);
+        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+        mu = _mu;
+        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+        if (initialized) {
+            mu = enforceShiftMode(mu, lastMu, shiftMode);
+        }
+
+        (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
+            LibDiscreteLaplaceDistribution.query(roundedTick, tickSpacing, mu, alphaX96);
+        newLdfState = _encodeState(mu);
     }
 
     function liquidityDensityX96(
@@ -35,10 +53,18 @@ contract MockLDF is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         int24 tickSpacing,
         bool useTwap,
-        bytes32 ldfParams
+        bytes32 ldfParams,
+        bytes32 ldfState
     ) external view override returns (uint256) {
-        (, uint256 alphaX96) = LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
-        return LibDiscreteLaplaceDistribution.liquidityDensityX96(roundedTick, tickSpacing, _mu, alphaX96);
+        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+        mu = _mu;
+        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+        if (initialized) {
+            mu = enforceShiftMode(mu, lastMu, shiftMode);
+        }
+
+        return LibDiscreteLaplaceDistribution.liquidityDensityX96(roundedTick, tickSpacing, mu, alphaX96);
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
@@ -48,6 +74,17 @@ contract MockLDF is ILiquidityDensityFunction {
         returns (bool)
     {
         return LibDiscreteLaplaceDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
+    }
+
+    function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMu) {
+        // | initialized - 1 byte | lastMu - 3 bytes |
+        initialized = uint8(bytes1(ldfState)) == 1;
+        lastMu = int24(uint24(bytes3(ldfState << 8)));
+    }
+
+    function _encodeState(int24 lastMu) internal pure returns (bytes32 ldfState) {
+        // | initialized - 1 byte | lastMu - 3 bytes |
+        ldfState = bytes32(bytes4(INITIALIZED_STATE + uint32(uint24(lastMu))));
     }
 
     function setMu(int24 mu) external {

@@ -13,11 +13,17 @@ interface ILiquidityDensityFunction {
         int24 spotPriceTick,
         int24 tickSpacing,
         bool useTwap,
-        bytes32 ldfParams
+        bytes32 ldfParams,
+        bytes32 ldfState
     )
         external
         view
-        returns (uint256 liquidityDensityX96, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96);
+        returns (
+            uint256 liquidityDensityX96,
+            uint256 cumulativeAmount0DensityX96,
+            uint256 cumulativeAmount1DensityX96,
+            bytes32 newLdfState
+        );
 
     function liquidityDensityX96(
         PoolKey calldata key,
@@ -26,7 +32,8 @@ interface ILiquidityDensityFunction {
         int24 spotPriceTick,
         int24 tickSpacing,
         bool useTwap,
-        bytes32 ldfParams
+        bytes32 ldfParams,
+        bytes32 ldfState
     ) external view returns (uint256);
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParamss) external view returns (bool);

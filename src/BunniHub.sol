@@ -540,6 +540,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         bytes32 hookParams;
         ERC4626 vault0;
         ERC4626 vault1;
+        bool statefulLdf;
 
         assembly ("memory-safe") {
             liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
@@ -549,6 +550,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             hookParams := mload(add(immutableParams, 107))
             vault0 := shr(96, mload(add(immutableParams, 139)))
             vault1 := shr(96, mload(add(immutableParams, 159)))
+            statefulLdf := shr(248, mload(add(immutableParams, 179)))
         }
 
         state = PoolState({
@@ -559,6 +561,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             hookParams: hookParams,
             vault0: vault0,
             vault1: vault1,
+            statefulLdf: statefulLdf,
             poolCredit0Set: rawState.poolCredit0Set,
             poolCredit1Set: rawState.poolCredit1Set,
             reserve0: rawState.reserve0,

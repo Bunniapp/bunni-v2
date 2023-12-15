@@ -574,7 +574,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             currency1,
             vault0_,
             vault1_,
-            bytes32(abi.encodePacked(int24(0), ALPHA)),
+            bytes32(abi.encodePacked(ALPHA)),
             bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
 
@@ -923,7 +923,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault0_,
             vault1_,
             ldf,
-            bytes32(abi.encodePacked(int24(0), ALPHA)),
+            bytes32(abi.encodePacked(ALPHA)),
             bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
     }
@@ -941,7 +941,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault0_,
             vault1_,
             ldf_,
-            bytes32(abi.encodePacked(int24(0), ALPHA)),
+            bytes32(abi.encodePacked(ALPHA)),
             bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
     }
@@ -968,20 +968,21 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
         // initialize bunni
         (bunniToken, key) = hub.deployBunniToken(
-            IBunniHub.DeployBunniTokenParams(
-                currency0,
-                currency1,
-                TICK_SPACING,
-                0,
-                ldf_,
-                ldfParams,
-                bunniHook,
-                hookParams,
-                vault0_,
-                vault1_,
-                TickMath.getSqrtRatioAtTick(4),
-                100
-            )
+            IBunniHub.DeployBunniTokenParams({
+                currency0: currency0,
+                currency1: currency1,
+                tickSpacing: TICK_SPACING,
+                twapSecondsAgo: 1 hours,
+                liquidityDensityFunction: ldf_,
+                statefulLdf: true,
+                ldfParams: ldfParams,
+                hooks: bunniHook,
+                hookParams: hookParams,
+                vault0: vault0_,
+                vault1: vault1_,
+                sqrtPriceX96: TickMath.getSqrtRatioAtTick(4),
+                cardinalityNext: 100
+            })
         );
 
         // make initial deposit to avoid accounting for MIN_INITIAL_SHARES
