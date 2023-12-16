@@ -11,11 +11,10 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
 
     function query(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
@@ -31,35 +30,34 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         )
     {
         (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
-            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
         (bool initialized, int24 lastMu) = _decodeState(ldfState);
         if (initialized) {
             mu = enforceShiftMode(mu, lastMu, shiftMode);
         }
 
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
-            LibDiscreteLaplaceDistribution.query(roundedTick, tickSpacing, mu, alphaX96);
+            LibDiscreteLaplaceDistribution.query(roundedTick, key.tickSpacing, mu, alphaX96);
         newLdfState = _encodeState(mu);
     }
 
     function liquidityDensityX96(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
-            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
         (bool initialized, int24 lastMu) = _decodeState(ldfState);
         if (initialized) {
             mu = enforceShiftMode(mu, lastMu, shiftMode);
         }
 
-        return LibDiscreteLaplaceDistribution.liquidityDensityX96(roundedTick, tickSpacing, mu, alphaX96);
+        return LibDiscreteLaplaceDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, mu, alphaX96);
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)

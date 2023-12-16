@@ -11,11 +11,10 @@ contract GeometricDistribution is ILiquidityDensityFunction {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
 
     function query(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
@@ -31,35 +30,34 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         )
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
         }
 
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
-            LibGeometricDistribution.query(roundedTick, tickSpacing, minTick, length, alphaX96);
+            LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
         newLdfState = _encodeState(minTick);
     }
 
     function liquidityDensityX96(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
         }
 
-        return LibGeometricDistribution.liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96);
+        return LibGeometricDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, minTick, length, alphaX96);
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)

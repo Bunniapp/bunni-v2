@@ -11,7 +11,6 @@ interface ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24 spotPriceTick,
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
@@ -30,11 +29,10 @@ interface ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24 spotPriceTick,
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external view returns (uint256);
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParamss) external view returns (bool);
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) external view returns (bool);
 }

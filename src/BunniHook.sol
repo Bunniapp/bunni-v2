@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
-import "forge-std/console.sol";
 import {stdMath} from "forge-std/StdMath.sol";
 
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
@@ -360,7 +359,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             uint256 density1LeftOfRoundedTickX96,
             bytes32 newLdfState
         ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, currentTick, key.tickSpacing, useTwap, bunniState.ldfParams, ldfState
+            key, roundedTick, arithmeticMeanTick, currentTick, useTwap, bunniState.ldfParams, ldfState
         );
         if (bunniState.statefulLdf) ldfStates[id] = newLdfState;
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
@@ -485,7 +484,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                         tickLowerToAddLiquidityTo,
                         arithmeticMeanTick,
                         currentTick,
-                        key.tickSpacing,
                         useTwap,
                         bunniState.ldfParams,
                         ldfState
@@ -572,7 +570,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                         tickLowerToAddLiquidityTo,
                         arithmeticMeanTick,
                         currentTick,
-                        key.tickSpacing,
                         useTwap,
                         bunniState.ldfParams,
                         ldfState

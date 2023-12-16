@@ -221,7 +221,6 @@ library BunniHubLogic {
                 inputData.roundedTick,
                 vars.arithmeticMeanTick,
                 inputData.currentTick,
-                inputData.params.poolKey.tickSpacing,
                 useTwap,
                 inputData.state.ldfParams,
                 ldfState

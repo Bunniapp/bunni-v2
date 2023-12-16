@@ -12,11 +12,10 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
     uint56 internal constant INITIALIZED_STATE = 1 << 48;
 
     function query(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
@@ -43,24 +42,24 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         (int24 minTick0, int24 minTick1) = (0, 0);
         {
             (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams0);
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams0);
             if (initialized) {
                 minTick = enforceShiftMode(minTick, lastMinTick0, shiftMode);
             }
 
             (liquidityDensityX96_0, cumulativeAmount0DensityX96_0, cumulativeAmount1DensityX96_0) =
-                LibGeometricDistribution.query(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
             minTick0 = minTick;
         }
         {
             (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams1);
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams1);
             if (initialized) {
                 minTick = enforceShiftMode(minTick, lastMinTick1, shiftMode);
             }
 
             (liquidityDensityX96_1, cumulativeAmount0DensityX96_1, cumulativeAmount1DensityX96_1) =
-                LibGeometricDistribution.query(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
             minTick1 = minTick;
         }
 
@@ -87,11 +86,10 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
     }
 
     function liquidityDensityX96(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
@@ -105,23 +103,23 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         uint256 liquidityDensityX96_1;
         {
             (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams0);
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams0);
             if (initialized) {
                 minTick = enforceShiftMode(minTick, lastMinTick0, shiftMode);
             }
 
             liquidityDensityX96_0 =
-                LibGeometricDistribution.liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, minTick, length, alphaX96);
         }
         {
             (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams1);
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams1);
             if (initialized) {
                 minTick = enforceShiftMode(minTick, lastMinTick1, shiftMode);
             }
 
             liquidityDensityX96_1 =
-                LibGeometricDistribution.liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, minTick, length, alphaX96);
         }
 
         // combine results
