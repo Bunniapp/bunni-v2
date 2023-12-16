@@ -236,11 +236,15 @@ library BunniHubLogic {
             );
 
             // compute how much liquidity we'd get from the desired token amounts
+            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
             uint256 totalLiquidity = min(
-                inputData.params.amount0Desired.mulDivDown(
-                    Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96
-                ),
-                inputData.params.amount1Desired.mulDivDown(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+                totalDensity0X96 == 0
+                    ? type(uint256).max
+                    : inputData.params.amount0Desired.mulDivDown(Q96, totalDensity0X96),
+                totalDensity1X96 == 0
+                    ? type(uint256).max
+                    : inputData.params.amount1Desired.mulDivDown(Q96, totalDensity1X96)
             );
             // totalLiquidity could exceed uint128 so .toUint128() is used
             returnData.addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();

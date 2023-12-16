@@ -371,9 +371,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         );
 
         // compute total liquidity
+        uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+        uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
         uint256 totalLiquidity = max(
-            balance0.mulDiv(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
-            balance1.mulDiv(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+            totalDensity0X96 == 0 ? 0 : balance0.mulDiv(Q96, totalDensity0X96),
+            totalDensity1X96 == 0 ? 0 : balance1.mulDiv(Q96, totalDensity1X96)
         );
 
         // compute updated current tick liquidity
