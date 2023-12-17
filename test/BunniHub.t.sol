@@ -333,6 +333,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
+
+        // ensure only current tick has liquidity
+        _assertNoNeighboringLiquidity({
+            id: key.toId(),
+            currentTick: currentTick,
+            startTick: -2 * key.tickSpacing,
+            endTick: 2 * key.tickSpacing,
+            tickSpacing: key.tickSpacing
+        });
     }
 
     function test_swap_zeroForOne_twoTickCrossing() public {
@@ -371,6 +380,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
+
+        // ensure only current tick has liquidity
+        _assertNoNeighboringLiquidity({
+            id: key.toId(),
+            currentTick: currentTick,
+            startTick: -2 * key.tickSpacing,
+            endTick: 2 * key.tickSpacing,
+            tickSpacing: key.tickSpacing
+        });
     }
 
     function test_swap_zeroForOne_boundaryCondition() public {
@@ -411,6 +429,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
+
+        // ensure only current tick has liquidity
+        _assertNoNeighboringLiquidity({
+            id: key.toId(),
+            currentTick: currentTick,
+            startTick: -2 * key.tickSpacing,
+            endTick: 2 * key.tickSpacing,
+            tickSpacing: key.tickSpacing
+        });
     }
 
     function test_swap_oneForZero_noTickCrossing() public {
@@ -518,6 +545,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
+
+        // ensure only current tick has liquidity
+        _assertNoNeighboringLiquidity({
+            id: key.toId(),
+            currentTick: currentTick,
+            startTick: -2 * key.tickSpacing,
+            endTick: 2 * key.tickSpacing,
+            tickSpacing: key.tickSpacing
+        });
     }
 
     function test_swap_oneForZero_twoTickCrossing() public {
@@ -554,6 +590,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (, currentTick,) = poolManager.getSlot0(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
+
+        // ensure only current tick has liquidity
+        _assertNoNeighboringLiquidity({
+            id: key.toId(),
+            currentTick: currentTick,
+            startTick: -2 * key.tickSpacing,
+            endTick: 2 * key.tickSpacing,
+            tickSpacing: key.tickSpacing
+        });
     }
 
     function test_collectProtocolFees() public {
@@ -958,6 +1003,72 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         assertTrue(poolManager.getLiquidity(key.toId()) != beforeLiquidity, "mu did not shift");
     }
 
+    function test_shiftMode_both_allowLeftShift() external {
+        MockLDF ldf_ = new MockLDF();
+
+        Currency currency0 = CurrencyLibrary.NATIVE;
+        Currency currency1 = Currency.wrap(address(token0));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            currency0,
+            currency1,
+            ERC4626(address(0)),
+            ERC4626(address(0)),
+            ldf_,
+            bytes32(abi.encodePacked(ALPHA, ShiftMode.BOTH)),
+            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+        );
+
+        // shift mu to the left
+        ldf_.setMu(-10);
+
+        // perform swap
+        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
+        uint256 inputAmount = PRECISION;
+        _mint(key.currency1, address(this), inputAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
+        _swap(key, params, 0, "");
+
+        // check that mu has actually shifted
+        assertTrue(poolManager.getLiquidity(key.toId()) != beforeLiquidity, "mu did not shift");
+    }
+
+    function test_shiftMode_both_allowRightShift() external {
+        MockLDF ldf_ = new MockLDF();
+
+        Currency currency0 = CurrencyLibrary.NATIVE;
+        Currency currency1 = Currency.wrap(address(token0));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            currency0,
+            currency1,
+            ERC4626(address(0)),
+            ERC4626(address(0)),
+            ldf_,
+            bytes32(abi.encodePacked(ALPHA, ShiftMode.BOTH)),
+            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+        );
+
+        // shift mu to the right
+        ldf_.setMu(10);
+
+        // perform swap
+        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
+        uint256 inputAmount = PRECISION;
+        _mint(key.currency1, address(this), inputAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+        });
+        _swap(key, params, 0, "");
+
+        // check that mu has actually shifted
+        assertTrue(poolManager.getLiquidity(key.toId()) != beforeLiquidity, "mu did not shift");
+    }
+
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
         internal
         returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
@@ -1223,6 +1334,25 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             snapEnd();
         } else {
             poolManager.lock{value: value}(address(swapper_), data);
+        }
+    }
+
+    function _assertNoNeighboringLiquidity(
+        PoolId id,
+        int24 currentTick,
+        int24 startTick,
+        int24 endTick,
+        int24 tickSpacing
+    ) internal {
+        uint128 liquidity;
+        currentTick = roundTickSingle(currentTick, tickSpacing);
+        for (int24 tick = startTick; tick <= endTick; tick += tickSpacing) {
+            liquidity = poolManager.getLiquidity(id, address(hub), tick, tick + tickSpacing);
+            if (tick == currentTick) {
+                assertGt(liquidity, 0, "current tick has zero liquidity");
+            } else {
+                assertEq(liquidity, 0, "neighboring tick has non-zero liquidity");
+            }
         }
     }
 }
