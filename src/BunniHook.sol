@@ -371,12 +371,27 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         );
 
         // compute total liquidity
-        uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-        uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-        uint256 totalLiquidity = max(
-            totalDensity0X96 == 0 ? 0 : balance0.mulDiv(Q96, totalDensity0X96),
-            totalDensity1X96 == 0 ? 0 : balance1.mulDiv(Q96, totalDensity1X96)
-        );
+        uint256 totalLiquidity;
+        {
+            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+            uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.mulDiv(Q96, totalDensity0X96);
+            uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.mulDiv(Q96, totalDensity1X96);
+
+            // Strategy: If one of the two liquidity estimates is 0, use the other one;
+            // if both are non-zero, use the average of the two.
+            // This is because if we simply used max(), shifting the LDF does not change the
+            // current tick liquidity (at least for exponential LDFs) making the shifting kind of
+            // useless, while using min() can lead to underutilization of the reserves we have.
+            // Taking the average gives us a middle ground.
+            if (totalLiquidityEstimate0 == 0) {
+                totalLiquidity = totalLiquidityEstimate1;
+            } else if (totalLiquidityEstimate1 == 0) {
+                totalLiquidity = totalLiquidityEstimate0;
+            } else {
+                totalLiquidity = (totalLiquidityEstimate0 + totalLiquidityEstimate1) / 2;
+            }
+        }
 
         // compute updated current tick liquidity
         // totalLiquidity could exceed uint128 so .toUint128() is used
@@ -405,6 +420,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 }
                 liquidity = updatedRoundedTickLiquidity;
                 updatedCurrentTick = true;
+
+                unchecked {
+                    reserve0InUnderlying = balance0 - updatedCurrentTickBalance0;
+                    reserve1InUnderlying = balance1 - updatedCurrentTickBalance1;
+                }
             }
         }
 

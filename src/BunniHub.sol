@@ -320,7 +320,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         _updateVaultReserve(poolCreditAmount.toInt256(), currency, vault, address(this), false);
 
         // clear credit in state
-        poolCredit[poolId] = 0;
+        delete poolCredit[poolId];
         if (currencyIdx == 0) _poolState[poolId].poolCredit0Set = false;
         else _poolState[poolId].poolCredit1Set = false;
     }
@@ -427,6 +427,9 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 if (currencyIdx == 0) _poolState[poolId].poolCredit0Set = false;
                 else _poolState[poolId].poolCredit1Set = false;
 
+                // delete pool credit in state
+                delete poolCredit[poolId];
+
                 if (amount > 0) {
                     // we burnt enough credits such that we will increase the reserve
                     // take tokens from PoolManager so that _updateVaultReserve()
@@ -508,7 +511,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 user.safeTransferETH(absAmount);
             } else {
                 // normal ERC20
-                return -vault.withdraw(uint256(-amount), user, address(this)).toInt256();
+                return -vault.withdraw(absAmount, user, address(this)).toInt256();
             }
         }
     }
