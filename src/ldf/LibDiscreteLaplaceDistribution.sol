@@ -158,10 +158,10 @@ library LibDiscreteLaplaceDistribution {
             shiftMode = ShiftMode(uint8(bytes1(ldfParams << 64)));
         } else {
             // static mu set in params
-            // | mu - 3 bytes | alpha - 8 bytes | shiftMode - 1 byte |
+            // | mu - 3 bytes | alpha - 8 bytes |
             mu = int24(uint24(bytes3(ldfParams)));
             alpha = uint256(uint64(bytes8(ldfParams << 24)));
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 88)));
+            shiftMode = ShiftMode.BOTH;
         }
         alphaX96 = alpha.mulDivDown(Q96, WAD);
     }

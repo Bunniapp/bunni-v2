@@ -212,11 +212,11 @@ library LibGeometricDistribution {
             shiftMode = ShiftMode(uint8(bytes1(ldfParams << 64)));
         } else {
             // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | shiftMode - 1 byte |
+            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes |
             minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
             length = int24(int16(uint16(bytes2(ldfParams << 24))));
             alpha = uint32(bytes4(ldfParams << 40));
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 72)));
+            shiftMode = ShiftMode.BOTH;
         }
         alphaX96 = alpha.mulDivDown(Q96, ALPHA_BASE);
 
