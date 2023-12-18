@@ -3,44 +3,64 @@ pragma solidity ^0.8.19;
 
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import {LibGeometricDistribution} from "./LibGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
 contract DoubleGeometricDistribution is ILiquidityDensityFunction {
+    uint56 internal constant INITIALIZED_STATE = 1 << 48;
+
     function query(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
-        bytes32 ldfParams
+        bytes32 ldfParams,
+        bytes32 ldfState
     )
         external
         pure
         override
-        returns (uint256 liquidityDensityX96_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
+        returns (
+            uint256 liquidityDensityX96_,
+            uint256 cumulativeAmount0DensityX96,
+            uint256 cumulativeAmount1DensityX96,
+            bytes32 newLdfState
+        )
     {
         // decode params for each distribution
         (uint256 weight0, uint256 weight1, bytes32 ldfParams0, bytes32 ldfParams1) = decodeDoubleParams(ldfParams);
+        (bool initialized, int24 lastMinTick0, int24 lastMinTick1) = _decodeState(ldfState);
 
         // query each distribution
         (uint256 liquidityDensityX96_0, uint256 cumulativeAmount0DensityX96_0, uint256 cumulativeAmount1DensityX96_0) =
             (0, 0, 0);
         (uint256 liquidityDensityX96_1, uint256 cumulativeAmount0DensityX96_1, uint256 cumulativeAmount1DensityX96_1) =
             (0, 0, 0);
+        (int24 minTick0, int24 minTick1) = (0, 0);
         {
-            (int24 minTick, int24 length, uint256 alphaX96) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams0);
+            (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams0);
+            if (initialized) {
+                minTick = enforceShiftMode(minTick, lastMinTick0, shiftMode);
+            }
+
             (liquidityDensityX96_0, cumulativeAmount0DensityX96_0, cumulativeAmount1DensityX96_0) =
-                LibGeometricDistribution.query(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
+            minTick0 = minTick;
         }
         {
-            (int24 minTick, int24 length, uint256 alphaX96) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams1);
+            (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams1);
+            if (initialized) {
+                minTick = enforceShiftMode(minTick, lastMinTick1, shiftMode);
+            }
+
             (liquidityDensityX96_1, cumulativeAmount0DensityX96_1, cumulativeAmount1DensityX96_1) =
-                LibGeometricDistribution.query(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
+            minTick1 = minTick;
         }
 
         // combine results
@@ -62,34 +82,44 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
             value1: cumulativeAmount1DensityX96_1,
             weight1: weight1
         });
+        newLdfState = _encodeState(minTick0, minTick1);
     }
 
     function liquidityDensityX96(
-        PoolKey calldata, /* key */
+        PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        int24 tickSpacing,
         bool useTwap,
-        bytes32 ldfParams
+        bytes32 ldfParams,
+        bytes32 ldfState
     ) external pure override returns (uint256) {
         // decode params for each distribution
         (uint256 weight0, uint256 weight1, bytes32 ldfParams0, bytes32 ldfParams1) = decodeDoubleParams(ldfParams);
+        (bool initialized, int24 lastMinTick0, int24 lastMinTick1) = _decodeState(ldfState);
 
         // query each distribution
         uint256 liquidityDensityX96_0;
         uint256 liquidityDensityX96_1;
         {
-            (int24 minTick, int24 length, uint256 alphaX96) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams0);
+            (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams0);
+            if (initialized) {
+                minTick = enforceShiftMode(minTick, lastMinTick0, shiftMode);
+            }
+
             liquidityDensityX96_0 =
-                LibGeometricDistribution.liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, minTick, length, alphaX96);
         }
         {
-            (int24 minTick, int24 length, uint256 alphaX96) =
-                LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams1);
+            (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+                LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams1);
+            if (initialized) {
+                minTick = enforceShiftMode(minTick, lastMinTick1, shiftMode);
+            }
+
             liquidityDensityX96_1 =
-                LibGeometricDistribution.liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96);
+                LibGeometricDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, minTick, length, alphaX96);
         }
 
         // combine results
@@ -119,8 +149,8 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
 
         // ensure the two distributions meet and form one continuous distribution
         bool useTwap = twapSecondsAgo != 0;
-        (int24 minTick0, int24 length0,) = LibGeometricDistribution.decodeParams(0, tickSpacing, useTwap, ldfParams0);
-        (int24 minTick1, int24 length1,) = LibGeometricDistribution.decodeParams(0, tickSpacing, useTwap, ldfParams1);
+        (int24 minTick0, int24 length0,,) = LibGeometricDistribution.decodeParams(0, tickSpacing, useTwap, ldfParams0);
+        (int24 minTick1, int24 length1,,) = LibGeometricDistribution.decodeParams(0, tickSpacing, useTwap, ldfParams1);
 
         return minTick0 <= minTick1 + length1 * tickSpacing && minTick1 <= minTick0 + length0 * tickSpacing;
     }
@@ -135,5 +165,22 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         weight1 = uint32(bytes4(ldfParams << 32));
         ldfParams0 = bytes9(ldfParams << 64);
         ldfParams1 = bytes9(ldfParams << 136);
+    }
+
+    function _decodeState(bytes32 ldfState)
+        internal
+        pure
+        returns (bool initialized, int24 lastMinTick0, int24 lastMinTick1)
+    {
+        // | initialized - 1 byte | lastMinTick0 - 3 bytes | lastMinTick1 - 3 bytes |
+        initialized = uint8(bytes1(ldfState)) == 1;
+        lastMinTick0 = int24(uint24(bytes3(ldfState << 8)));
+        lastMinTick1 = int24(uint24(bytes3(ldfState << 32)));
+    }
+
+    function _encodeState(int24 lastMinTick0, int24 lastMinTick1) internal pure returns (bytes32 ldfState) {
+        // | initialized - 1 byte | lastMinTick0 - 3 bytes | lastMinTick1 - 3 bytes |
+        ldfState =
+            bytes32(bytes7(INITIALIZED_STATE + (uint56(uint24(lastMinTick0)) << 24) + uint56(uint24(lastMinTick1))));
     }
 }

@@ -194,6 +194,8 @@ library BunniHubLogic {
         if (requiresLDF) {
             // use LDF to initialize token proportions
 
+            IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
+
             // update TWAP oracle and optionally observe
             // need to update oracle before using it in the LDF
             {
@@ -202,26 +204,28 @@ library BunniHubLogic {
                 assembly ("memory-safe") {
                     twapSecondsAgo := mul(twapSecondsAgo, requiresLDF)
                 }
-                vars.arithmeticMeanTick = IBunniHook(address(inputData.params.poolKey.hooks)).updateOracleAndObserve(
-                    inputData.poolId, inputData.currentTick, twapSecondsAgo
-                );
+                vars.arithmeticMeanTick =
+                    hook.updateOracleAndObserve(inputData.poolId, inputData.currentTick, twapSecondsAgo);
             }
 
             // compute density
             bool useTwap = inputData.state.twapSecondsAgo != 0;
+            bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
             (
                 uint256 liquidityDensityOfRoundedTickX96,
                 uint256 density0RightOfRoundedTickX96,
-                uint256 density1LeftOfRoundedTickX96
+                uint256 density1LeftOfRoundedTickX96,
+                bytes32 newLdfState
             ) = inputData.state.liquidityDensityFunction.query(
                 inputData.params.poolKey,
                 inputData.roundedTick,
                 vars.arithmeticMeanTick,
                 inputData.currentTick,
-                inputData.params.poolKey.tickSpacing,
                 useTwap,
-                inputData.state.ldfParams
+                inputData.state.ldfParams,
+                ldfState
             );
+            if (inputData.state.statefulLdf) hook.updateLdfState(inputData.poolId, newLdfState);
             (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
                 .getAmountsForLiquidity(
                 inputData.sqrtPriceX96,
@@ -232,11 +236,15 @@ library BunniHubLogic {
             );
 
             // compute how much liquidity we'd get from the desired token amounts
+            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
             uint256 totalLiquidity = min(
-                inputData.params.amount0Desired.mulDivDown(
-                    Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96
-                ),
-                inputData.params.amount1Desired.mulDivDown(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
+                totalDensity0X96 == 0
+                    ? type(uint256).max
+                    : inputData.params.amount0Desired.mulDivDown(Q96, totalDensity0X96),
+                totalDensity1X96 == 0
+                    ? type(uint256).max
+                    : inputData.params.amount1Desired.mulDivDown(Q96, totalDensity1X96)
             );
             // totalLiquidity could exceed uint128 so .toUint128() is used
             returnData.addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
@@ -524,7 +532,8 @@ library BunniHubLogic {
             params.ldfParams,
             params.hookParams,
             params.vault0,
-            params.vault1
+            params.vault1,
+            params.statefulLdf
         ).write();
 
         /// -----------------------------------------------------------------------
@@ -604,6 +613,7 @@ library BunniHubLogic {
         bytes32 hookParams;
         ERC4626 vault0;
         ERC4626 vault1;
+        bool statefulLdf;
 
         assembly ("memory-safe") {
             liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
@@ -613,6 +623,7 @@ library BunniHubLogic {
             hookParams := mload(add(immutableParams, 107))
             vault0 := shr(96, mload(add(immutableParams, 139)))
             vault1 := shr(96, mload(add(immutableParams, 159)))
+            statefulLdf := shr(248, mload(add(immutableParams, 179)))
         }
 
         state = PoolState({
@@ -623,6 +634,7 @@ library BunniHubLogic {
             hookParams: hookParams,
             vault0: vault0,
             vault1: vault1,
+            statefulLdf: statefulLdf,
             poolCredit0Set: rawState.poolCredit0Set,
             poolCredit1Set: rawState.poolCredit1Set,
             reserve0: rawState.reserve0,

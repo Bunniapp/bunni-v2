@@ -5,6 +5,7 @@ import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
+import "./ShiftMode.sol";
 import "../lib/Math.sol";
 
 library LibDiscreteLaplaceDistribution {
@@ -146,19 +147,21 @@ library LibDiscreteLaplaceDistribution {
     function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
         internal
         pure
-        returns (int24 mu, uint256 alphaX96)
+        returns (int24 mu, uint256 alphaX96, ShiftMode shiftMode)
     {
         uint256 alpha;
         if (useTwap) {
             // use rounded TWAP value as mu
-            // | alpha - 8 bytes |
+            // | alpha - 8 bytes | shiftMode - 1 byte |
             mu = roundTickSingle(twapTick, tickSpacing);
             alpha = uint256(uint64(bytes8(ldfParams)));
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 64)));
         } else {
             // static mu set in params
-            // | mu - 3 bytes | alpha - 8 bytes |
+            // | mu - 3 bytes | alpha - 8 bytes | shiftMode - 1 byte |
             mu = int24(uint24(bytes3(ldfParams)));
             alpha = uint256(uint64(bytes8(ldfParams << 24)));
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 88)));
         }
         alphaX96 = alpha.mulDivDown(Q96, WAD);
     }

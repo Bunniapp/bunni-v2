@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
-import "forge-std/console.sol";
 import {stdMath} from "forge-std/StdMath.sol";
 
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
@@ -47,6 +46,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
 
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
+
+    mapping(PoolId => bytes32) public ldfStates;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
     uint96 internal _hookFeesModifier;
@@ -139,6 +140,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             return _getTwap(id, tick, twapSecondsAgo, updatedIndex, updatedCardinality);
         }
         return 0;
+    }
+
+    function updateLdfState(PoolId id, bytes32 newState) external override {
+        if (msg.sender != address(hub)) revert BunniHook__Unauthorized();
+
+        ldfStates[id] = newState;
     }
 
     /// -----------------------------------------------------------------------
@@ -345,13 +352,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         }
 
         // get densities
+        bytes32 ldfState = bunniState.statefulLdf ? ldfStates[id] : bytes32(0);
         (
             uint256 liquidityDensityOfRoundedTickX96,
             uint256 density0RightOfRoundedTickX96,
-            uint256 density1LeftOfRoundedTickX96
+            uint256 density1LeftOfRoundedTickX96,
+            bytes32 newLdfState
         ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, currentTick, key.tickSpacing, useTwap, bunniState.ldfParams
+            key, roundedTick, arithmeticMeanTick, currentTick, useTwap, bunniState.ldfParams, ldfState
         );
+        if (bunniState.statefulLdf) ldfStates[id] = newLdfState;
         (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
             sqrtPriceX96,
             roundedTickSqrtRatio,
@@ -361,10 +371,27 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         );
 
         // compute total liquidity
-        uint256 totalLiquidity = max(
-            balance0.mulDiv(Q96, density0RightOfRoundedTickX96 + density0OfRoundedTickX96),
-            balance1.mulDiv(Q96, density1LeftOfRoundedTickX96 + density1OfRoundedTickX96)
-        );
+        uint256 totalLiquidity;
+        {
+            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+            uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.mulDiv(Q96, totalDensity0X96);
+            uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.mulDiv(Q96, totalDensity1X96);
+
+            // Strategy: If one of the two liquidity estimates is 0, use the other one;
+            // if both are non-zero, use the average of the two.
+            // This is because if we simply used max(), shifting the LDF does not change the
+            // current tick liquidity (at least for exponential LDFs) making the shifting kind of
+            // useless, while using min() can lead to underutilization of the reserves we have.
+            // Taking the average gives us a middle ground.
+            if (totalLiquidityEstimate0 == 0) {
+                totalLiquidity = totalLiquidityEstimate1;
+            } else if (totalLiquidityEstimate1 == 0) {
+                totalLiquidity = totalLiquidityEstimate0;
+            } else {
+                totalLiquidity = (totalLiquidityEstimate0 + totalLiquidityEstimate1) / 2;
+            }
+        }
 
         // compute updated current tick liquidity
         // totalLiquidity could exceed uint128 so .toUint128() is used
@@ -393,6 +420,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 }
                 liquidity = updatedRoundedTickLiquidity;
                 updatedCurrentTick = true;
+
+                unchecked {
+                    reserve0InUnderlying = balance0 - updatedCurrentTickBalance0;
+                    reserve1InUnderlying = balance1 - updatedCurrentTickBalance1;
+                }
             }
         }
 
@@ -474,9 +506,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                         tickLowerToAddLiquidityTo,
                         arithmeticMeanTick,
                         currentTick,
-                        key.tickSpacing,
                         useTwap,
-                        bunniState.ldfParams
+                        bunniState.ldfParams,
+                        ldfState
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();
@@ -560,9 +592,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                         tickLowerToAddLiquidityTo,
                         arithmeticMeanTick,
                         currentTick,
-                        key.tickSpacing,
                         useTwap,
-                        bunniState.ldfParams
+                        bunniState.ldfParams,
+                        ldfState
                     ) * totalLiquidity
                 ) >> 96
             ).toUint128();
