@@ -66,8 +66,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     BunniHook internal constant bunniHook = BunniHook(
         address(
             uint160(
-                Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_MODIFY_POSITION_FLAG + Hooks.BEFORE_SWAP_FLAG
-                    + Hooks.AFTER_SWAP_FLAG + Hooks.ACCESS_LOCK_FLAG
+                Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                    + Hooks.BEFORE_SWAP_FLAG + Hooks.AFTER_SWAP_FLAG + Hooks.ACCESS_LOCK_FLAG
             )
         )
     );
@@ -668,8 +668,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             }
         }
 
-        uint256 fee0 = poolManager.balanceOf(address(bunniHook), key.currency0);
-        uint256 fee1 = poolManager.balanceOf(address(bunniHook), key.currency1);
+        uint256 fee0 = poolManager.balanceOf(address(bunniHook), key.currency0.toId());
+        uint256 fee1 = poolManager.balanceOf(address(bunniHook), key.currency1.toId());
         assertGt(fee0, 0, "protocol fee0 not accrued");
         assertGt(fee1, 0, "protocol fee1 not accrued");
 
@@ -750,7 +750,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         // check balances
         if (address(vault0_) != address(0)) {
-            assertEq(poolManager.balanceOf(address(hub), key.currency0), 0, "pool credit0 not cleared");
+            assertEq(poolManager.balanceOf(address(hub), key.currency0.toId()), 0, "pool credit0 not cleared");
             assertApproxEqRelDecimal(
                 _vaultPreviewRedeem(vault0_, vault0BalanceIncrease),
                 poolCredit0,
@@ -760,7 +760,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             );
         }
         if (address(vault1_) != address(0)) {
-            assertEq(poolManager.balanceOf(address(hub), key.currency1), 0, "pool credit1 not cleared");
+            assertEq(poolManager.balanceOf(address(hub), key.currency1.toId()), 0, "pool credit1 not cleared");
             assertApproxEqRelDecimal(
                 _vaultPreviewRedeem(vault1_, vault1BalanceIncrease),
                 poolCredit1,

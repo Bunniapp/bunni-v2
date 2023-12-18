@@ -218,14 +218,14 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         returns (ModifyLiquidityReturnData memory returnData)
     {
         // compound fees into reserve
-        IPoolManager.ModifyPositionParams memory params;
+        IPoolManager.ModifyLiquidityParams memory params;
         params.tickLower = input.tickLower;
         params.tickUpper = input.tickUpper;
         BalanceDelta poolTokenDelta = input.reserveDeltaInUnderlying;
         if (input.currentLiquidity != 0) {
             // negate pool delta to get fees owed
             BalanceDelta feeDelta =
-                BalanceDelta.wrap(0) - poolManager.modifyPosition(input.poolKey, params, abi.encode(true));
+                BalanceDelta.wrap(0) - poolManager.modifyLiquidity(input.poolKey, params, abi.encode(true));
 
             if (BalanceDelta.unwrap(feeDelta) != 0) {
                 // add fees to the amount of pool tokens to mint/burn
@@ -238,7 +238,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
         // update liquidity
         params.liquidityDelta = input.liquidityDelta;
-        BalanceDelta delta = poolManager.modifyPosition(input.poolKey, params, abi.encode(input.currentLiquidity == 0));
+        BalanceDelta delta = poolManager.modifyLiquidity(input.poolKey, params, abi.encode(input.currentLiquidity == 0));
 
         // amount of tokens to pay/take
         BalanceDelta settleDelta = _zeroDeltaIfVault(input.reserveDeltaInUnderlying, input.vault0, input.vault1) + delta;
@@ -264,7 +264,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         int256 reserveChange0InUnderlying;
         int256 reserveChange1InUnderlying;
 
-        IPoolManager.ModifyPositionParams memory params;
+        IPoolManager.ModifyLiquidityParams memory params;
 
         // modify the liquidity of all specified ticks
         for (uint256 i; i < data.liquidityDeltas.length; i++) {
@@ -275,7 +275,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             params.liquidityDelta = data.liquidityDeltas[i].delta;
 
             // only update the oracle before the first modifyPosition call
-            BalanceDelta balanceDelta = poolManager.modifyPosition(data.poolKey, params, abi.encode(i == 0));
+            BalanceDelta balanceDelta = poolManager.modifyLiquidity(data.poolKey, params, abi.encode(i == 0));
 
             reserveChange0InUnderlying -= balanceDelta.amount0();
             reserveChange1InUnderlying -= balanceDelta.amount1();
@@ -311,7 +311,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         uint256 poolCreditAmount = poolCredit[poolId];
 
         // burn claim tokens
-        poolManager.burn(currency, poolCreditAmount);
+        poolManager.burn(address(this), currency.toId(), poolCreditAmount);
 
         // take assets
         poolManager.take(currency, address(this), poolCreditAmount);
@@ -401,7 +401,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                     poolManager.take(currency, address(this), poolManagerBalance);
                     uint256 creditAmount = uint256(amount) - poolManagerBalance;
                     amount = poolManagerBalance.toInt256();
-                    poolManager.mint(currency, address(this), creditAmount);
+                    poolManager.mint(address(this), currency.toId(), creditAmount);
 
                     // increase poolCredit
                     mapping(PoolId => uint256) storage poolCredit = currencyIdx == 0 ? poolCredit0 : poolCredit1;
@@ -419,7 +419,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 // burn the claim tokens first
                 mapping(PoolId => uint256) storage poolCredit = currencyIdx == 0 ? poolCredit0 : poolCredit1;
                 uint256 existingCredit = poolCredit[poolId];
-                poolManager.burn(currency, existingCredit);
+                poolManager.burn(address(this), currency.toId(), existingCredit);
                 amount += existingCredit.toInt256();
 
                 // credit non-zero -> zero
@@ -463,9 +463,9 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// Denominated in PoolManager claim tokens.
     function _updateClaimTokenReserve(Currency currency, int256 amount) internal returns (int256 reserveChange) {
         if (amount > 0) {
-            poolManager.mint(currency, address(this), uint256(amount));
+            poolManager.mint(address(this), currency.toId(), uint256(amount));
         } else if (amount < 0) {
-            poolManager.burn(currency, uint256(-amount));
+            poolManager.burn(address(this), currency.toId(), uint256(-amount));
         }
         return amount;
     }

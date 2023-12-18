@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import {stdMath} from "forge-std/StdMath.sol";
 
+import "@uniswap/v4-core/src/types/Currency.sol";
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
@@ -32,6 +33,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     using FullMath for uint256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
+    using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint256;
     using Oracle for Oracle.Observation[65535];
 
@@ -112,9 +114,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         address recipient = _hookFeesRecipient;
         for (uint256 i; i < currencyList.length; i++) {
             Currency currency = currencyList[i];
-            uint256 balance = poolManager.balanceOf(address(this), currency);
+            uint256 balance = poolManager.balanceOf(address(this), currency.toId());
             if (balance != 0) {
-                poolManager.burn(currency, balance);
+                poolManager.burn(address(this), currency.toId(), balance);
                 poolManager.take(currency, recipient, balance);
             }
         }
@@ -215,8 +217,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: true,
-            beforeModifyPosition: true,
-            afterModifyPosition: false,
+            beforeAddLiquidity: true,
+            afterAddLiquidity: false,
+            beforeRemoveLiquidity: true,
+            afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: true,
             beforeDonate: false,
@@ -262,23 +266,27 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     }
 
     /// @inheritdoc IHooks
-    function beforeModifyPosition(
+    function beforeAddLiquidity(
         address caller,
         PoolKey calldata key,
-        IPoolManager.ModifyPositionParams calldata,
+        IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata hookData
     ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
-        if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from modifying a position using this hook
+        _beforeModifyPosition(caller, key, hookData);
 
-        // update TWAP oracle
-        bool shouldUpdateOracle = abi.decode(hookData, (bool));
-        if (shouldUpdateOracle) {
-            PoolId id = key.toId();
-            (, int24 tick,) = poolManager.getSlot0(id);
-            _updateOracle(id, tick);
-        }
+        return BunniHook.beforeAddLiquidity.selector;
+    }
 
-        return BunniHook.beforeModifyPosition.selector;
+    /// @inheritdoc IHooks
+    function beforeRemoveLiquidity(
+        address caller,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata hookData
+    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
+        _beforeModifyPosition(caller, key, hookData);
+
+        return BunniHook.beforeRemoveLiquidity.selector;
     }
 
     /// @inheritdoc IHooks
@@ -729,7 +737,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             if (amount > 0) {
                 uint256 hookFeeAmount = uint256(amount).mulDivDown(swapFee, SWAP_FEE_BASE).mulWadDown(hookFeesModifier_);
                 if (hookFeeAmount != 0) {
-                    poolManager.mint(currency, address(this), hookFeeAmount);
+                    poolManager.mint(address(this), currency.toId(), hookFeeAmount);
                 }
             }
         }
@@ -814,5 +822,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     function _percentDelta(uint256 a, uint256 b) internal pure returns (uint256 delta) {
         if (b == 0) return a != 0 ? 1e18 : 0;
         return stdMath.percentDelta(a, b);
+    }
+
+    function _beforeModifyPosition(address caller, PoolKey calldata key, bytes calldata hookData) internal {
+        if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from modifying a position using this hook
+
+        // update TWAP oracle
+        bool shouldUpdateOracle = abi.decode(hookData, (bool));
+        if (shouldUpdateOracle) {
+            PoolId id = key.toId();
+            (, int24 tick,) = poolManager.getSlot0(id);
+            _updateOracle(id, tick);
+        }
     }
 }
