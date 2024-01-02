@@ -15,15 +15,15 @@ import {CREATE3} from "solady/src/utils/CREATE3.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
-import {WETH} from "solmate/tokens/WETH.sol";
-import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+import {WETH} from "solady/src/tokens/WETH.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
+import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 
 import "./Math.sol";
 import "./Structs.sol";
 import "./VaultMath.sol";
 import "../interfaces/IBunniHub.sol";
 import {BunniToken} from "../BunniToken.sol";
-import {SafeTransferLib} from "./SafeTransferLib.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
@@ -241,10 +241,10 @@ library BunniHubLogic {
             uint256 totalLiquidity = min(
                 totalDensity0X96 == 0
                     ? type(uint256).max
-                    : inputData.params.amount0Desired.mulDivDown(Q96, totalDensity0X96),
+                    : inputData.params.amount0Desired.mulDiv(Q96, totalDensity0X96),
                 totalDensity1X96 == 0
                     ? type(uint256).max
-                    : inputData.params.amount1Desired.mulDivDown(Q96, totalDensity1X96)
+                    : inputData.params.amount1Desired.mulDiv(Q96, totalDensity1X96)
             );
             // totalLiquidity could exceed uint128 so .toUint128() is used
             returnData.addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
@@ -274,36 +274,28 @@ library BunniHubLogic {
                 if (returnData.amount0 == 0) {
                     (returnData.amount1, returnData.addedLiquidity) = (
                         inputData.params.amount1Desired,
-                        uint128(
-                            returnData.addedLiquidity.mulDivDown(inputData.params.amount1Desired, returnData.amount1)
-                            )
+                        uint128(returnData.addedLiquidity.mulDiv(inputData.params.amount1Desired, returnData.amount1))
                     );
                 } else if (returnData.amount1 == 0) {
                     (returnData.amount0, returnData.addedLiquidity) = (
                         inputData.params.amount0Desired,
-                        uint128(
-                            returnData.addedLiquidity.mulDivDown(inputData.params.amount0Desired, returnData.amount0)
-                            )
+                        uint128(returnData.addedLiquidity.mulDiv(inputData.params.amount0Desired, returnData.amount0))
                     );
                 } else {
                     // both are non-zero
                     (returnData.amount0, returnData.amount1, returnData.addedLiquidity) = (
                         min(
                             inputData.params.amount0Desired,
-                            returnData.amount0.mulDivDown(inputData.params.amount1Desired, returnData.amount1)
+                            returnData.amount0.mulDiv(inputData.params.amount1Desired, returnData.amount1)
                             ),
                         min(
                             inputData.params.amount1Desired,
-                            returnData.amount1.mulDivDown(inputData.params.amount0Desired, returnData.amount0)
+                            returnData.amount1.mulDiv(inputData.params.amount0Desired, returnData.amount0)
                             ),
                         uint128(
                             min(
-                                returnData.addedLiquidity.mulDivDown(
-                                    inputData.params.amount0Desired, returnData.amount0
-                                ),
-                                returnData.addedLiquidity.mulDivDown(
-                                    inputData.params.amount1Desired, returnData.amount1
-                                )
+                                returnData.addedLiquidity.mulDiv(inputData.params.amount0Desired, returnData.amount0),
+                                returnData.addedLiquidity.mulDiv(inputData.params.amount1Desired, returnData.amount1)
                             )
                             )
                     );
@@ -328,17 +320,13 @@ library BunniHubLogic {
             // compute amount0 and amount1 such that the ratio is the same as the current ratio
             returnData.amount0 = vars.assets1 == 0
                 ? inputData.params.amount0Desired
-                : min(
-                    inputData.params.amount0Desired, inputData.params.amount1Desired.mulDivDown(vars.assets0, vars.assets1)
-                );
+                : min(inputData.params.amount0Desired, inputData.params.amount1Desired.mulDiv(vars.assets0, vars.assets1));
             returnData.amount1 = vars.assets0 == 0
                 ? inputData.params.amount1Desired
-                : min(
-                    inputData.params.amount1Desired, inputData.params.amount0Desired.mulDivDown(vars.assets1, vars.assets0)
-                );
+                : min(inputData.params.amount1Desired, inputData.params.amount0Desired.mulDiv(vars.assets1, vars.assets0));
 
             // compute added liquidity using current liquidity
-            returnData.addedLiquidity = inputData.currentLiquidity.mulDivDown(
+            returnData.addedLiquidity = inputData.currentLiquidity.mulDiv(
                 returnData.amount0 + returnData.amount1, vars.assets0 + vars.assets1
             ).toUint128();
 
@@ -405,17 +393,17 @@ library BunniHubLogic {
 
         // burn liquidity from pool
         // type cast is safe because we know removedLiquidity <= existingLiquidity
-        removedLiquidity = uint128(existingLiquidity.mulDivDown(params.shares, currentTotalSupply));
+        removedLiquidity = uint128(existingLiquidity.mulDiv(params.shares, currentTotalSupply));
 
         uint256 removedReserve0InUnderlying =
-            getReservesInUnderlying(state.reserve0.mulDivDown(params.shares, currentTotalSupply), state.vault0);
+            getReservesInUnderlying(state.reserve0.mulDiv(params.shares, currentTotalSupply), state.vault0);
         uint256 removedReserve1InUnderlying =
-            getReservesInUnderlying(state.reserve1.mulDivDown(params.shares, currentTotalSupply), state.vault1);
+            getReservesInUnderlying(state.reserve1.mulDiv(params.shares, currentTotalSupply), state.vault1);
         if (state.poolCredit0Set) {
-            removedReserve0InUnderlying += poolCredit0[poolId].mulDivDown(params.shares, currentTotalSupply);
+            removedReserve0InUnderlying += poolCredit0[poolId].mulDiv(params.shares, currentTotalSupply);
         }
         if (state.poolCredit1Set) {
-            removedReserve1InUnderlying += poolCredit1[poolId].mulDivDown(params.shares, currentTotalSupply);
+            removedReserve1InUnderlying += poolCredit1[poolId].mulDiv(params.shares, currentTotalSupply);
         }
 
         /// -----------------------------------------------------------------------
@@ -585,8 +573,8 @@ library BunniHubLogic {
         } else {
             // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
             shares = min(
-                existingAmount0 == 0 ? type(uint256).max : existingShareSupply.mulDivDown(addedAmount0, existingAmount0),
-                existingAmount1 == 0 ? type(uint256).max : existingShareSupply.mulDivDown(addedAmount1, existingAmount1)
+                existingAmount0 == 0 ? type(uint256).max : existingShareSupply.mulDiv(addedAmount0, existingAmount0),
+                existingAmount1 == 0 ? type(uint256).max : existingShareSupply.mulDiv(addedAmount1, existingAmount1)
             );
             if (shares == 0) revert BunniHub__ZeroSharesMinted();
         }

@@ -3,10 +3,9 @@ pragma solidity ^0.8.19;
 
 import "forge-std/Test.sol";
 
-import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 
@@ -15,6 +14,7 @@ import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityF
 
 abstract contract LiquidityDensityFunctionTest is Test {
     using TickMath for int24;
+    using FixedPointMathLib for uint256;
 
     uint256 internal constant MAX_ERROR = 1e10;
     int24 internal constant MAX_TICK_SPACING = type(int16).max;
@@ -87,7 +87,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
             uint256 liquidityDensityX96 =
                 ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
             uint256 amount0DensityX96 = _amount0DensityX96(tick, tickSpacing);
-            cumulativeAmount0DensityX96 += FullMath.mulDiv(amount0DensityX96, liquidityDensityX96, FixedPoint96.Q96);
+            cumulativeAmount0DensityX96 += amount0DensityX96.fullMulDiv(liquidityDensityX96, FixedPoint96.Q96);
         }
     }
 
@@ -96,8 +96,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         pure
         returns (uint256 amount0DensityX96)
     {
-        return FullMath.mulDiv(
-            FixedPoint96.Q96 - (-tickSpacing).getSqrtRatioAtTick(), FixedPoint96.Q96, (roundedTick).getSqrtRatioAtTick()
+        return (FixedPoint96.Q96 - (-tickSpacing).getSqrtRatioAtTick()).fullMulDiv(
+            FixedPoint96.Q96, (roundedTick).getSqrtRatioAtTick()
         );
     }
 
@@ -114,7 +114,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
             uint256 liquidityDensityX96 =
                 ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
             uint256 amount1DensityX96 = _amount1DensityX96(tick, tickSpacing);
-            cumulativeAmount1DensityX96 += FullMath.mulDiv(amount1DensityX96, liquidityDensityX96, FixedPoint96.Q96);
+            cumulativeAmount1DensityX96 += amount1DensityX96.fullMulDiv(liquidityDensityX96, FixedPoint96.Q96);
         }
     }
 
@@ -123,8 +123,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         pure
         returns (uint256 amount1DensityX96)
     {
-        return FullMath.mulDiv(
-            tickSpacing.getSqrtRatioAtTick() - FixedPoint96.Q96, (roundedTick).getSqrtRatioAtTick(), FixedPoint96.Q96
+        return (tickSpacing.getSqrtRatioAtTick() - FixedPoint96.Q96).fullMulDiv(
+            (roundedTick).getSqrtRatioAtTick(), FixedPoint96.Q96
         );
     }
 }

@@ -2,17 +2,27 @@
 
 pragma solidity ^0.8.15;
 
-import {ERC20} from "solmate/tokens/ERC20.sol";
-import {ERC4626} from "solmate/mixins/ERC4626.sol";
+import {ERC20} from "solady/src/tokens/ERC20.sol";
+import {ERC4626} from "solady/src/tokens/ERC4626.sol";
 
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 
 contract ERC4626Mock is ERC4626 {
-    constructor(IERC20 _asset, string memory _name, string memory _symbol)
-        ERC4626(ERC20(address(_asset)), _name, _symbol)
-    {}
+    address internal immutable _asset;
 
-    function totalAssets() public view override returns (uint256) {
-        return asset.balanceOf(address(this));
+    constructor(IERC20 asset_) {
+        _asset = address(asset_);
+    }
+
+    function asset() public view override returns (address) {
+        return _asset;
+    }
+
+    function name() public pure override returns (string memory) {
+        return "MockERC4626";
+    }
+
+    function symbol() public pure override returns (string memory) {
+        return "MOCK-ERC4626";
     }
 }

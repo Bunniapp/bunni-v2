@@ -2,16 +2,16 @@
 
 pragma solidity ^0.8.15;
 
+import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
 import {IERC20} from "../../src/interfaces/IERC20.sol";
-import {SafeTransferLib} from "../../src/lib/SafeTransferLib.sol";
 
 contract Uniswapper is ILockCallback {
-    using SafeTransferLib for IERC20;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
 
@@ -50,7 +50,7 @@ contract Uniswapper is ILockCallback {
             // already gave ETH to pool manager, take remainder instead
             poolManager.take(token, payer, uint256(-poolManager.currencyDelta(address(this), token)));
         } else {
-            IERC20(Currency.unwrap(token)).safeTransferFrom(payer, recipient, value);
+            Currency.unwrap(token).safeTransferFrom(payer, recipient, value);
         }
     }
 
@@ -59,7 +59,7 @@ contract Uniswapper is ILockCallback {
             if (currency.isNative()) {
                 address(poolManager).safeTransferETH(uint256(amount));
             } else {
-                IERC20(Currency.unwrap(currency)).safeTransferFrom(user, address(poolManager), uint256(amount));
+                Currency.unwrap(currency).safeTransferFrom(user, address(poolManager), uint256(amount));
             }
             poolManager.settle(currency);
         } else if (amount < 0) {

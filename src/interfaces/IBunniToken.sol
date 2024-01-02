@@ -11,6 +11,10 @@ import {IBunniHub} from "./IBunniHub.sol";
 interface IBunniToken is IERC20 {
     function hub() external view returns (IBunniHub);
 
+    function token0() external view returns (IERC20);
+
+    function token1() external view returns (IERC20);
+
     function mint(address to, uint256 amount) external;
 
     function burn(address from, uint256 amount) external;

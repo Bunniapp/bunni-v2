@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import {console} from "forge-std/console.sol";
+
 import {stdMath} from "forge-std/StdMath.sol";
 
 import "@uniswap/v4-core/src/types/Currency.sol";
@@ -10,13 +12,11 @@ import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-
-import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
@@ -30,7 +30,6 @@ import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 
 /// @notice Bunni Hook
 contract BunniHook is BaseHook, Ownable, IBunniHook {
-    using FullMath for uint256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
@@ -383,8 +382,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         {
             uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
             uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-            uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.mulDiv(Q96, totalDensity0X96);
-            uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.mulDiv(Q96, totalDensity1X96);
+            uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
+            uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
 
             // Strategy: If one of the two liquidity estimates is 0, use the other one;
             // if both are non-zero, use the average of the two.
@@ -641,7 +640,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         }
 
         uint256 swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             swapVals := or(swapVals, shl(232, roundedTick))
             swapVals := or(swapVals, shl(208, numTicksToRemove_))
             swapVals := or(swapVals, shl(184, swapFee))
@@ -675,13 +675,19 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         uint24 numTicksToRemove_;
         uint24 swapFee;
 
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             let swapVals := tload(swapValsSlot)
             roundedTick := shr(232, swapVals)
             numTicksToRemove_ := shr(232, shl(24, swapVals))
             swapFee := shr(232, shl(48, swapVals))
             tstore(swapValsSlot, 0)
         }
+
+        console.log("afterSwap");
+        console.logInt(roundedTick);
+        console.log("numTicksToRemove: %s", numTicksToRemove_);
+        console.log("swapFee: %s", swapFee);
 
         if (numTicksToRemove_ != 0) {
             PoolId id = key.toId();
@@ -735,7 +741,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 }
             }
             if (amount > 0) {
-                uint256 hookFeeAmount = uint256(amount).mulDivDown(swapFee, SWAP_FEE_BASE).mulWadDown(hookFeesModifier_);
+                uint256 hookFeeAmount = uint256(amount).mulDiv(swapFee, SWAP_FEE_BASE).mulWad(hookFeesModifier_);
                 if (hookFeeAmount != 0) {
                     poolManager.mint(address(this), currency.toId(), hookFeeAmount);
                 }
@@ -760,8 +766,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return feeMin;
 
         uint256 ratio =
-            uint256(postSwapSqrtPriceX96).mulDivDown(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
-        ratio = ratio.mulDivDown(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
+            uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
+        ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
         uint256 delta = stdMath.delta(ratio, SWAP_FEE_BASE);
         // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
         unchecked {

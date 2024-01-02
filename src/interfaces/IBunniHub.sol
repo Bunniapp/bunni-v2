@@ -10,8 +10,8 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
-import {WETH} from "solmate/tokens/WETH.sol";
-import {ERC4626} from "solmate/mixins/ERC4626.sol";
+import {WETH} from "solady/src/tokens/WETH.sol";
+import {ERC4626} from "solady/src/tokens/ERC4626.sol";
 
 import "../lib/Structs.sol";
 import {IERC20} from "./IERC20.sol";

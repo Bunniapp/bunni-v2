@@ -3,10 +3,9 @@ pragma solidity ^0.8.19;
 
 import {stdMath} from "forge-std/StdMath.sol";
 
-import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "./ShiftMode.sol";
@@ -16,7 +15,6 @@ library LibGeometricDistribution {
     using TickMath for int24;
     using FixedPointMathLib for uint160;
     using FixedPointMathLib for uint256;
-    using FullMath for uint256;
 
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
     uint256 internal constant MIN_ALPHA = 1e3;
@@ -55,7 +53,7 @@ library LibGeometricDistribution {
         if (alphaX96 > Q96) {
             // alpha > 1
             // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
-            uint256 alphaInvX96 = Q96.mulDivDown(Q96, alphaX96);
+            uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
 
             // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
             if (x >= length - 1) {
@@ -70,10 +68,10 @@ library LibGeometricDistribution {
                     (-tickSpacing * (length - xPlus1)).getSqrtRatioAtTick()
                 ) * (-tickSpacing * xPlus1).getSqrtRatioAtTick();
 
-                uint256 denominator = stdMath.delta(Q96, alphaX96.mulDivDown(sqrtRatioNegTickSpacing, Q96))
+                uint256 denominator = stdMath.delta(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
                     * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
 
-                cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).mulDiv(numerator, denominator).mulDivDown(
+                cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(
                     alphaX96 - Q96, sqrtRatioMinTick
                 );
             }
@@ -86,17 +84,16 @@ library LibGeometricDistribution {
             } else {
                 uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
 
-                uint256 baseX96 = alphaX96.mulDivDown(sqrtRatioTickSpacing, Q96);
+                uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
                 uint256 numerator1 = alphaX96 - Q96;
                 uint256 denominator1 = baseX96 - Q96;
-                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x), Q96).mulDivDown(
+                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x), Q96).mulDiv(
                     (x * tickSpacing).getSqrtRatioAtTick(), Q96
                 ) - alphaInvPowLengthX96;
 
                 uint256 denominator2 = Q96 - alphaInvPowLengthX96;
-                cumulativeAmount1DensityX96 = Q96.mulDivDown(numerator1, denominator1).mulDivDown(
-                    numerator2, denominator2
-                ).mulDivDown(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
+                cumulativeAmount1DensityX96 = Q96.mulDiv(numerator1, denominator1).mulDiv(numerator2, denominator2)
+                    .mulDiv(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
             }
         } else {
             // alpha <= 1
@@ -108,12 +105,12 @@ library LibGeometricDistribution {
                 // cumulativeAmount0DensityX96 is just 0
                 cumulativeAmount0DensityX96 = 0;
             } else {
-                uint256 baseX96 = alphaX96.mulDivDown(sqrtRatioNegTickSpacing, Q96);
+                uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
                 uint256 numerator =
                     (Q96 - alphaX96) * (baseX96.rpow(uint24(x + 1), Q96) - baseX96.rpow(uint24(length), Q96));
                 uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
                 cumulativeAmount0DensityX96 =
-                    (Q96 - sqrtRatioNegTickSpacing).mulDiv(numerator, denominator).mulDivDown(Q96, sqrtRatioMinTick);
+                    (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(Q96, sqrtRatioMinTick);
             }
 
             // compute cumulativeAmount1DensityX96 for the rounded tick to the left of the rounded current tick
@@ -122,13 +119,13 @@ library LibGeometricDistribution {
                 // cumulativeAmount1DensityX96 is just 0
                 cumulativeAmount1DensityX96 = 0;
             } else {
-                uint256 baseX96 = alphaX96.mulDivDown(sqrtRatioTickSpacing, Q96);
+                uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
                 uint256 numerator = stdMath.delta(
                     sqrtRatioMinTick,
-                    alphaX96.rpow(uint24(x), Q96).mulDivDown((x * tickSpacing + minTick).getSqrtRatioAtTick(), Q96)
+                    alphaX96.rpow(uint24(x), Q96).mulDiv((x * tickSpacing + minTick).getSqrtRatioAtTick(), Q96)
                 ) * (Q96 - alphaX96);
                 uint256 denominator = stdMath.delta(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
-                cumulativeAmount1DensityX96 = (sqrtRatioTickSpacing - Q96).mulDiv(numerator, denominator);
+                cumulativeAmount1DensityX96 = (sqrtRatioTickSpacing - Q96).fullMulDiv(numerator, denominator);
             }
         }
     }
@@ -182,14 +179,14 @@ library LibGeometricDistribution {
         if (alphaX96 > Q96) {
             // alpha > 1
             // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
-            uint256 alphaInvX96 = Q96.mulDivDown(Q96, alphaX96);
-            return alphaInvX96.rpow(uint24(length) - x, Q96).mulDiv(
+            uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
+            return alphaInvX96.rpow(uint24(length) - x, Q96).fullMulDiv(
                 alphaX96 - Q96, Q96 - alphaInvX96.rpow(uint24(length), Q96)
             );
         } else {
             // alpha <= 1
             // will revert if alpha == 1 but that's ok
-            return (Q96 - alphaX96).mulDivDown(alphaX96.rpow(x, Q96), Q96 - alphaX96.rpow(uint24(length), Q96));
+            return (Q96 - alphaX96).mulDiv(alphaX96.rpow(x, Q96), Q96 - alphaX96.rpow(uint24(length), Q96));
         }
     }
 
@@ -218,7 +215,7 @@ library LibGeometricDistribution {
             alpha = uint32(bytes4(ldfParams << 40));
             shiftMode = ShiftMode.BOTH;
         }
-        alphaX96 = alpha.mulDivDown(Q96, ALPHA_BASE);
+        alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
 
         // bound distribution to be within the range of usable ticks
         (int24 minUsableTick, int24 maxUsableTick) =

@@ -20,8 +20,8 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
-import {WETH} from "solmate/tokens/WETH.sol";
-import {ERC4626} from "solmate/mixins/ERC4626.sol";
+import {WETH} from "solady/src/tokens/WETH.sol";
+import {ERC4626} from "solady/src/tokens/ERC4626.sol";
 
 import "../src/lib/Math.sol";
 import "../src/lib/Structs.sol";
@@ -93,9 +93,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         poolManager = new PoolManager(1e7);
 
         // deploy vaults
-        vault0 = new ERC4626Mock(token0, "Vault0", "V0");
-        vault1 = new ERC4626Mock(token1, "Vault1", "V1");
-        vaultWeth = new ERC4626Mock(IERC20(address(weth)), "VaultWeth", "VWETH");
+        vault0 = new ERC4626Mock(token0);
+        vault1 = new ERC4626Mock(token1);
+        vaultWeth = new ERC4626Mock(IERC20(address(weth)));
 
         // mint some initial tokens to the vaults to change the share price
         _mint(Currency.wrap(address(token0)), address(this), 1 ether);

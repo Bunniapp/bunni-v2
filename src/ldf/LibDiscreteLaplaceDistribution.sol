@@ -2,7 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 import "./ShiftMode.sol";
@@ -29,8 +29,7 @@ library LibDiscreteLaplaceDistribution {
         uint256 totalDensityX96 = _totalDensityX96(alphaX96, mu, minTick, maxTick, tickSpacing);
 
         // compute liquidityDensityX96
-        liquidityDensityX96_ =
-            alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDivDown(Q96, totalDensityX96);
+        liquidityDensityX96_ = alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDiv(Q96, totalDensityX96);
 
         // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
         {
@@ -40,26 +39,26 @@ library LibDiscreteLaplaceDistribution {
             if (roundedTick < mu) {
                 uint256 sqrtRatioNegMu = (-mu).getSqrtRatioAtTick();
                 (bool term1DenominatorIsPositive, uint256 term1Denominator) = absDiff(alphaX96, sqrtRatioNegTickSpacing);
-                uint256 x = (-roundedTickRight).getSqrtRatioAtTick().mulDivDown(
+                uint256 x = (-roundedTickRight).getSqrtRatioAtTick().mulDiv(
                     alphaX96.rpow(uint256(int256((mu - roundedTickRight) / tickSpacing)) + 1, Q96), term1Denominator
                 );
-                uint256 y = sqrtRatioNegMu.mulDivDown(alphaX96, term1Denominator);
+                uint256 y = sqrtRatioNegMu.mulDiv(alphaX96, term1Denominator);
                 (bool term1NumeratorIsPositive, uint256 term1) = absDiff(x, y);
-                uint256 term2 = sqrtRatioNegMu.mulDivDown(Q96, Q96 - sqrtRatioNegTickSpacing.mulDivDown(alphaX96, Q96));
+                uint256 term2 = sqrtRatioNegMu.mulDiv(Q96, Q96 - sqrtRatioNegTickSpacing.mulDiv(alphaX96, Q96));
                 if (
                     (term1DenominatorIsPositive && term1NumeratorIsPositive)
                         || (!term1DenominatorIsPositive && !term1NumeratorIsPositive)
                 ) {
-                    cumulativeAmount0DensityX96 = c.mulDivDown(term1 + term2, totalDensityX96);
+                    cumulativeAmount0DensityX96 = c.mulDiv(term1 + term2, totalDensityX96);
                 } else {
-                    cumulativeAmount0DensityX96 = c.mulDivDown(term2 - term1, totalDensityX96);
+                    cumulativeAmount0DensityX96 = c.mulDiv(term2 - term1, totalDensityX96);
                 }
             } else {
-                uint256 numerator = (-roundedTickRight).getSqrtRatioAtTick().mulDivDown(
+                uint256 numerator = (-roundedTickRight).getSqrtRatioAtTick().mulDiv(
                     alphaX96.rpow(uint256(int256((roundedTickRight - mu) / tickSpacing)), Q96), totalDensityX96
                 );
-                uint256 denominator = Q96 - sqrtRatioNegTickSpacing.mulDivDown(alphaX96, Q96);
-                cumulativeAmount0DensityX96 = c.mulDivDown(numerator, denominator);
+                uint256 denominator = Q96 - sqrtRatioNegTickSpacing.mulDiv(alphaX96, Q96);
+                cumulativeAmount0DensityX96 = c.mulDiv(numerator, denominator);
             }
         }
 
@@ -69,24 +68,24 @@ library LibDiscreteLaplaceDistribution {
             uint256 c = sqrtRatioTickSpacing - Q96;
             int24 roundedTickLeft = roundedTick - tickSpacing;
             if (roundedTickLeft < mu) {
-                uint256 term1 = roundedTick.getSqrtRatioAtTick().mulDivDown(
+                uint256 term1 = roundedTick.getSqrtRatioAtTick().mulDiv(
                     alphaX96.rpow(uint256(int256((mu - roundedTickLeft) / tickSpacing)), Q96),
                     sqrtRatioTickSpacing - alphaX96
                 );
-                cumulativeAmount1DensityX96 = c.mulDivDown(term1, totalDensityX96);
+                cumulativeAmount1DensityX96 = c.mulDiv(term1, totalDensityX96);
             } else {
                 uint256 sqrtRatioMu = mu.getSqrtRatioAtTick();
-                uint256 denominatorSub = sqrtRatioTickSpacing.mulDivDown(alphaX96, Q96);
+                uint256 denominatorSub = sqrtRatioTickSpacing.mulDiv(alphaX96, Q96);
                 (bool denominatorIsPositive, uint256 denominator) = absDiff(Q96, denominatorSub);
-                uint256 x = alphaX96.mulDivDown(sqrtRatioMu, sqrtRatioTickSpacing - alphaX96);
-                uint256 y = sqrtRatioMu.mulDivDown(Q96, denominator);
-                uint256 z = roundedTick.getSqrtRatioAtTick().mulDivDown(
+                uint256 x = alphaX96.mulDiv(sqrtRatioMu, sqrtRatioTickSpacing - alphaX96);
+                uint256 y = sqrtRatioMu.mulDiv(Q96, denominator);
+                uint256 z = roundedTick.getSqrtRatioAtTick().mulDiv(
                     alphaX96.rpow(uint256(int256((roundedTick - mu) / tickSpacing)), Q96), denominator
                 );
                 if (denominatorIsPositive) {
-                    cumulativeAmount1DensityX96 = c.mulDivDown(x + y - z, totalDensityX96);
+                    cumulativeAmount1DensityX96 = c.mulDiv(x + y - z, totalDensityX96);
                 } else {
-                    cumulativeAmount1DensityX96 = c.mulDivDown(x + z - y, totalDensityX96);
+                    cumulativeAmount1DensityX96 = c.mulDiv(x + z - y, totalDensityX96);
                 }
             }
         }
@@ -104,7 +103,7 @@ library LibDiscreteLaplaceDistribution {
             TickMath.maxUsableTick(tickSpacing) - tickSpacing,
             tickSpacing
         );
-        return alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDivDown(Q96, totalDensityX96);
+        return alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDiv(Q96, totalDensityX96);
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
@@ -135,8 +134,8 @@ library LibDiscreteLaplaceDistribution {
         pure
         returns (uint256)
     {
-        return alphaX96.mulDivDown(
-            Q96 + Q96.mulDivDown(Q96, alphaX96) - alphaX96.rpow(uint256(int256((mu - minTick) / tickSpacing)), Q96)
+        return alphaX96.mulDiv(
+            Q96 + Q96.mulDiv(Q96, alphaX96) - alphaX96.rpow(uint256(int256((mu - minTick) / tickSpacing)), Q96)
                 - alphaX96.rpow(uint256(int256((maxTick - mu) / tickSpacing)), Q96),
             Q96 - alphaX96
         );
@@ -163,6 +162,6 @@ library LibDiscreteLaplaceDistribution {
             alpha = uint256(uint64(bytes8(ldfParams << 24)));
             shiftMode = ShiftMode.BOTH;
         }
-        alphaX96 = alpha.mulDivDown(Q96, WAD);
+        alphaX96 = alpha.mulDiv(Q96, WAD);
     }
 }

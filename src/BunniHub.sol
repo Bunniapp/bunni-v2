@@ -11,10 +11,10 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import {WETH} from "solady/src/tokens/WETH.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-
-import {WETH} from "solmate/tokens/WETH.sol";
+import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
@@ -24,7 +24,6 @@ import {BunniHubLogic} from "./lib/BunniHubLogic.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
 import {Permit2Enabled} from "./lib/Permit2Enabled.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
-import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -37,7 +36,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
-    using SafeTransferLib for IERC20;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
 
@@ -497,7 +495,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 }
             }
 
-            token.safeApprove(address(vault), absAmount);
+            address(token).safeApprove(address(vault), absAmount);
             return vault.deposit(absAmount, address(this)).toInt256();
         } else if (amount < 0) {
             if (currency.isNative()) {

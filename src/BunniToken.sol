@@ -12,13 +12,15 @@ import {IBunniToken} from "./interfaces/IBunniToken.sol";
 /// @notice ERC20 token that represents a user's LP position
 contract BunniToken is IBunniToken, ERC20 {
     IBunniHub public immutable override hub;
+    IERC20 public immutable override token0;
+    IERC20 public immutable override token1;
 
     error BunniToken__NotBunniHub();
 
-    constructor(IBunniHub hub_, IERC20 token0, IERC20 token1)
-        ERC20(string(abi.encodePacked("Bunni ", _symbol(token0), "/", _symbol(token1), " LP")), "BUNNI-LP", 18)
-    {
+    constructor(IBunniHub hub_, IERC20 token0_, IERC20 token1_) {
         hub = hub_;
+        token0 = token0_;
+        token1 = token1_;
     }
 
     function mint(address to, uint256 amount) external override {
@@ -31,6 +33,14 @@ contract BunniToken is IBunniToken, ERC20 {
         if (msg.sender != address(hub)) revert BunniToken__NotBunniHub();
 
         _burn(from, amount);
+    }
+
+    function name() public view override(ERC20, IERC20) returns (string memory) {
+        return string(abi.encodePacked("Bunni ", _symbol(token0), "/", _symbol(token1), " LP"));
+    }
+
+    function symbol() public view override(ERC20, IERC20) returns (string memory) {
+        return string(abi.encodePacked("BUNNI-", _symbol(token0), "-", _symbol(token1), "-LP"));
     }
 
     function _symbol(IERC20 token) internal view returns (string memory) {
