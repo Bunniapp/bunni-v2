@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
-import {console} from "forge-std/console.sol";
+import {console2} from "forge-std/console2.sol";
 
 import {stdMath} from "forge-std/StdMath.sol";
 
@@ -684,10 +684,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             tstore(swapValsSlot, 0)
         }
 
-        console.log("afterSwap");
-        console.logInt(roundedTick);
-        console.log("numTicksToRemove: %s", numTicksToRemove_);
-        console.log("swapFee: %s", swapFee);
+        // no clue why but this is needed to make the compiler happy about the tload/tstore opcodes
+        // replacing tstore/tload with sstore/sload works so it's probably a compiler issue
+        console2.log(swapFee);
 
         if (numTicksToRemove_ != 0) {
             PoolId id = key.toId();
