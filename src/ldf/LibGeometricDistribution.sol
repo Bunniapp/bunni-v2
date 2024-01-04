@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import {stdMath} from "forge-std/StdMath.sol";
 
+import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -13,13 +14,18 @@ import "../lib/Math.sol";
 
 library LibGeometricDistribution {
     using TickMath for int24;
+    using SafeCastLib for int256;
+    using SafeCastLib for uint256;
+    using FixedPointMathLib for int256;
     using FixedPointMathLib for uint160;
     using FixedPointMathLib for uint256;
 
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
+    uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
+    int256 internal constant TICK_BASE = 1.0001e18;
 
     function query(int24 roundedTick, int24 tickSpacing, int24 minTick, int24 length, uint256 alphaX96)
         internal
@@ -128,6 +134,52 @@ library LibGeometricDistribution {
                 cumulativeAmount1DensityX96 = (sqrtRatioTickSpacing - Q96).fullMulDiv(numerator, denominator);
             }
         }
+    }
+
+    function inverseCumulativeAmount0(
+        uint256 cumulativeAmount0,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alphaX96
+    ) internal pure returns (uint160 sqrtPriceX96) {
+        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0.mulDiv(Q96, totalLiquidity);
+
+        uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtRatioAtTick();
+        uint256 sqrtRatioMinTick = minTick.getSqrtRatioAtTick();
+        uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
+        int256 lnBaseWad = int256(baseX96.mulDiv(WAD, Q96)).lnWad(); // int256 conversion is safe since baseX96 < Q96
+
+        uint256 basePowXWad;
+        if (alphaX96 > Q96) {
+            // alpha > 1
+            // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
+            uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
+
+            uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
+            uint256 denominator = stdMath.delta(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
+            uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, alphaX96 - Q96).fullMulDiv(
+                denominator, Q96 - sqrtRatioNegTickSpacing
+            );
+            uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtRatioAtTick();
+            basePowXWad = (
+                (
+                    Q96 >= baseX96
+                        ? numerator + (sqrtRatioNegTickSpacingMulLength << 96)
+                        : (sqrtRatioNegTickSpacingMulLength << 96) - numerator
+                ) >> 96
+            ).divWad(alphaInvPowLengthX96);
+        } else {
+            uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
+            uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, Q96).fullMulDiv(
+                denominator, Q96 - sqrtRatioNegTickSpacing
+            );
+            basePowXWad = (numerator / (Q96 - alphaX96) + baseX96.rpow(uint24(length), Q96)).mulDiv(WAD, Q96);
+        }
+        int256 xWad = basePowXWad.toInt256().lnWad().sDivWad(lnBaseWad);
+        int256 tickWad = xWad * int256(tickSpacing) + int256(minTick) * int256(WAD);
+        sqrtPriceX96 = TICK_BASE.powWad(-(tickWad / 2)).sMulWad(int256(Q96)).toUint256().toUint160();
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
