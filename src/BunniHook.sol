@@ -258,8 +258,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         // so that we can immediately start querying the oracle
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
         (,,,, uint24 feeTwapSecondsAgo) = _decodeParams(hookParams);
-        (_states[id].cardinality, _states[id].cardinalityNext) =
-            _observations[id].initialize(uint32(block.timestamp - max(twapSecondsAgo, feeTwapSecondsAgo)), tick);
+        (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
+            uint32(block.timestamp - FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo)), tick
+        );
 
         return BunniHook.afterInitialize.selector;
     }
@@ -771,7 +772,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
         unchecked {
             uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);
-            return uint24(min(feeMin + quadraticTerm, feeMax));
+            return uint24(FixedPointMathLib.min(feeMin + quadraticTerm, feeMax));
         }
     }
 

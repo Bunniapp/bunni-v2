@@ -29,7 +29,8 @@ library LibDiscreteLaplaceDistribution {
         uint256 totalDensityX96 = _totalDensityX96(alphaX96, mu, minTick, maxTick, tickSpacing);
 
         // compute liquidityDensityX96
-        liquidityDensityX96_ = alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDiv(Q96, totalDensityX96);
+        liquidityDensityX96_ =
+            alphaX96.rpow(FixedPointMathLib.abs((roundedTick - mu) / tickSpacing), Q96).mulDiv(Q96, totalDensityX96);
 
         // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
         {
@@ -103,7 +104,7 @@ library LibDiscreteLaplaceDistribution {
             TickMath.maxUsableTick(tickSpacing) - tickSpacing,
             tickSpacing
         );
-        return alphaX96.rpow(abs((roundedTick - mu) / tickSpacing), Q96).mulDiv(Q96, totalDensityX96);
+        return alphaX96.rpow(FixedPointMathLib.abs((roundedTick - mu) / tickSpacing), Q96).mulDiv(Q96, totalDensityX96);
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {

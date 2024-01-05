@@ -251,7 +251,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         _settleCurrency(input.user, input.poolKey.currency0, settleDelta.amount0());
         _settleCurrency(input.user, input.poolKey.currency1, settleDelta.amount1());
 
-        (returnData.amount0, returnData.amount1) = (abs(delta.amount0()), abs(delta.amount1()));
+        (returnData.amount0, returnData.amount1) =
+            (FixedPointMathLib.abs(delta.amount0()), FixedPointMathLib.abs(delta.amount1()));
     }
 
     /// @dev Adds liquidity using a pool's reserves. Expected to be called by the pool's hook.
@@ -479,7 +480,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         internal
         returns (int256 reserveChange)
     {
-        uint256 absAmount = stdMath.abs(amount);
+        uint256 absAmount = FixedPointMathLib.abs(amount);
         if (amount > 0) {
             IERC20 token;
             if (currency.isNative()) {

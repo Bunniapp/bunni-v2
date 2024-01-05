@@ -87,7 +87,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         uint256 alphaX96 = (alpha << 96) / 1e8;
         uint128 liquidity = 1 << 96;
-        uint256 maxError = 1e9;
+        uint256 maxError = 1e3; // 1e-15
         int24 roundedTick = roundTickSingle(tick, tickSpacing);
 
         console2.log("roundedTick", roundedTick);
@@ -105,6 +105,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         int24 expectedTick = roundedTick < minTick
             ? minTick
             : roundedTick >= minTick + length * tickSpacing ? minTick + length * tickSpacing : roundedTick + tickSpacing;
+        console2.log("x", (expectedTick - minTick) / tickSpacing);
         uint160 expectedSqrtPriceX96 = TickMath.getSqrtRatioAtTick(expectedTick);
         console2.log("expectedSqrtPriceX96", expectedSqrtPriceX96);
 

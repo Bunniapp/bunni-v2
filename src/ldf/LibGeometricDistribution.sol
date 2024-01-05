@@ -12,9 +12,11 @@ import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
+import "../lib/ExpMath.sol";
 
 library LibGeometricDistribution {
     using TickMath for int24;
+    using ExpMath for int256;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using FixedPointMathLib for int256;
@@ -26,7 +28,6 @@ library LibGeometricDistribution {
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
-    int256 internal constant TICK_BASE = 1.0001e18;
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
 
     function query(int24 roundedTick, int24 tickSpacing, int24 minTick, int24 length, uint256 alphaX96)
@@ -155,7 +156,7 @@ library LibGeometricDistribution {
         uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtRatioAtTick();
         uint256 sqrtRatioMinTick = minTick.getSqrtRatioAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
-        int256 lnBaseWad = int256(baseX96.mulDiv(WAD, Q96)).lnWad(); // int256 conversion is safe since baseX96 < Q96
+        int256 lnBaseX96 = int256(baseX96).lnQ96(); // int256 conversion is safe since baseX96 < Q96
 
         int256 xWad;
         if (alphaX96 > Q96) {
@@ -169,28 +170,35 @@ library LibGeometricDistribution {
                 denominator, Q96 - sqrtRatioNegTickSpacing
             );
             uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtRatioAtTick();
-            uint256 tmpWad = (
+            uint256 tmpX96 = (
                 (
                     Q96 >= baseX96
                         ? (sqrtRatioNegTickSpacingMulLength << 96) + numerator
                         : (sqrtRatioNegTickSpacingMulLength << 96) - numerator
                 ) >> 96
-            ).mulDiv(WAD, Q96);
-            xWad = (tmpWad.toInt256().lnWad() + int256(length) * int256(alphaX96.mulDiv(WAD, Q96)).lnWad()).sDivWad(
-                lnBaseWad
             );
+            xWad = (tmpX96.toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96()).sDivWad(lnBaseX96);
         } else {
             uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
             uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, Q96).fullMulDiv(
                 denominator, Q96 - sqrtRatioNegTickSpacing
             );
-            uint256 basePowXWad = (numerator / (Q96 - alphaX96) + baseX96.rpow(uint24(length), Q96)).mulDiv(WAD, Q96);
-            xWad = basePowXWad.toInt256().lnWad().sDivWad(lnBaseWad);
+            uint256 basePowXX96 = (numerator / (Q96 - alphaX96) + baseX96.rpow(uint24(length), Q96));
+            xWad = basePowXX96.toInt256().lnQ96().sDivWad(lnBaseX96);
         }
-        console2.log("xWad", xWad);
+
+        // round xWad to reduce error
+        // limits tick precision to 1e-6 of a tick
+        int256 remainder = xWad % 1e12;
+        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
+        // if (remainder > 5e11) xWad += 1e12;
+        assembly {
+            xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
+        }
+
         int256 tickWad = xWad * int256(tickSpacing) + int256(minTick) * int256(WAD);
-        console2.log("tickWad", tickWad);
-        sqrtPriceX96 = TICK_BASE.powWad(tickWad / 2).toUint256().mulWad(Q96).toUint160();
+
+        sqrtPriceX96 = tickWad.getSqrtRatioAtTickWad();
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {

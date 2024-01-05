@@ -16,8 +16,8 @@ import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 
 import {WETH} from "solady/src/tokens/WETH.sol";
-import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 import "./Math.sol";
 import "./Structs.sol";
@@ -238,7 +238,7 @@ library BunniHubLogic {
             // compute how much liquidity we'd get from the desired token amounts
             uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
             uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-            uint256 totalLiquidity = min(
+            uint256 totalLiquidity = FixedPointMathLib.min(
                 totalDensity0X96 == 0
                     ? type(uint256).max
                     : inputData.params.amount0Desired.mulDiv(Q96, totalDensity0X96),
@@ -284,16 +284,16 @@ library BunniHubLogic {
                 } else {
                     // both are non-zero
                     (returnData.amount0, returnData.amount1, returnData.addedLiquidity) = (
-                        min(
+                        FixedPointMathLib.min(
                             inputData.params.amount0Desired,
                             returnData.amount0.mulDiv(inputData.params.amount1Desired, returnData.amount1)
                             ),
-                        min(
+                        FixedPointMathLib.min(
                             inputData.params.amount1Desired,
                             returnData.amount1.mulDiv(inputData.params.amount0Desired, returnData.amount0)
                             ),
                         uint128(
-                            min(
+                            FixedPointMathLib.min(
                                 returnData.addedLiquidity.mulDiv(inputData.params.amount0Desired, returnData.amount0),
                                 returnData.addedLiquidity.mulDiv(inputData.params.amount1Desired, returnData.amount1)
                             )
@@ -320,10 +320,14 @@ library BunniHubLogic {
             // compute amount0 and amount1 such that the ratio is the same as the current ratio
             returnData.amount0 = vars.assets1 == 0
                 ? inputData.params.amount0Desired
-                : min(inputData.params.amount0Desired, inputData.params.amount1Desired.mulDiv(vars.assets0, vars.assets1));
+                : FixedPointMathLib.min(
+                    inputData.params.amount0Desired, inputData.params.amount1Desired.mulDiv(vars.assets0, vars.assets1)
+                );
             returnData.amount1 = vars.assets0 == 0
                 ? inputData.params.amount1Desired
-                : min(inputData.params.amount1Desired, inputData.params.amount0Desired.mulDiv(vars.assets1, vars.assets0));
+                : FixedPointMathLib.min(
+                    inputData.params.amount1Desired, inputData.params.amount0Desired.mulDiv(vars.assets1, vars.assets0)
+                );
 
             // compute added liquidity using current liquidity
             returnData.addedLiquidity = inputData.currentLiquidity.mulDiv(
@@ -572,7 +576,7 @@ library BunniHubLogic {
             shareToken.mint(address(0), MIN_INITIAL_SHARES);
         } else {
             // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
-            shares = min(
+            shares = FixedPointMathLib.min(
                 existingAmount0 == 0 ? type(uint256).max : existingShareSupply.mulDiv(addedAmount0, existingAmount0),
                 existingAmount1 == 0 ? type(uint256).max : existingShareSupply.mulDiv(addedAmount1, existingAmount1)
             );
