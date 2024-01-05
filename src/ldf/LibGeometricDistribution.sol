@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import {console2} from "forge-std/console2.sol";
 import {stdMath} from "forge-std/StdMath.sol";
 
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
@@ -26,6 +27,7 @@ library LibGeometricDistribution {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
     int256 internal constant TICK_BASE = 1.0001e18;
+    uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
 
     function query(int24 roundedTick, int24 tickSpacing, int24 minTick, int24 length, uint256 alphaX96)
         internal
@@ -145,13 +147,17 @@ library LibGeometricDistribution {
         uint256 alphaX96
     ) internal pure returns (uint160 sqrtPriceX96) {
         uint256 cumulativeAmount0DensityX96 = cumulativeAmount0.mulDiv(Q96, totalLiquidity);
+        if (cumulativeAmount0DensityX96 == 0) {
+            // return right boundary of distribution
+            return (minTick + length * tickSpacing).getSqrtRatioAtTick();
+        }
 
         uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtRatioAtTick();
         uint256 sqrtRatioMinTick = minTick.getSqrtRatioAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
         int256 lnBaseWad = int256(baseX96.mulDiv(WAD, Q96)).lnWad(); // int256 conversion is safe since baseX96 < Q96
 
-        uint256 basePowXWad;
+        int256 xWad;
         if (alphaX96 > Q96) {
             // alpha > 1
             // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
@@ -163,26 +169,32 @@ library LibGeometricDistribution {
                 denominator, Q96 - sqrtRatioNegTickSpacing
             );
             uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtRatioAtTick();
-            basePowXWad = (
+            uint256 tmpWad = (
                 (
                     Q96 >= baseX96
-                        ? numerator + (sqrtRatioNegTickSpacingMulLength << 96)
+                        ? (sqrtRatioNegTickSpacingMulLength << 96) + numerator
                         : (sqrtRatioNegTickSpacingMulLength << 96) - numerator
                 ) >> 96
-            ).divWad(alphaInvPowLengthX96);
+            ).mulDiv(WAD, Q96);
+            xWad = (tmpWad.toInt256().lnWad() + int256(length) * int256(alphaX96.mulDiv(WAD, Q96)).lnWad()).sDivWad(
+                lnBaseWad
+            );
         } else {
             uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
             uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, Q96).fullMulDiv(
                 denominator, Q96 - sqrtRatioNegTickSpacing
             );
-            basePowXWad = (numerator / (Q96 - alphaX96) + baseX96.rpow(uint24(length), Q96)).mulDiv(WAD, Q96);
+            uint256 basePowXWad = (numerator / (Q96 - alphaX96) + baseX96.rpow(uint24(length), Q96)).mulDiv(WAD, Q96);
+            xWad = basePowXWad.toInt256().lnWad().sDivWad(lnBaseWad);
         }
-        int256 xWad = basePowXWad.toInt256().lnWad().sDivWad(lnBaseWad);
+        console2.log("xWad", xWad);
         int256 tickWad = xWad * int256(tickSpacing) + int256(minTick) * int256(WAD);
-        sqrtPriceX96 = TICK_BASE.powWad(-(tickWad / 2)).sMulWad(int256(Q96)).toUint256().toUint160();
+        console2.log("tickWad", tickWad);
+        sqrtPriceX96 = TICK_BASE.powWad(tickWad / 2).toUint256().mulWad(Q96).toUint160();
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        int24 minTick;
         int24 length;
         uint256 alpha;
         if (twapSecondsAgo != 0) {
@@ -193,7 +205,7 @@ library LibGeometricDistribution {
         } else {
             // static minTick set in params
             // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | 0 - 2 bytes |
-            int24 minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
+            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
             length = int24(int16(uint16(bytes2(ldfParams << 24))));
             alpha = uint32(bytes4(ldfParams << 40));
 
@@ -211,6 +223,24 @@ library LibGeometricDistribution {
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         if (length > maxUsableTick / tickSpacing || -length < minUsableTick / tickSpacing) return false;
+
+        // ensure liquidity density is nowhere equal to zero
+        // can check boundaries since function is monotonic
+        uint256 alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
+        uint256 minLiquidityDensityX96;
+        if (alpha > ALPHA_BASE) {
+            // monotonically increasing
+            // check left boundary
+            minLiquidityDensityX96 = liquidityDensityX96(minTick, tickSpacing, minTick, length, alphaX96);
+        } else {
+            // monotonically decreasing
+            // check right boundary
+            minLiquidityDensityX96 =
+                liquidityDensityX96(minTick + (length - 1) * tickSpacing, tickSpacing, minTick, length, alphaX96);
+        }
+        if (minLiquidityDensityX96 < MIN_LIQUIDITY_DENSITY) {
+            return false;
+        }
 
         // if all conditions are met, return true
         return true;
