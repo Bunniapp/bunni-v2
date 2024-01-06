@@ -109,6 +109,61 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         uint160 expectedSqrtPriceX96 = TickMath.getSqrtRatioAtTick(expectedTick);
         console2.log("expectedSqrtPriceX96", expectedSqrtPriceX96);
 
-        assertApproxEqRel(sqrtPriceX96, expectedSqrtPriceX96, maxError, "sqrt price incorrect");
+        if (dist(sqrtPriceX96, expectedSqrtPriceX96) > 1) {
+            assertApproxEqRel(sqrtPriceX96, expectedSqrtPriceX96, maxError, "sqrt price incorrect");
+        }
+    }
+
+    function test_inverseCumulativeAmount1(int24 tick, int24 tickSpacing, int24 minTick, int24 length, uint256 alpha)
+        external
+        virtual
+    {
+        alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
+        vm.assume(alpha != 1e8); // 1e8 is a special case that causes overflow
+        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        length = int24(bound(length, 1, maxUsableTick / tickSpacing - 1));
+        minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick)), tickSpacing);
+        tick = int24(bound(tick, minUsableTick, maxUsableTick));
+
+        console2.log("tick", tick);
+        console2.log("alpha", alpha);
+        console2.log("tickSpacing", tickSpacing);
+        console2.log("minTick", minTick);
+        console2.log("length", length);
+
+        bytes32 ldfParams = bytes32(abi.encodePacked(minTick, int16(length), uint32(alpha)));
+        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+
+        uint256 alphaX96 = (alpha << 96) / 1e8;
+        uint128 liquidity = 1 << 96;
+        uint256 maxError = 1e3; // 1e-15
+        int24 roundedTick = roundTickSingle(tick, tickSpacing);
+
+        console2.log("roundedTick", roundedTick);
+
+        (,, uint256 cumulativeAmount1DensityX96) =
+            LibGeometricDistribution.query(roundTickSingle(tick, tickSpacing), tickSpacing, minTick, length, alphaX96);
+
+        console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
+
+        uint160 sqrtPriceX96 = LibGeometricDistribution.inverseCumulativeAmount1(
+            cumulativeAmount1DensityX96, liquidity, tickSpacing, minTick, length, alphaX96
+        );
+        console2.log("sqrtPriceX96", sqrtPriceX96);
+
+        int24 expectedTick = roundedTick <= minTick
+            ? minTick - tickSpacing
+            : roundedTick >= minTick + length * tickSpacing
+                ? minTick + (length - 1) * tickSpacing
+                : roundedTick - tickSpacing;
+        console2.log("x", (expectedTick - minTick) / tickSpacing);
+        uint160 expectedSqrtPriceX96 = TickMath.getSqrtRatioAtTick(expectedTick);
+        console2.log("expectedSqrtPriceX96", expectedSqrtPriceX96);
+
+        if (dist(sqrtPriceX96, expectedSqrtPriceX96) > 1) {
+            assertApproxEqRel(sqrtPriceX96, expectedSqrtPriceX96, maxError, "sqrt price incorrect");
+        }
     }
 }

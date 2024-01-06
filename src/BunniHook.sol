@@ -768,7 +768,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         uint256 ratio =
             uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
         ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
-        uint256 delta = stdMath.delta(ratio, SWAP_FEE_BASE);
+        uint256 delta = dist(ratio, SWAP_FEE_BASE);
         // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
         unchecked {
             uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);

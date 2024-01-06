@@ -6,6 +6,14 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 /// @dev modified from solady
+function dist(uint256 x, uint256 y) pure returns (uint256 z) {
+    /// @solidity memory-safe-assembly
+    assembly {
+        z := xor(mul(xor(sub(y, x), sub(x, y)), gt(x, y)), sub(y, x))
+    }
+}
+
+/// @dev modified from solady
 function absDiff(uint256 x, uint256 y) pure returns (bool positive, uint256 diff) {
     /// @solidity memory-safe-assembly
     assembly {

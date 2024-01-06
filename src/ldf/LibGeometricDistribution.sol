@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
-import {console2} from "forge-std/console2.sol";
-import {stdMath} from "forge-std/StdMath.sol";
-
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
@@ -72,12 +69,12 @@ library LibGeometricDistribution {
             } else {
                 int24 xPlus1 = x + 1; // the rounded tick to the right of the current rounded tick
 
-                uint256 numerator = stdMath.delta(
+                uint256 numerator = dist(
                     alphaInvX96.rpow(uint24(length - xPlus1), Q96),
                     (-tickSpacing * (length - xPlus1)).getSqrtRatioAtTick()
                 ) * (-tickSpacing * xPlus1).getSqrtRatioAtTick();
 
-                uint256 denominator = stdMath.delta(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
+                uint256 denominator = dist(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
                     * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
 
                 cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(
@@ -99,7 +96,6 @@ library LibGeometricDistribution {
                 uint256 numerator2 = alphaInvX96.rpow(uint24(length - x), Q96).mulDiv(
                     (x * tickSpacing).getSqrtRatioAtTick(), Q96
                 ) - alphaInvPowLengthX96;
-
                 uint256 denominator2 = Q96 - alphaInvPowLengthX96;
                 cumulativeAmount1DensityX96 = Q96.mulDiv(numerator1, denominator1).mulDiv(numerator2, denominator2)
                     .mulDiv(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
@@ -129,12 +125,10 @@ library LibGeometricDistribution {
                 cumulativeAmount1DensityX96 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
-                uint256 numerator = stdMath.delta(
-                    sqrtRatioMinTick,
-                    alphaX96.rpow(uint24(x), Q96).mulDiv((x * tickSpacing + minTick).getSqrtRatioAtTick(), Q96)
-                ) * (Q96 - alphaX96);
-                uint256 denominator = stdMath.delta(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
-                cumulativeAmount1DensityX96 = (sqrtRatioTickSpacing - Q96).fullMulDiv(numerator, denominator);
+                uint256 numerator = dist(Q96, baseX96.rpow(uint24(x), Q96)) * (Q96 - alphaX96);
+                uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
+                cumulativeAmount1DensityX96 =
+                    (sqrtRatioTickSpacing - Q96).fullMulDiv(numerator, denominator).mulDiv(sqrtRatioMinTick, Q96);
             }
         }
     }
@@ -165,7 +159,7 @@ library LibGeometricDistribution {
             uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
 
             uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
-            uint256 denominator = stdMath.delta(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
+            uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
             uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, alphaX96 - Q96).fullMulDiv(
                 denominator, Q96 - sqrtRatioNegTickSpacing
             );
@@ -185,6 +179,64 @@ library LibGeometricDistribution {
             );
             uint256 basePowXX96 = (numerator / (Q96 - alphaX96) + baseX96.rpow(uint24(length), Q96));
             xWad = basePowXX96.toInt256().lnQ96().sDivWad(lnBaseX96);
+        }
+
+        // round xWad to reduce error
+        // limits tick precision to 1e-6 of a tick
+        int256 remainder = xWad % 1e12;
+        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
+        // if (remainder > 5e11) xWad += 1e12;
+        assembly {
+            xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
+        }
+
+        int256 tickWad = xWad * int256(tickSpacing) + int256(minTick) * int256(WAD);
+
+        sqrtPriceX96 = tickWad.getSqrtRatioAtTickWad();
+    }
+
+    function inverseCumulativeAmount1(
+        uint256 cumulativeAmount1,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alphaX96
+    ) internal pure returns (uint160 sqrtPriceX96) {
+        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1.mulDiv(Q96, totalLiquidity);
+        if (cumulativeAmount1DensityX96 == 0) {
+            // return left boundary of distribution
+            return (minTick - tickSpacing).getSqrtRatioAtTick();
+        }
+
+        uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtRatioAtTick();
+        uint256 sqrtRatioNegMinTick = (-minTick).getSqrtRatioAtTick();
+        uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
+        int256 lnBaseX96 = int256(baseX96).lnQ96(); // int256 conversion is safe since baseX96 < Q96
+
+        int256 xWad;
+        if (alphaX96 > Q96) {
+            // alpha > 1
+            // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
+            uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
+            uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
+
+            uint256 numerator1 = alphaX96 - Q96;
+            uint256 denominator1 = baseX96 - Q96;
+            uint256 denominator2 = Q96 - alphaInvPowLengthX96;
+            uint256 numerator2 = cumulativeAmount1DensityX96.mulDiv(denominator1, numerator1).mulDiv(
+                denominator2, sqrtRatioTickSpacing - Q96
+            ).mulDiv(sqrtRatioNegMinTick, Q96);
+            xWad = ((numerator2 + alphaInvPowLengthX96).toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96())
+                .sDivWad(lnBaseX96) - int256(WAD);
+        } else {
+            uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
+            uint256 numerator = cumulativeAmount1DensityX96.fullMulDiv(denominator, Q96).fullMulDiv(
+                sqrtRatioNegMinTick, sqrtRatioTickSpacing - Q96
+            );
+            uint256 basePowXPlusOneX96 =
+                Q96 > baseX96 ? Q96 - numerator / (Q96 - alphaX96) : Q96 + numerator / (Q96 - alphaX96);
+            xWad = basePowXPlusOneX96.toInt256().lnQ96().sDivWad(lnBaseX96) - int256(WAD);
         }
 
         // round xWad to reduce error
