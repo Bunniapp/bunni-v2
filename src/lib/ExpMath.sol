@@ -18,6 +18,9 @@ library ExpMath {
     int256 internal constant HALF_LN_TICK_BASE = 49997500166654; // 1/2 ln(1.0001) * WAD
     int256 internal constant HALF_LN_TICK_BASE_Q96 = 3961210068510634698400736; // 1/2 ln(1.0001) * Q96
 
+    /// @dev The output is undefined, as the input is less-than-or-equal to zero.
+    error LnQ96Undefined();
+
     /// @dev The operation failed, as the output exceeds the maximum value of uint256.
     error ExpOverflow();
 
