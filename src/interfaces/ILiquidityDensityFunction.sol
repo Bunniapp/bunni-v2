@@ -24,6 +24,26 @@ interface ILiquidityDensityFunction {
             bytes32 newLdfState
         );
 
+    function inverseCumulativeAmount0(
+        uint256 cumulativeAmount0,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 twapTick,
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external view returns (uint160 sqrtPriceX96);
+
+    function inverseCumulativeAmount1(
+        uint256 cumulativeAmount1,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 twapTick,
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external view returns (uint160 sqrtPriceX96);
+
     function liquidityDensityX96(
         PoolKey calldata key,
         int24 roundedTick,

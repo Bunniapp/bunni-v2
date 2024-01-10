@@ -106,9 +106,6 @@ library LibDiscreteLaplaceDistribution {
         uint256 alphaX96
     ) internal pure returns (uint160 sqrtPriceX96) {
         uint256 cumulativeAmount0DensityX96 = cumulativeAmount0.mulDiv(Q96, totalLiquidity);
-        if (cumulativeAmount0DensityX96 == 0) {
-            // TODO: return the right-most tick with non-zero liquidity
-        }
 
         (int24 minTick, int24 maxTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
@@ -171,9 +168,6 @@ library LibDiscreteLaplaceDistribution {
         uint256 alphaX96
     ) internal pure returns (uint160 sqrtPriceX96) {
         uint256 cumulativeAmount1DensityX96 = cumulativeAmount1.mulDiv(Q96, totalLiquidity);
-        if (cumulativeAmount1DensityX96 == 0) {
-            // TODO: return the left-most tick with non-zero liquidity
-        }
 
         (int24 minTick, int24 maxTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
@@ -203,9 +197,12 @@ library LibDiscreteLaplaceDistribution {
                 uint256 y = sqrtRatioMu.mulDiv(Q96, denominator);
                 uint256 yzDist = cumulativeAmount1DensityX96.mulDiv(totalDensityX96, c) - x;
                 uint256 z = denominatorIsPositive ? y - yzDist : y + yzDist;
+                console2.log("z", z);
+                console2.log("ln input", z.mulDiv(denominator, sqrtRatioMu));
                 xWad =
                     z.mulDiv(denominator, sqrtRatioMu).toInt256().lnQ96().sDivWad(int256(baseX96).lnQ96()) - int256(WAD);
             }
+            console2.log("xWadSecond", xWad);
         }
 
         // round xWad to reduce error

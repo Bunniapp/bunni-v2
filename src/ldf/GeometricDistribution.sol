@@ -41,6 +41,48 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         newLdfState = _encodeState(minTick);
     }
 
+    function inverseCumulativeAmount0(
+        uint256 cumulativeAmount0,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 twapTick,
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external pure override returns (uint160 sqrtPriceX96) {
+        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+            LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
+        if (initialized) {
+            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
+        }
+
+        return LibGeometricDistribution.inverseCumulativeAmount0(
+            cumulativeAmount0, totalLiquidity, tickSpacing, minTick, length, alphaX96
+        );
+    }
+
+    function inverseCumulativeAmount1(
+        uint256 cumulativeAmount1,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 twapTick,
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external pure override returns (uint160 sqrtPriceX96) {
+        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+            LibGeometricDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
+        if (initialized) {
+            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
+        }
+
+        return LibGeometricDistribution.inverseCumulativeAmount1(
+            cumulativeAmount1, totalLiquidity, tickSpacing, minTick, length, alphaX96
+        );
+    }
+
     function liquidityDensityX96(
         PoolKey calldata key,
         int24 roundedTick,

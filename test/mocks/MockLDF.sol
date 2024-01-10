@@ -48,6 +48,48 @@ contract MockLDF is ILiquidityDensityFunction {
         newLdfState = _encodeState(mu);
     }
 
+    function inverseCumulativeAmount0(
+        uint256 cumulativeAmount0,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 twapTick,
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external pure override returns (uint160 sqrtPriceX96) {
+        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+        if (initialized) {
+            mu = enforceShiftMode(mu, lastMu, shiftMode);
+        }
+
+        return LibDiscreteLaplaceDistribution.inverseCumulativeAmount0(
+            cumulativeAmount0, totalLiquidity, tickSpacing, mu, alphaX96
+        );
+    }
+
+    function inverseCumulativeAmount1(
+        uint256 cumulativeAmount1,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 twapTick,
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external pure override returns (uint160 sqrtPriceX96) {
+        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+        if (initialized) {
+            mu = enforceShiftMode(mu, lastMu, shiftMode);
+        }
+
+        return LibDiscreteLaplaceDistribution.inverseCumulativeAmount1(
+            cumulativeAmount1, totalLiquidity, tickSpacing, mu, alphaX96
+        );
+    }
+
     function liquidityDensityX96(
         PoolKey calldata key,
         int24 roundedTick,

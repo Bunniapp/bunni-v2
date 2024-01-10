@@ -133,15 +133,162 @@ library LibGeometricDistribution {
         }
     }
 
+    function cumulativeAmount0(
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alphaX96
+    ) internal pure returns (uint256 amount0) {
+        uint256 cumulativeAmount0DensityX96;
+
+        // x is the index of the roundedTick in the distribution
+        // should be in the range [0, length)
+        int24 x;
+        if (roundedTick < minTick) {
+            // roundedTick is to the left of the distribution
+            // set x = -1
+            x = -1;
+        } else if (roundedTick >= minTick + length * tickSpacing) {
+            // roundedTick is to the right of the distribution
+            // set x = length
+            x = length;
+        } else {
+            // roundedTick is in the distribution
+            x = (roundedTick - minTick) / tickSpacing;
+        }
+
+        uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtRatioAtTick();
+        uint256 sqrtRatioMinTick = minTick.getSqrtRatioAtTick();
+
+        if (alphaX96 > Q96) {
+            // alpha > 1
+            // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
+            uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
+
+            // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
+            if (x >= length) {
+                // roundedTick is to the right of the last tick in the distribution
+                // cumulativeAmount0DensityX96 is just 0
+                cumulativeAmount0DensityX96 = 0;
+            } else {
+                uint256 numerator = dist(
+                    alphaInvX96.rpow(uint24(length - x), Q96), (-tickSpacing * (length - x)).getSqrtRatioAtTick()
+                ) * (-tickSpacing * x).getSqrtRatioAtTick();
+
+                uint256 denominator = dist(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
+                    * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
+
+                cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(
+                    alphaX96 - Q96, sqrtRatioMinTick
+                );
+            }
+        } else {
+            // alpha <= 1
+            // will revert if alpha == 1 but that's ok
+
+            // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
+            if (x >= length) {
+                // roundedTick is to the right of the last tick in the distribution
+                // cumulativeAmount0DensityX96 is just 0
+                cumulativeAmount0DensityX96 = 0;
+            } else {
+                uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
+                uint256 numerator =
+                    (Q96 - alphaX96) * (baseX96.rpow(uint24(x), Q96) - baseX96.rpow(uint24(length), Q96));
+                uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
+                cumulativeAmount0DensityX96 =
+                    (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(Q96, sqrtRatioMinTick);
+            }
+        }
+
+        amount0 = cumulativeAmount0DensityX96.mulDiv(totalLiquidity, Q96);
+    }
+
+    function cumulativeAmount1(
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alphaX96
+    ) internal pure returns (uint256 amount1) {
+        uint256 cumulativeAmount1DensityX96;
+
+        // x is the index of the roundedTick in the distribution
+        // should be in the range [0, length)
+        int24 x;
+        if (roundedTick < minTick) {
+            // roundedTick is to the left of the distribution
+            // set x = -1
+            x = -1;
+        } else if (roundedTick >= minTick + length * tickSpacing) {
+            // roundedTick is to the right of the distribution
+            // set x = length
+            x = length;
+        } else {
+            // roundedTick is in the distribution
+            x = (roundedTick - minTick) / tickSpacing;
+        }
+
+        uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtRatioAtTick();
+        uint256 sqrtRatioMinTick = minTick.getSqrtRatioAtTick();
+        uint256 sqrtRatioNegMinTick = (-minTick).getSqrtRatioAtTick();
+
+        if (alphaX96 > Q96) {
+            // alpha > 1
+            // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
+            uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
+
+            // compute cumulativeAmount1DensityX96 for the rounded tick to the left of the rounded current tick
+            if (x < 0) {
+                // roundedTick is to the left of the first tick in the distribution
+                // cumulativeAmount1DensityX96 is just 0
+                cumulativeAmount1DensityX96 = 0;
+            } else {
+                uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
+
+                uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
+                uint256 numerator1 = alphaX96 - Q96;
+                uint256 denominator1 = baseX96 - Q96;
+                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x - 1), Q96).mulDiv(
+                    ((x + 1) * tickSpacing).getSqrtRatioAtTick(), Q96
+                ) - alphaInvPowLengthX96;
+                uint256 denominator2 = Q96 - alphaInvPowLengthX96;
+                cumulativeAmount1DensityX96 = Q96.mulDiv(numerator1, denominator1).mulDiv(numerator2, denominator2)
+                    .mulDiv(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
+            }
+        } else {
+            // alpha <= 1
+            // will revert if alpha == 1 but that's ok
+
+            // compute cumulativeAmount1DensityX96 for the rounded tick to the left of the rounded current tick
+            if (x < 0) {
+                // roundedTick is to the left of the first tick in the distribution
+                // cumulativeAmount1DensityX96 is just 0
+                cumulativeAmount1DensityX96 = 0;
+            } else {
+                uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
+                uint256 numerator = dist(Q96, baseX96.rpow(uint24(x + 1), Q96)) * (Q96 - alphaX96);
+                uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
+                cumulativeAmount1DensityX96 =
+                    (sqrtRatioTickSpacing - Q96).fullMulDiv(numerator, denominator).mulDiv(sqrtRatioMinTick, Q96);
+            }
+        }
+
+        amount1 = cumulativeAmount1DensityX96.mulDiv(totalLiquidity, Q96);
+    }
+
     function inverseCumulativeAmount0(
-        uint256 cumulativeAmount0,
+        uint256 cumulativeAmount0_,
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 minTick,
         int24 length,
         uint256 alphaX96
     ) internal pure returns (uint160 sqrtPriceX96) {
-        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0.mulDiv(Q96, totalLiquidity);
+        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.mulDiv(Q96, totalLiquidity);
         if (cumulativeAmount0DensityX96 == 0) {
             // return right boundary of distribution
             return (minTick + length * tickSpacing).getSqrtRatioAtTick();
@@ -196,14 +343,14 @@ library LibGeometricDistribution {
     }
 
     function inverseCumulativeAmount1(
-        uint256 cumulativeAmount1,
+        uint256 cumulativeAmount1_,
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 minTick,
         int24 length,
         uint256 alphaX96
     ) internal pure returns (uint160 sqrtPriceX96) {
-        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1.mulDiv(Q96, totalLiquidity);
+        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.mulDiv(Q96, totalLiquidity);
         if (cumulativeAmount1DensityX96 == 0) {
             // return left boundary of distribution
             return (minTick - tickSpacing).getSqrtRatioAtTick();

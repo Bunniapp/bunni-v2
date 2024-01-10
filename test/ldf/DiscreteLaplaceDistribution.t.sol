@@ -63,9 +63,11 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
 
         console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
 
+        uint256 beforeGasLeft = gasleft();
         uint160 sqrtPriceX96 = LibDiscreteLaplaceDistribution.inverseCumulativeAmount0(
             cumulativeAmount0DensityX96, liquidity, tickSpacing, mu, alphaX96
         );
+        console2.log("gasUsed", beforeGasLeft - gasleft());
         console2.log("sqrtPriceX96", sqrtPriceX96);
 
         int24 expectedTick = roundedTick + tickSpacing;
@@ -108,9 +110,11 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
 
         console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
 
+        uint256 beforeGasLeft = gasleft();
         uint160 sqrtPriceX96 = LibDiscreteLaplaceDistribution.inverseCumulativeAmount1(
             cumulativeAmount1DensityX96, liquidity, tickSpacing, mu, alphaX96
         );
+        console2.log("gasUsed", beforeGasLeft - gasleft());
         console2.log("sqrtPriceX96", sqrtPriceX96);
 
         int24 expectedTick = roundedTick - tickSpacing;
