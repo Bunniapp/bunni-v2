@@ -64,10 +64,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     ERC4626Mock internal vaultWeth;
     IBunniHub internal hub;
     BunniHook internal constant bunniHook = BunniHook(
-        address(
-            uint160(
-                Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
-                    + Hooks.BEFORE_SWAP_FLAG + Hooks.AFTER_SWAP_FLAG + Hooks.ACCESS_LOCK_FLAG
+        payable(
+            address(
+                uint160(
+                    Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
+                        + Hooks.ACCESS_LOCK_FLAG + Hooks.NO_OP_FLAG
+                )
             )
         )
     );
@@ -166,15 +168,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         // make deposit
         (uint256 beforeBalance0, uint256 beforeBalance1) =
             (currency0.balanceOf(address(this)), currency1.balanceOf(address(this)));
-        (uint256 shares,, uint256 amount0, uint256 amount1) =
+        (uint256 shares, uint256 amount0, uint256 amount1) =
             _makeDeposit(key, depositAmount0, depositAmount1, address(this), snapLabel);
         uint256 actualDepositedAmount0 = beforeBalance0 + depositAmount0 - currency0.balanceOf(address(this));
         uint256 actualDepositedAmount1 = beforeBalance1 + depositAmount1 - currency1.balanceOf(address(this));
 
         // check return values
-        assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS);
-        assertEqDecimal(amount1, actualDepositedAmount1, DECIMALS);
-        assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS);
+        assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS, "amount0 incorrect");
+        assertEqDecimal(amount1, actualDepositedAmount1, DECIMALS, "amount1 incorrect");
+        assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS, "shares incorrect");
     }
 
     function test_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
@@ -196,7 +198,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         // make deposit
-        (uint256 shares,, uint256 amount0, uint256 amount1) = _makeDeposit(key, depositAmount0, depositAmount1);
+        (uint256 shares, uint256 amount0, uint256 amount1) = _makeDeposit(key, depositAmount0, depositAmount1);
 
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
@@ -211,7 +213,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (uint256 beforeBalance0, uint256 beforeBalance1) =
             (key.currency0.balanceOf(address(this)), key.currency1.balanceOf(address(this)));
         snapStart(snapLabel);
-        (, uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
+        (uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
         snapEnd();
 
         // check return values
@@ -319,7 +321,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -330,18 +332,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = poolManager.getSlot0(key.toId());
+        (, currentTick) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
-
-        // ensure only current tick has liquidity
-        _assertNoNeighboringLiquidity({
-            id: key.toId(),
-            currentTick: currentTick,
-            startTick: -2 * key.tickSpacing,
-            endTick: 2 * key.tickSpacing,
-            tickSpacing: key.tickSpacing
-        });
     }
 
     function test_swap_zeroForOne_twoTickCrossing() public {
@@ -366,7 +359,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -377,18 +370,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = poolManager.getSlot0(key.toId());
+        (, currentTick) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
-
-        // ensure only current tick has liquidity
-        _assertNoNeighboringLiquidity({
-            id: key.toId(),
-            currentTick: currentTick,
-            startTick: -2 * key.tickSpacing,
-            endTick: 2 * key.tickSpacing,
-            tickSpacing: key.tickSpacing
-        });
     }
 
     function test_swap_zeroForOne_boundaryCondition() public {
@@ -415,7 +399,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -426,18 +410,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = poolManager.getSlot0(key.toId());
+        (, currentTick) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
-
-        // ensure only current tick has liquidity
-        _assertNoNeighboringLiquidity({
-            id: key.toId(),
-            currentTick: currentTick,
-            startTick: -2 * key.tickSpacing,
-            endTick: 2 * key.tickSpacing,
-            tickSpacing: key.tickSpacing
-        });
     }
 
     function test_swap_oneForZero_noTickCrossing() public {
@@ -531,7 +506,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency1, address(this), inputAmount);
 
-        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -542,18 +517,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = poolManager.getSlot0(key.toId());
+        (, currentTick) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
-
-        // ensure only current tick has liquidity
-        _assertNoNeighboringLiquidity({
-            id: key.toId(),
-            currentTick: currentTick,
-            startTick: -2 * key.tickSpacing,
-            endTick: 2 * key.tickSpacing,
-            tickSpacing: key.tickSpacing
-        });
     }
 
     function test_swap_oneForZero_twoTickCrossing() public {
@@ -576,7 +542,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency1, address(this), inputAmount);
 
-        (, int24 currentTick,) = poolManager.getSlot0(key.toId());
+        (, int24 currentTick) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -587,18 +553,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = poolManager.getSlot0(key.toId());
+        (, currentTick) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
-
-        // ensure only current tick has liquidity
-        _assertNoNeighboringLiquidity({
-            id: key.toId(),
-            currentTick: currentTick,
-            startTick: -2 * key.tickSpacing,
-            endTick: 2 * key.tickSpacing,
-            tickSpacing: key.tickSpacing
-        });
     }
 
     function test_collectProtocolFees() public {
@@ -1071,7 +1028,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
         internal
-        returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1)
+        returns (uint256 shares, uint256 amount0, uint256 amount1)
     {
         return _makeDeposit(key, depositAmount0, depositAmount1, address(this), "");
     }
@@ -1082,7 +1039,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint256 depositAmount1,
         address depositor,
         string memory snapLabel
-    ) internal returns (uint256 shares, uint128 newLiquidity, uint256 amount0, uint256 amount1) {
+    ) internal returns (uint256 shares, uint256 amount0, uint256 amount1) {
         // mint tokens
         uint256 value;
         if (key_.currency0.isNative()) {
@@ -1109,7 +1066,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         if (bytes(snapLabel).length > 0) {
             snapStart(snapLabel);
         }
-        (shares, newLiquidity, amount0, amount1) = hub_.deposit{value: value}(depositParams);
+        (shares, amount0, amount1) = hub_.deposit{value: value}(depositParams);
         if (bytes(snapLabel).length > 0) {
             snapEnd();
         }
@@ -1334,25 +1291,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             snapEnd();
         } else {
             poolManager.lock{value: value}(address(swapper_), data);
-        }
-    }
-
-    function _assertNoNeighboringLiquidity(
-        PoolId id,
-        int24 currentTick,
-        int24 startTick,
-        int24 endTick,
-        int24 tickSpacing
-    ) internal {
-        uint128 liquidity;
-        currentTick = roundTickSingle(currentTick, tickSpacing);
-        for (int24 tick = startTick; tick <= endTick; tick += tickSpacing) {
-            liquidity = poolManager.getLiquidity(id, address(hub), tick, tick + tickSpacing);
-            if (tick == currentTick) {
-                assertGt(liquidity, 0, "current tick has zero liquidity");
-            } else {
-                assertEq(liquidity, 0, "neighboring tick has non-zero liquidity");
-            }
         }
     }
 }

@@ -36,11 +36,13 @@ contract DeployScript is CREATE3Script {
             )
         );
         hook = BunniHook(
-            create3.deploy(
-                getCreate3ContractSalt("BunniHook"),
-                bytes.concat(
-                    type(BunniHook).creationCode,
-                    abi.encode(poolManager, hub, owner, hookFeesRecipient, hookFeesModifier)
+            payable(
+                create3.deploy(
+                    getCreate3ContractSalt("BunniHook"),
+                    bytes.concat(
+                        type(BunniHook).creationCode,
+                        abi.encode(poolManager, hub, owner, hookFeesRecipient, hookFeesModifier)
+                    )
                 )
             )
         );

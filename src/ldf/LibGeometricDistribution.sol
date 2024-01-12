@@ -10,6 +10,7 @@ import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../lib/ExpMath.sol";
+import "../lib/Constants.sol";
 
 library LibGeometricDistribution {
     using TickMath for int24;
@@ -23,8 +24,6 @@ library LibGeometricDistribution {
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
-    uint256 internal constant WAD = 1e18;
-    uint256 internal constant Q96 = 0x1000000000000000000000000;
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
 
     function query(int24 roundedTick, int24 tickSpacing, int24 minTick, int24 length, uint256 alphaX96)

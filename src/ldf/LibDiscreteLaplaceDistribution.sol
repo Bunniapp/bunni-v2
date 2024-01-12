@@ -10,6 +10,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../lib/ExpMath.sol";
+import "../lib/Constants.sol";
 
 library LibDiscreteLaplaceDistribution {
     using TickMath for int24;
@@ -22,8 +23,6 @@ library LibDiscreteLaplaceDistribution {
 
     uint256 internal constant MIN_ALPHA = 1e14;
     uint256 internal constant MAX_ALPHA = 0.9e18;
-    uint256 internal constant WAD = 1e18;
-    uint256 internal constant Q96 = 0x1000000000000000000000000;
 
     function query(int24 roundedTick, int24 tickSpacing, int24 mu, uint256 alphaX96)
         internal

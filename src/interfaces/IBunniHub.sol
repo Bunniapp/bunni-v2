@@ -110,13 +110,12 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// deadline The time by which the transaction must be included to effect the change
     /// refundETH Whether to refund excess ETH to the sender. Should be false when part of a multicall.
     /// @return shares The new share tokens minted to the sender
-    /// @return addedLiquidity The new liquidity amount as a result of the increase
     /// @return amount0 The amount of token0 to acheive resulting liquidity
     /// @return amount1 The amount of token1 to acheive resulting liquidity
     function deposit(DepositParams calldata params)
         external
         payable
-        returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1);
+        returns (uint256 shares, uint256 amount0, uint256 amount1);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the withdrawn tokens
@@ -143,12 +142,9 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// amount0Min The minimum amount of token0 that should be accounted for the burned liquidity,
     /// amount1Min The minimum amount of token1 that should be accounted for the burned liquidity,
     /// deadline The time by which the transaction must be included to effect the change
-    /// @return removedLiquidity The amount of liquidity decrease
     /// @return amount0 The amount of token0 withdrawn to the recipient
     /// @return amount1 The amount of token1 withdrawn to the recipient
-    function withdraw(WithdrawParams calldata params)
-        external
-        returns (uint128 removedLiquidity, uint256 amount0, uint256 amount1);
+    function withdraw(WithdrawParams calldata params) external returns (uint256 amount0, uint256 amount1);
 
     /// @param currency0 The token0 of the Uniswap V4 pool
     /// @param currency1 The token1 of the Uniswap V4 pool
@@ -198,10 +194,15 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         external
         returns (IBunniToken token, PoolKey memory key);
 
-    /// @notice Enables the hooks for a Uniswap V4 pool to modify the liquidity of that pool.
-    /// @param poolKey The PoolKey of the Uniswap V4 pool
-    /// @param liquidityDeltas The liquidity deltas to apply to the pool
-    function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas) external;
+    function hookHandleSwap(
+        PoolKey calldata key,
+        bool zeroForOne,
+        uint256 inputAmount,
+        uint256 inputPoolCreditAmount,
+        uint256 outputAmount,
+        uint256 updatedRawTokenBalance0,
+        uint256 updatedRawTokenBalance1
+    ) external payable;
 
     /// @notice Clears the credits of a pool and deposit the assets into the vaults.
     /// @param keys The PoolKeys of the Uniswap V4 pools

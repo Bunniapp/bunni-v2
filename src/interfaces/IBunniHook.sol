@@ -20,7 +20,9 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// Errors
     /// -----------------------------------------------------------------------
 
+    error BunniHook__InvalidSwap();
     error BunniHook__Unauthorized();
+    error BunniHook__NoAddLiquidity();
 
     /// -----------------------------------------------------------------------
     /// Events
@@ -39,6 +41,11 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         uint16 index;
         uint16 cardinality;
         uint16 cardinalityNext;
+    }
+
+    struct Slot0 {
+        uint160 sqrtPriceX96;
+        int24 tick;
     }
 
     /// -----------------------------------------------------------------------
@@ -77,6 +84,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     function isValidParams(bytes32 hookParams) external view returns (bool);
 
     function ldfStates(PoolId id) external view returns (bytes32);
+
+    function slot0s(PoolId id) external view returns (uint160 sqrtPriceX96, int24 tick);
 
     /// -----------------------------------------------------------------------
     /// External functions
