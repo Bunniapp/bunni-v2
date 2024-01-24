@@ -324,7 +324,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
 
-        uint256 inputAmount = PRECISION * 2;
+        uint256 inputAmount = 0.15e18;
         uint256 value = key.currency0.isNative() ? inputAmount : 0;
 
         _mint(key.currency0, address(this), inputAmount);

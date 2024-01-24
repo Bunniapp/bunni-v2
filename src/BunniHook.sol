@@ -271,7 +271,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     }
 
     /// @inheritdoc IHooks
-    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+    function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         external
         override(BaseHook, IHooks)
         poolManagerOnly
@@ -343,17 +343,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             key, roundedTick, arithmeticMeanTick, currentTick, useTwap, bunniState.ldfParams, ldfState
         );
         if (bunniState.statefulLdf) ldfStates[id] = newLdfState;
-        (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96,
-            roundedTickSqrtRatio,
-            nextRoundedTickSqrtRatio,
-            uint128(liquidityDensityOfRoundedTickX96),
-            false
-        );
 
         // compute total liquidity
         uint256 totalLiquidity;
         {
+            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
+                .getAmountsForLiquidity(
+                sqrtPriceX96,
+                roundedTickSqrtRatio,
+                nextRoundedTickSqrtRatio,
+                uint128(liquidityDensityOfRoundedTickX96),
+                false
+            );
             uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
             uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
             uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
@@ -408,6 +409,22 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         (Currency inputToken, Currency outputToken) =
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
 
+        // charge LP fee and hook fee
+        // we do this by reducing the output token amount
+        uint24 swapFee;
+        {
+            swapFee = _getFee(updatedSqrtPriceX96, arithmeticMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
+            uint256 swapFeeAmount = outputAmount.mulDiv(swapFee, SWAP_FEE_BASE);
+            uint96 hookFeesModifier = _hookFeesModifier;
+            uint256 hookFeesAmount = swapFeeAmount.mulDiv(hookFeesModifier, WAD);
+
+            // deduct swap fee from output
+            outputAmount -= swapFeeAmount;
+
+            // mint PoolManager claim tokens to hook to be claimed later
+            poolManager.mint(address(this), outputToken.toId(), hookFeesAmount);
+        }
+
         // clear pool credits of hub
         if (bunniState.poolCredit0Set || bunniState.poolCredit1Set) {
             PoolKey[] memory keys = new PoolKey[](1);
@@ -456,6 +473,20 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
 
         // settle output tokens with pool manager
         poolManager.settle(outputToken);
+
+        // emit swap event
+        unchecked {
+            emit Swap(
+                id,
+                sender,
+                params.zeroForOne,
+                inputAmount + inputPoolCreditAmount, // deducted by credit amount before so add it back
+                outputAmount,
+                updatedSqrtPriceX96,
+                updatedTick,
+                swapFee
+            );
+        }
 
         return Hooks.NO_OP_SELECTOR;
     }

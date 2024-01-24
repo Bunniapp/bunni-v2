@@ -28,6 +28,25 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// Events
     /// -----------------------------------------------------------------------
 
+    /// @notice Emitted for swaps between currency0 and currency1
+    /// @param id The abi encoded hash of the pool key struct for the pool that was modified
+    /// @param sender The address that initiated the swap call, and that received the callback
+    /// @param zeroForOne True if swapping token0 for token1, false otherwise
+    /// @param inputAmount The input token amount
+    /// @param outputAmount The output token amount
+    /// @param sqrtPriceX96 The sqrt(price) of the pool after the swap, as a Q64.96
+    /// @param tick The log base 1.0001 of the price of the pool after the swap
+    /// @param fee The swap fee rate charged, 6 decimals
+    event Swap(
+        PoolId indexed id,
+        address indexed sender,
+        bool zeroForOne,
+        uint256 inputAmount,
+        uint256 outputAmount,
+        uint160 sqrtPriceX96,
+        int24 tick,
+        uint24 fee
+    );
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
 
     /// -----------------------------------------------------------------------
