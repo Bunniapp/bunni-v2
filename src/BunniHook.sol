@@ -280,8 +280,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         PoolId id = key.toId();
         Slot0 memory slot0 = slot0s[id];
         (uint160 sqrtPriceX96, int24 currentTick) = (slot0.sqrtPriceX96, slot0.tick);
-        console2.log("sqrtPriceX96", sqrtPriceX96);
-        console2.log("currentTick", currentTick);
         if (
             sqrtPriceX96 == 0
                 || (
@@ -376,6 +374,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         }
 
         // compute swap result
+        uint256 beforeGasLeft = gasleft();
         (
             uint160 updatedSqrtPriceX96,
             int24 updatedTick,
@@ -402,6 +401,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             ldfState: ldfState,
             params: params
         });
+        console2.log("computeSwap gas cost: %d", beforeGasLeft - gasleft());
 
         // update slot0
         slot0s[id] = Slot0({sqrtPriceX96: updatedSqrtPriceX96, tick: updatedTick});

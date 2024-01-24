@@ -241,7 +241,6 @@ library BunniHubLogic {
                     ? type(uint256).max
                     : inputData.params.amount1Desired.mulDiv(Q96, totalDensity1X96)
             );
-            console2.log("totalLiquidity", totalLiquidity);
             // totalLiquidity could exceed uint128 so .toUint128() is used
             uint128 addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 

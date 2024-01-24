@@ -46,6 +46,14 @@ library BunniSwapMath {
             uint256 updatedRoundedTickBalance1
         )
     {
+        uint256 outputTokenBalance = params.zeroForOne ? balance1 : balance0;
+        if (params.amountSpecified < 0 && uint256(-params.amountSpecified) > outputTokenBalance) {
+            // exact output swap where the requested output amount exceeds the output token balance
+            // change swap to an exact output swap where the output amount is the output token balance
+            params.amountSpecified = -outputTokenBalance.toInt256();
+        }
+
+        // compute first pass result
         (
             updatedSqrtPriceX96,
             updatedTick,
@@ -71,7 +79,7 @@ library BunniSwapMath {
             params
         );
 
-        uint256 outputTokenBalance = params.zeroForOne ? balance1 : balance0;
+        // ensure that the output amount is lte the output token balance
         if (outputAmount > outputTokenBalance) {
             // exactly output the output token's balance
             // need to recompute swap
@@ -260,27 +268,17 @@ library BunniSwapMath {
                             );
                         updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
                     } else {
-                        // we've used up all the liquidity in the pool but haven't consumed all the input/output tokens
-
-                        // update sqrt price
-                        // minus 1 included to match Uniswap's behavior
-                        updatedTick = params.zeroForOne ? updatedRoundedTick - 1 : updatedRoundedTick + key.tickSpacing;
-                        updatedSqrtPriceX96 = TickMath.getSqrtRatioAtTick(updatedTick);
+                        // liquidity is insufficient to handle all of the input/output tokens
+                        (updatedTick, updatedSqrtPriceX96) = params.zeroForOne
+                            ? (TickMath.MIN_TICK, TickMath.MIN_SQRT_RATIO)
+                            : (TickMath.MAX_TICK, TickMath.MAX_SQRT_RATIO);
                     }
-
-                    console2.log("swapLiquidity", swapLiquidity);
-                    console2.log("cumulativeAmount", cumulativeAmount);
                 } else {
                     // liquidity is insufficient to handle all of the input/output tokens
                     (updatedTick, updatedSqrtPriceX96) = params.zeroForOne
                         ? (TickMath.MIN_TICK, TickMath.MIN_SQRT_RATIO)
                         : (TickMath.MAX_TICK, TickMath.MAX_SQRT_RATIO);
                 }
-
-                console2.log("updatedRoundedTick", updatedRoundedTick);
-                console2.log("inputAmount", inputAmount);
-                console2.log("outputAmount", outputAmount);
-                console2.log("inverseCumulativeAmountFnInput", inverseCumulativeAmountFnInput);
 
                 // bound sqrt price by limit
                 updatedSqrtPriceX96 =
@@ -291,46 +289,33 @@ library BunniSwapMath {
             }
 
             // compute token amounts
-            {
-                (int24 updatedRoundedTick, int24 updatedNextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
-                (uint160 updatedRoundedTickSqrtRatio, uint160 updatedNextRoundedTickSqrtRatio) = (
-                    TickMath.getSqrtRatioAtTick(updatedRoundedTick), TickMath.getSqrtRatioAtTick(updatedNextRoundedTick)
-                );
-                (
-                    uint256 updatedLiquidityDensityOfRoundedTickX96,
-                    uint256 updatedDensity0RightOfRoundedTickX96,
-                    uint256 updatedDensity1LeftOfRoundedTickX96,
-                ) = liquidityDensityFunction.query(
-                    key, updatedRoundedTick, arithmeticMeanTick, updatedTick, useTwap, ldfParams, ldfState
-                );
+            (int24 updatedRoundedTick, int24 updatedNextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
+            (uint160 updatedRoundedTickSqrtRatio, uint160 updatedNextRoundedTickSqrtRatio) =
+                (TickMath.getSqrtRatioAtTick(updatedRoundedTick), TickMath.getSqrtRatioAtTick(updatedNextRoundedTick));
+            (
+                uint256 updatedLiquidityDensityOfRoundedTickX96,
+                uint256 updatedDensity0RightOfRoundedTickX96,
+                uint256 updatedDensity1LeftOfRoundedTickX96,
+            ) = liquidityDensityFunction.query(
+                key, updatedRoundedTick, arithmeticMeanTick, updatedTick, useTwap, ldfParams, ldfState
+            );
 
-                updatedRoundedTickLiquidity =
-                    ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
-                (updatedRoundedTickBalance0, updatedRoundedTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-                    updatedSqrtPriceX96,
-                    updatedRoundedTickSqrtRatio,
-                    updatedNextRoundedTickSqrtRatio,
-                    updatedRoundedTickLiquidity,
-                    false
-                );
-                (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
-                    updatedRoundedTickBalance0 + ((updatedDensity0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-                    updatedRoundedTickBalance1 + ((updatedDensity1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
-                );
+            updatedRoundedTickLiquidity = ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
+            (updatedRoundedTickBalance0, updatedRoundedTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
+                updatedSqrtPriceX96,
+                updatedRoundedTickSqrtRatio,
+                updatedNextRoundedTickSqrtRatio,
+                updatedRoundedTickLiquidity,
+                false
+            );
+            (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
+                updatedRoundedTickBalance0 + ((updatedDensity0RightOfRoundedTickX96 * totalLiquidity) >> 96),
+                updatedRoundedTickBalance1 + ((updatedDensity1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
+            );
 
-                console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
-                console2.log("updatedRoundedTickBalance0", updatedRoundedTickBalance0);
-                console2.log("updatedRoundedTickBalance1", updatedRoundedTickBalance1);
-                console2.log("roundedTickBalance0", roundedTickBalance0);
-                console2.log("roundedTickBalance1", roundedTickBalance1);
-                console2.log("updatedActiveBalance0", updatedActiveBalance0);
-                console2.log("updatedActiveBalance1", updatedActiveBalance1);
-                console2.log("currentActiveBalance0", currentActiveBalance0);
-                console2.log("currentActiveBalance1", currentActiveBalance1);
-                (inputAmount, outputAmount) = params.zeroForOne
-                    ? (updatedActiveBalance0 - currentActiveBalance0, currentActiveBalance1 - updatedActiveBalance1)
-                    : (updatedActiveBalance1 - currentActiveBalance1, currentActiveBalance0 - updatedActiveBalance0);
-            }
+            (inputAmount, outputAmount) = params.zeroForOne
+                ? (updatedActiveBalance0 - currentActiveBalance0, currentActiveBalance1 - updatedActiveBalance1)
+                : (updatedActiveBalance1 - currentActiveBalance1, currentActiveBalance0 - updatedActiveBalance0);
         }
     }
 
