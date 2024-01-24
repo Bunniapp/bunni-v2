@@ -41,45 +41,91 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         newLdfState = _encodeState(mu);
     }
 
-    function inverseCumulativeAmount0(
-        uint256 cumulativeAmount0,
+    function cumulativeAmount0(
+        PoolKey calldata key,
+        int24 roundedTick,
         uint256 totalLiquidity,
-        int24 tickSpacing,
         int24 twapTick,
+        int24, /* spotPriceTick */
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external pure override returns (uint160 sqrtPriceX96) {
+    ) external pure returns (uint256 amount0) {
         (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
-            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+        if (initialized) {
+            mu = enforceShiftMode(mu, lastMu, shiftMode);
+        }
+
+        return
+            LibDiscreteLaplaceDistribution.cumulativeAmount0(roundedTick, totalLiquidity, key.tickSpacing, mu, alphaX96);
+    }
+
+    function cumulativeAmount1(
+        PoolKey calldata key,
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external pure returns (uint256 amount1) {
+        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+        if (initialized) {
+            mu = enforceShiftMode(mu, lastMu, shiftMode);
+        }
+
+        return
+            LibDiscreteLaplaceDistribution.cumulativeAmount1(roundedTick, totalLiquidity, key.tickSpacing, mu, alphaX96);
+    }
+
+    function inverseCumulativeAmount0(
+        PoolKey calldata key,
+        uint256 cumulativeAmount0_,
+        uint256 totalLiquidity,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState,
+        bool roundUp
+    ) external pure override returns (bool success, int24 roundedTick) {
+        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
         (bool initialized, int24 lastMu) = _decodeState(ldfState);
         if (initialized) {
             mu = enforceShiftMode(mu, lastMu, shiftMode);
         }
 
         return LibDiscreteLaplaceDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0, totalLiquidity, tickSpacing, mu, alphaX96
+            cumulativeAmount0_, totalLiquidity, key.tickSpacing, mu, alphaX96, roundUp
         );
     }
 
     function inverseCumulativeAmount1(
-        uint256 cumulativeAmount1,
+        PoolKey calldata key,
+        uint256 cumulativeAmount1_,
         uint256 totalLiquidity,
-        int24 tickSpacing,
         int24 twapTick,
+        int24, /* spotPriceTick */
         bool useTwap,
         bytes32 ldfParams,
-        bytes32 ldfState
-    ) external pure override returns (uint160 sqrtPriceX96) {
+        bytes32 ldfState,
+        bool roundUp
+    ) external pure override returns (bool success, int24 roundedTick) {
         (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
-            LibDiscreteLaplaceDistribution.decodeParams(twapTick, tickSpacing, useTwap, ldfParams);
+            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
         (bool initialized, int24 lastMu) = _decodeState(ldfState);
         if (initialized) {
             mu = enforceShiftMode(mu, lastMu, shiftMode);
         }
 
         return LibDiscreteLaplaceDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1, totalLiquidity, tickSpacing, mu, alphaX96
+            cumulativeAmount1_, totalLiquidity, key.tickSpacing, mu, alphaX96, roundUp
         );
     }
 

@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.19;
 
+import {console2} from "forge-std/console2.sol";
+
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
@@ -239,6 +241,7 @@ library BunniHubLogic {
                     ? type(uint256).max
                     : inputData.params.amount1Desired.mulDiv(Q96, totalDensity1X96)
             );
+            console2.log("totalLiquidity", totalLiquidity);
             // totalLiquidity could exceed uint128 so .toUint128() is used
             uint128 addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 

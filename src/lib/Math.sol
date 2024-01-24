@@ -2,8 +2,11 @@
 
 pragma solidity ^0.8.19;
 
+import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
+
+import "./Constants.sol";
 
 /// @dev modified from solady
 function dist(uint256 x, uint256 y) pure returns (uint256 z) {
@@ -42,4 +45,14 @@ function boundTick(int24 tick, int24 tickSpacing) pure returns (int24 boundedTic
 
 function weightedSum(uint256 value0, uint256 weight0, uint256 value1, uint256 weight1) pure returns (uint256) {
     return (value0 * weight0 + value1 * weight1) / (weight0 + weight1);
+}
+
+function xWadToRoundedTick(int256 xWad, int24 mu, int24 tickSpacing, bool roundUp) pure returns (int24) {
+    int24 x = SafeCastLib.toInt24(xWad / int256(WAD));
+    if (roundUp) {
+        if (xWad > 0 && xWad % int256(WAD) != 0) x++; // round towards positive infinity
+    } else {
+        if (xWad < 0 && xWad % int256(WAD) != 0) x--; // round towards negative infinity
+    }
+    return x * tickSpacing + mu;
 }

@@ -63,10 +63,14 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         _test_query_cumulativeAmounts(currentTick, tickSpacing, ldfParams);
     }
 
-    function test_inverseCumulativeAmount0(int24 tick, int24 tickSpacing, int24 minTick, int24 length, uint256 alpha)
-        external
-        virtual
-    {
+    function test_inverseCumulativeAmount0(
+        int24 tick,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alpha,
+        bool roundUp
+    ) external virtual {
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
         vm.assume(alpha != 1e8); // 1e8 is a special case that causes overflow
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
@@ -87,7 +91,6 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         uint256 alphaX96 = (alpha << 96) / 1e8;
         uint128 liquidity = 1 << 96;
-        uint256 maxError = 1e3; // 1e-15
         int24 roundedTick = roundTickSingle(tick, tickSpacing);
 
         console2.log("roundedTick", roundedTick);
@@ -97,27 +100,26 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
 
-        uint160 sqrtPriceX96 = LibGeometricDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0DensityX96, liquidity, tickSpacing, minTick, length, alphaX96
+        (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount0(
+            cumulativeAmount0DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, roundUp
         );
-        console2.log("sqrtPriceX96", sqrtPriceX96);
+        console2.log("resultRoundedTick", resultRoundedTick);
 
         int24 expectedTick = roundedTick < minTick
             ? minTick
             : roundedTick >= minTick + length * tickSpacing ? minTick + length * tickSpacing : roundedTick + tickSpacing;
         console2.log("x", (expectedTick - minTick) / tickSpacing);
-        uint160 expectedSqrtPriceX96 = TickMath.getSqrtRatioAtTick(expectedTick);
-        console2.log("expectedSqrtPriceX96", expectedSqrtPriceX96);
-
-        if (dist(sqrtPriceX96, expectedSqrtPriceX96) > 1) {
-            assertApproxEqRel(sqrtPriceX96, expectedSqrtPriceX96, maxError, "sqrt price incorrect");
-        }
+        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
     }
 
-    function test_inverseCumulativeAmount1(int24 tick, int24 tickSpacing, int24 minTick, int24 length, uint256 alpha)
-        external
-        virtual
-    {
+    function test_inverseCumulativeAmount1(
+        int24 tick,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alpha,
+        bool roundUp
+    ) external virtual {
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
         vm.assume(alpha != 1e8); // 1e8 is a special case that causes overflow
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
@@ -138,7 +140,6 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         uint256 alphaX96 = (alpha << 96) / 1e8;
         uint128 liquidity = 1 << 96;
-        uint256 maxError = 1e3; // 1e-15
         int24 roundedTick = roundTickSingle(tick, tickSpacing);
 
         console2.log("roundedTick", roundedTick);
@@ -148,10 +149,10 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
 
-        uint160 sqrtPriceX96 = LibGeometricDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1DensityX96, liquidity, tickSpacing, minTick, length, alphaX96
+        (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount1(
+            cumulativeAmount1DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, roundUp
         );
-        console2.log("sqrtPriceX96", sqrtPriceX96);
+        console2.log("resultRoundedTick", resultRoundedTick);
 
         int24 expectedTick = roundedTick <= minTick
             ? minTick - tickSpacing
@@ -159,11 +160,6 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
                 ? minTick + (length - 1) * tickSpacing
                 : roundedTick - tickSpacing;
         console2.log("x", (expectedTick - minTick) / tickSpacing);
-        uint160 expectedSqrtPriceX96 = TickMath.getSqrtRatioAtTick(expectedTick);
-        console2.log("expectedSqrtPriceX96", expectedSqrtPriceX96);
-
-        if (dist(sqrtPriceX96, expectedSqrtPriceX96) > 1) {
-            assertApproxEqRel(sqrtPriceX96, expectedSqrtPriceX96, maxError, "sqrt price incorrect");
-        }
+        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
     }
 }

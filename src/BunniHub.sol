@@ -130,11 +130,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     ) external payable override nonReentrant {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
 
-        // clear pool credits
-        PoolKey[] memory keys = new PoolKey[](1);
-        keys[0] = key;
-        poolManager.lock(address(this), abi.encode(LockCallbackType.CLEAR_POOL_CREDITS, abi.encode(keys)));
-
         // load state
         PoolId poolId = key.toId();
         PoolState memory state = _getPoolState(poolId);
@@ -195,7 +190,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         outputToken.transfer(address(poolManager), outputAmount);
 
         // update raw token balances if we're using vaults
-        if (address(state.vault0) != address(0) && updatedRawTokenBalance0 != state.rawBalance0) {
+        /* if (address(state.vault0) != address(0) && updatedRawTokenBalance0 != state.rawBalance0) {
             int256 reserve0Change = _updateVaultReserve(
                 state.rawBalance0.toInt256() - updatedRawTokenBalance0.toInt256(),
                 key.currency0,
@@ -216,7 +211,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             );
             state.reserve1 = (state.reserve1.toInt256() + reserve1Change).toUint256();
             state.rawBalance1 = updatedRawTokenBalance1;
-        }
+        } */
 
         // update state
         _poolState[poolId].rawBalance0 = state.rawBalance0;

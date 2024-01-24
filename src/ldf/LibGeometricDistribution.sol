@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import {console2} from "forge-std/console2.sol";
+
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
@@ -285,12 +287,13 @@ library LibGeometricDistribution {
         int24 tickSpacing,
         int24 minTick,
         int24 length,
-        uint256 alphaX96
-    ) internal pure returns (uint160 sqrtPriceX96) {
+        uint256 alphaX96,
+        bool roundUp
+    ) internal pure returns (bool success, int24 roundedTick) {
         uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.mulDiv(Q96, totalLiquidity);
         if (cumulativeAmount0DensityX96 == 0) {
             // return right boundary of distribution
-            return (minTick + length * tickSpacing).getSqrtRatioAtTick();
+            return (true, minTick + length * tickSpacing);
         }
 
         uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtRatioAtTick();
@@ -328,7 +331,7 @@ library LibGeometricDistribution {
         }
 
         // round xWad to reduce error
-        // limits tick precision to 1e-6 of a tick
+        // limits tick precision to 1e-6 of a rounded tick
         int256 remainder = xWad % 1e12;
         xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
         // if (remainder > 5e11) xWad += 1e12;
@@ -336,9 +339,16 @@ library LibGeometricDistribution {
             xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
         }
 
-        int256 tickWad = xWad * int256(tickSpacing) + int256(minTick) * int256(WAD);
+        console2.log("xWad: %d", xWad);
 
-        sqrtPriceX96 = tickWad.getSqrtRatioAtTickWad();
+        // get rounded tick from xWad
+        success = true;
+        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
+
+        // ensure roundedTick is within the valid range
+        if (roundedTick < minTick - tickSpacing || roundedTick > minTick + length * tickSpacing) {
+            return (false, 0);
+        }
     }
 
     function inverseCumulativeAmount1(
@@ -347,12 +357,13 @@ library LibGeometricDistribution {
         int24 tickSpacing,
         int24 minTick,
         int24 length,
-        uint256 alphaX96
-    ) internal pure returns (uint160 sqrtPriceX96) {
+        uint256 alphaX96,
+        bool roundUp
+    ) internal pure returns (bool success, int24 roundedTick) {
         uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.mulDiv(Q96, totalLiquidity);
         if (cumulativeAmount1DensityX96 == 0) {
             // return left boundary of distribution
-            return (minTick - tickSpacing).getSqrtRatioAtTick();
+            return (true, minTick - tickSpacing);
         }
 
         uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtRatioAtTick();
@@ -386,7 +397,7 @@ library LibGeometricDistribution {
         }
 
         // round xWad to reduce error
-        // limits tick precision to 1e-6 of a tick
+        // limits tick precision to 1e-6 of a rounded tick
         int256 remainder = xWad % 1e12;
         xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
         // if (remainder > 5e11) xWad += 1e12;
@@ -394,9 +405,16 @@ library LibGeometricDistribution {
             xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
         }
 
-        int256 tickWad = xWad * int256(tickSpacing) + int256(minTick) * int256(WAD);
+        console2.log("xWad: %d", xWad);
 
-        sqrtPriceX96 = tickWad.getSqrtRatioAtTickWad();
+        // get rounded tick from xWad
+        success = true;
+        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
+
+        // ensure roundedTick is within the valid range
+        if (roundedTick < minTick - tickSpacing || roundedTick > minTick + length * tickSpacing) {
+            return (false, 0);
+        }
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {

@@ -3,8 +3,6 @@ pragma solidity ^0.8.19;
 
 import {console2} from "forge-std/console2.sol";
 
-import {stdMath} from "forge-std/StdMath.sol";
-
 import "@uniswap/v4-core/src/types/Currency.sol";
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
@@ -12,8 +10,8 @@ import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
@@ -28,6 +26,7 @@ import {Oracle} from "./lib/Oracle.sol";
 import {Ownable} from "./lib/Ownable.sol";
 import {BaseHook} from "./lib/BaseHook.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
+import {BunniSwapMath} from "./lib/BunniSwapMath.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 
@@ -231,7 +230,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     }
 
     /// @inheritdoc IDynamicFeeManager
-    function getFee(address, /* sender */ PoolKey calldata /* key */ ) external view override returns (uint24) {
+    function getFee(address, /* sender */ PoolKey calldata /* key */ ) external pure override returns (uint24) {
         return 0;
     }
 
@@ -281,6 +280,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         PoolId id = key.toId();
         Slot0 memory slot0 = slot0s[id];
         (uint160 sqrtPriceX96, int24 currentTick) = (slot0.sqrtPriceX96, slot0.tick);
+        console2.log("sqrtPriceX96", sqrtPriceX96);
+        console2.log("currentTick", currentTick);
         if (
             sqrtPriceX96 == 0
                 || (
@@ -373,98 +374,46 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             }
         }
 
-        // compute updated current tick liquidity
-        // totalLiquidity could exceed uint128 so .toUint128() is used
-        uint128 updatedRoundedTickLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
-
-        bool exactIn = params.amountSpecified >= 0;
-
-        uint256 inputAmount;
-        uint256 outputAmount;
-        uint160 updatedSqrtPriceX96;
-        {
-            // function for computing the new sqrt price
-            function (uint256, uint256, int24, int24, bool, bytes32, bytes32) external view returns (uint160) fn = (
-                exactIn == params.zeroForOne
-            )
-                ? bunniState.liquidityDensityFunction.inverseCumulativeAmount0
-                : bunniState.liquidityDensityFunction.inverseCumulativeAmount1;
-            uint256 fnInput; // cumulative amount input to fn
-            if (exactIn) {
-                // exact input swap
-                inputAmount = uint256(params.amountSpecified);
-                fnInput = params.zeroForOne ? balance0 + inputAmount : balance1 + inputAmount;
-            } else {
-                // exact output swap
-                outputAmount = uint256(-params.amountSpecified);
-                fnInput = params.zeroForOne ? balance1 - outputAmount : balance0 - outputAmount;
-            }
-            updatedSqrtPriceX96 = fn(
-                fnInput, totalLiquidity, key.tickSpacing, arithmeticMeanTick, useTwap, bunniState.ldfParams, ldfState
-            );
-
-            // bound sqrt price by limit
-            if (
-                (params.zeroForOne && params.sqrtPriceLimitX96 > updatedSqrtPriceX96)
-                    || (!params.zeroForOne && params.sqrtPriceLimitX96 < updatedSqrtPriceX96)
-            ) {
-                updatedSqrtPriceX96 = params.sqrtPriceLimitX96;
-            }
-        }
-
-        // compute new tick & token amounts
-        int24 updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
-        uint256 updatedRoundedTickBalance0;
-        uint256 updatedRoundedTickBalance1;
-        {
-            (int24 updatedRoundedTick, int24 updatedNextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
-            (uint160 updatedRoundedTickSqrtRatio, uint160 updatedNextRoundedTickSqrtRatio) =
-                (TickMath.getSqrtRatioAtTick(updatedRoundedTick), TickMath.getSqrtRatioAtTick(updatedNextRoundedTick));
-            (
-                uint256 updatedLiquidityDensityOfRoundedTickX96,
-                uint256 updatedDensity0RightOfRoundedTickX96,
-                uint256 updatedDensity1LeftOfRoundedTickX96,
-            ) = bunniState.liquidityDensityFunction.query(
-                key, updatedRoundedTick, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, ldfState
-            );
-            (uint256 roundedTickBalance0, uint256 roundedTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, false
-            );
-            updatedRoundedTickLiquidity = ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
-            (updatedRoundedTickBalance0, updatedRoundedTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-                updatedSqrtPriceX96,
-                updatedRoundedTickSqrtRatio,
-                updatedNextRoundedTickSqrtRatio,
-                updatedRoundedTickLiquidity,
-                false
-            );
-            (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
-                updatedRoundedTickBalance0 + ((updatedDensity0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-                updatedRoundedTickBalance1 + ((updatedDensity1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
-            );
-            (uint256 currentActiveBalance0, uint256 currentActiveBalance1) = (
-                roundedTickBalance0 + ((density0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-                roundedTickBalance1 + ((density1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
-            );
-            console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
-            console2.log("updatedRoundedTickBalance0", updatedRoundedTickBalance0);
-            console2.log("updatedRoundedTickBalance1", updatedRoundedTickBalance1);
-            console2.log("roundedTickBalance0", roundedTickBalance0);
-            console2.log("roundedTickBalance1", roundedTickBalance1);
-            console2.log("updatedActiveBalance0", updatedActiveBalance0);
-            console2.log("updatedActiveBalance1", updatedActiveBalance1);
-            console2.log("currentActiveBalance0", currentActiveBalance0);
-            console2.log("currentActiveBalance1", currentActiveBalance1);
-            (inputAmount, outputAmount) = params.zeroForOne
-                ? (updatedActiveBalance0 - currentActiveBalance0, currentActiveBalance1 - updatedActiveBalance1)
-                : (updatedActiveBalance1 - currentActiveBalance1, currentActiveBalance0 - updatedActiveBalance0);
-        }
+        // compute swap result
+        (
+            uint160 updatedSqrtPriceX96,
+            int24 updatedTick,
+            uint256 inputAmount,
+            uint256 outputAmount,
+            uint256 updatedRoundedTickBalance0,
+            uint256 updatedRoundedTickBalance1
+        ) = BunniSwapMath.computeSwap({
+            key: key,
+            totalLiquidity: totalLiquidity,
+            liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
+            density0RightOfRoundedTickX96: density0RightOfRoundedTickX96,
+            density1LeftOfRoundedTickX96: density1LeftOfRoundedTickX96,
+            sqrtPriceX96: sqrtPriceX96,
+            currentTick: currentTick,
+            roundedTickSqrtRatio: roundedTickSqrtRatio,
+            nextRoundedTickSqrtRatio: nextRoundedTickSqrtRatio,
+            balance0: balance0,
+            balance1: balance1,
+            liquidityDensityFunction: bunniState.liquidityDensityFunction,
+            arithmeticMeanTick: arithmeticMeanTick,
+            useTwap: useTwap,
+            ldfParams: bunniState.ldfParams,
+            ldfState: ldfState,
+            params: params
+        });
 
         // update slot0
         slot0s[id] = Slot0({sqrtPriceX96: updatedSqrtPriceX96, tick: updatedTick});
 
         (Currency inputToken, Currency outputToken) =
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+
+        // clear pool credits of hub
+        if (bunniState.poolCredit0Set || bunniState.poolCredit1Set) {
+            PoolKey[] memory keys = new PoolKey[](1);
+            keys[0] = key;
+            hub.clearPoolCredits(keys);
+        }
 
         // take input tokens from pool manager
         // swapper will have to pay this debt to pool manager (since we're using access lock)
@@ -476,7 +425,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         } else {
             // pool manager doesn't have enough balance for us to take
             // mint difference as pool credits
-            poolManager.take(inputToken, address(this), poolManagerBalance);
+            if (poolManagerBalance != 0) {
+                poolManager.take(inputToken, address(this), poolManagerBalance);
+            }
             inputPoolCreditAmount = inputAmount - poolManagerBalance;
             poolManager.mint(address(this), inputToken.toId(), inputPoolCreditAmount);
 

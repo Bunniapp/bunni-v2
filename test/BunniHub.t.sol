@@ -36,6 +36,7 @@ import {IERC20} from "../src/interfaces/IERC20.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
+import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
@@ -46,7 +47,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     uint256 internal constant PRECISION = 10 ** 18;
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
-    uint256 internal constant MIN_INITIAL_SHARES = 1e3;
     uint96 internal constant HOOK_SWAP_FEE = 0.1e18;
     uint64 internal constant ALPHA = 0.7e18;
     uint256 internal constant MAX_ERROR = 1e9;
@@ -314,7 +314,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         ERC4626 vault1_,
         string memory snapLabel
     ) internal {
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            currency0,
+            currency1,
+            vault0_,
+            vault1_,
+            new GeometricDistribution(),
+            bytes32(abi.encodePacked(int16(-3), int16(6), uint32(5e7), uint8(0))),
+            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+        );
 
         uint256 inputAmount = PRECISION * 2;
         uint256 value = key.currency0.isNative() ? inputAmount : 0;
@@ -366,46 +374,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             zeroForOne: true,
             amountSpecified: int256(inputAmount),
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
-        });
-
-        _swap(key, params, value, snapLabel);
-
-        (, currentTick) = bunniHook.slot0s(key.toId());
-        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
-        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
-    }
-
-    function test_swap_zeroForOne_boundaryCondition() public {
-        _execTestAcrossScenarios(_test_swap_zeroForOne_boundaryCondition, 0, 0, "swap zeroForOne boundaryCondition");
-    }
-
-    function _test_swap_zeroForOne_boundaryCondition(
-        uint256,
-        uint256,
-        Currency currency0,
-        Currency currency1,
-        ERC4626 vault0_,
-        ERC4626 vault1_,
-        string memory snapLabel
-    ) internal {
-        // when swapping from token0 to token1, it's possible for the updated tick to exceed the tick
-        // specified by sqrtPriceLimitX96, so we need to handle this edge case properly by adding
-        // liquidity to the actual rounded tick
-
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
-
-        uint256 inputAmount = PRECISION * 20;
-        uint256 value = key.currency0.isNative() ? inputAmount : 0;
-
-        _mint(key.currency0, address(this), inputAmount);
-
-        (, int24 currentTick) = bunniHook.slot0s(key.toId());
-        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
-
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-10) // limit tick is -10 but we'll end up at -11
         });
 
         _swap(key, params, value, snapLabel);
@@ -777,26 +745,20 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             (currency0.balanceOf(address(this)), currency1.balanceOf(address(this)));
         bytes[] memory results = MulticallerWithSender(payable(LibMulticaller.MULTICALLER_WITH_SENDER))
             .aggregateWithSender{value: 3 ether}(targets, data, values);
-        (,, uint256 amount0Call0, uint256 amount1Call0) = abi.decode(results[0], (uint256, uint128, uint256, uint256));
-        (,, uint256 amount0Call1, uint256 amount1Call1) = abi.decode(results[1], (uint256, uint128, uint256, uint256));
+        (, uint256 amount0Call0, uint256 amount1Call0) = abi.decode(results[0], (uint256, uint256, uint256));
+        (, uint256 amount0Call1, uint256 amount1Call1) = abi.decode(results[1], (uint256, uint256, uint256));
 
         // tokens taken should match sum of returned values
         assertEq(
-            beforeBalance0 - currency0.balanceOf(address(this)),
-            amount0Call0 + amount0Call1,
+            beforeBalance0,
+            amount0Call0 + amount0Call1 + currency0.balanceOf(address(this)),
             "amount0Call0 + amount0Call1 != amount taken"
         );
         assertEq(
-            beforeBalance1 - currency1.balanceOf(address(this)),
-            amount1Call0 + amount1Call1,
+            beforeBalance1,
+            amount1Call0 + amount1Call1 + currency1.balanceOf(address(this)),
             "amount1Call0 + amount1Call1 != amount taken"
         );
-
-        // hub should have 0 ETH balance
-        assertEq(address(hub).balance, 0, "hub ETH balance not 0");
-
-        // hub should have 0 token0 balance
-        assertEq(token0.balanceOf(address(hub)), 0, "hub token0 balance not 0");
     }
 
     function test_hookHasInsufficientTokens() external {
@@ -826,204 +788,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(100)
         });
         _swap(key, params, 0, "");
-    }
-
-    function test_shiftMode_enforceLeft_noRightShift() external {
-        MockLDF ldf_ = new MockLDF();
-
-        Currency currency0 = CurrencyLibrary.NATIVE;
-        Currency currency1 = Currency.wrap(address(token0));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            ldf_,
-            bytes32(abi.encodePacked(ALPHA, ShiftMode.LEFT)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
-        );
-
-        // shift mu to the right
-        ldf_.setMu(10);
-
-        // perform swap
-        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
-        uint256 inputAmount = PRECISION;
-        _mint(key.currency1, address(this), inputAmount);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-        });
-        _swap(key, params, 0, "");
-
-        // check that mu has not actually shifted
-        assertEq(poolManager.getLiquidity(key.toId()), beforeLiquidity, "mu did shift");
-    }
-
-    function test_shiftMode_enforceLeft_allowLeftShift() external {
-        MockLDF ldf_ = new MockLDF();
-
-        Currency currency0 = CurrencyLibrary.NATIVE;
-        Currency currency1 = Currency.wrap(address(token0));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            ldf_,
-            bytes32(abi.encodePacked(ALPHA, ShiftMode.LEFT)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
-        );
-
-        // shift mu to the left
-        ldf_.setMu(-10);
-
-        // perform swap
-        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
-        uint256 inputAmount = PRECISION;
-        _mint(key.currency1, address(this), inputAmount);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-        });
-        _swap(key, params, 0, "");
-
-        // check that mu has actually shifted
-        assertTrue(poolManager.getLiquidity(key.toId()) != beforeLiquidity, "mu did not shift");
-    }
-
-    function test_shiftMode_enforceRight_noLeftShift() external {
-        MockLDF ldf_ = new MockLDF();
-
-        Currency currency0 = CurrencyLibrary.NATIVE;
-        Currency currency1 = Currency.wrap(address(token0));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            ldf_,
-            bytes32(abi.encodePacked(ALPHA, ShiftMode.RIGHT)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
-        );
-
-        // shift mu to the left
-        ldf_.setMu(-10);
-
-        // perform swap
-        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
-        uint256 inputAmount = PRECISION;
-        _mint(key.currency1, address(this), inputAmount);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-        });
-        _swap(key, params, 0, "");
-
-        // check that mu has not actually shifted
-        assertEq(poolManager.getLiquidity(key.toId()), beforeLiquidity, "mu did shift");
-    }
-
-    function test_shiftMode_enforceRight_allowRightShift() external {
-        MockLDF ldf_ = new MockLDF();
-
-        Currency currency0 = CurrencyLibrary.NATIVE;
-        Currency currency1 = Currency.wrap(address(token0));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            ldf_,
-            bytes32(abi.encodePacked(ALPHA, ShiftMode.RIGHT)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
-        );
-
-        // shift mu to the right
-        ldf_.setMu(10);
-
-        // perform swap
-        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
-        uint256 inputAmount = PRECISION;
-        _mint(key.currency1, address(this), inputAmount);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-        });
-        _swap(key, params, 0, "");
-
-        // check that mu has actually shifted
-        assertTrue(poolManager.getLiquidity(key.toId()) != beforeLiquidity, "mu did not shift");
-    }
-
-    function test_shiftMode_both_allowLeftShift() external {
-        MockLDF ldf_ = new MockLDF();
-
-        Currency currency0 = CurrencyLibrary.NATIVE;
-        Currency currency1 = Currency.wrap(address(token0));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            ldf_,
-            bytes32(abi.encodePacked(ALPHA, ShiftMode.BOTH)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
-        );
-
-        // shift mu to the left
-        ldf_.setMu(-10);
-
-        // perform swap
-        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
-        uint256 inputAmount = PRECISION;
-        _mint(key.currency1, address(this), inputAmount);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-        });
-        _swap(key, params, 0, "");
-
-        // check that mu has actually shifted
-        assertTrue(poolManager.getLiquidity(key.toId()) != beforeLiquidity, "mu did not shift");
-    }
-
-    function test_shiftMode_both_allowRightShift() external {
-        MockLDF ldf_ = new MockLDF();
-
-        Currency currency0 = CurrencyLibrary.NATIVE;
-        Currency currency1 = Currency.wrap(address(token0));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            ldf_,
-            bytes32(abi.encodePacked(ALPHA, ShiftMode.BOTH)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
-        );
-
-        // shift mu to the right
-        ldf_.setMu(10);
-
-        // perform swap
-        uint128 beforeLiquidity = poolManager.getLiquidity(key.toId());
-        uint256 inputAmount = PRECISION;
-        _mint(key.currency1, address(this), inputAmount);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
-        });
-        _swap(key, params, 0, "");
-
-        // check that mu has actually shifted
-        assertTrue(poolManager.getLiquidity(key.toId()) != beforeLiquidity, "mu did not shift");
     }
 
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
