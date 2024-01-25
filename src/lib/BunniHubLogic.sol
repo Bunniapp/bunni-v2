@@ -52,11 +52,10 @@ library BunniHubLogic {
 
     function deposit(
         IBunniHub.DepositParams calldata params,
+        IPoolManager poolManager,
         WETH weth,
         IPermit2 permit2,
-        mapping(PoolId => RawPoolState) storage _poolState,
-        mapping(PoolId => uint256) storage poolCredit0,
-        mapping(PoolId => uint256) storage poolCredit1
+        mapping(PoolId => RawPoolState) storage _poolState
     ) external returns (uint256 shares, uint256 amount0, uint256 amount1) {
         address msgSender = LibMulticaller.senderOrSigner();
         PoolId poolId = params.poolKey.toId();
@@ -70,9 +69,7 @@ library BunniHubLogic {
                 params: params,
                 poolId: poolId,
                 currentTick: currentTick,
-                sqrtPriceX96: sqrtPriceX96,
-                poolCredit0: state.poolCredit0Set ? poolCredit0[poolId] : 0,
-                poolCredit1: state.poolCredit1Set ? poolCredit1[poolId] : 0
+                sqrtPriceX96: sqrtPriceX96
             })
         );
         uint256 depositAmount0 = depositReturnData.depositAmount0;
@@ -104,14 +101,21 @@ library BunniHubLogic {
             address(state.vault0) != address(0) ? amount0 - depositAmount0 : amount0,
             address(state.vault1) != address(0) ? amount1 - depositAmount1 : amount1
         );
-        if (rawAmount0 != 0) {
-            params.poolKey.currency0.safeTransferFromPermit2(msgSender, address(this), rawAmount0, permit2);
-            _poolState[poolId].rawBalance0 += rawAmount0;
-        }
-        if (rawAmount1 != 0) {
-            params.poolKey.currency1.safeTransferFromPermit2(msgSender, address(this), rawAmount1, permit2);
-            _poolState[poolId].rawBalance1 += rawAmount1;
-        }
+        poolManager.lock(
+            address(this),
+            abi.encode(
+                LockCallbackType.DEPOSIT,
+                abi.encode(
+                    DepositCallbackInputData({
+                        user: msgSender,
+                        poolKey: params.poolKey,
+                        msgValue: msg.value,
+                        rawAmount0: rawAmount0,
+                        rawAmount1: rawAmount1
+                    })
+                )
+            )
+        );
 
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
             revert BunniHub__SlippageTooHigh();
@@ -138,8 +142,6 @@ library BunniHubLogic {
         PoolId poolId;
         int24 currentTick;
         uint160 sqrtPriceX96;
-        uint256 poolCredit0;
-        uint256 poolCredit1;
     }
 
     struct DepositLogicReturnData {
@@ -173,10 +175,8 @@ library BunniHubLogic {
             getReservesInUnderlying(inputData.state.reserve0, inputData.state.vault0),
             getReservesInUnderlying(inputData.state.reserve1, inputData.state.vault1)
         );
-        (vars.balance0, vars.balance1) = (
-            inputData.state.rawBalance0 + vars.reserveBalance0 + inputData.poolCredit0,
-            inputData.state.rawBalance1 + vars.reserveBalance1 + inputData.poolCredit1
-        );
+        (vars.balance0, vars.balance1) =
+            (inputData.state.rawBalance0 + vars.reserveBalance0, inputData.state.rawBalance1 + vars.reserveBalance1);
 
         // update TWAP oracle and optionally observe
         bool requiresLDF = vars.balance0 == 0 && vars.balance1 == 0;
@@ -350,9 +350,7 @@ library BunniHubLogic {
         IPoolManager poolManager,
         WETH weth,
         IPermit2 permit2,
-        mapping(PoolId => RawPoolState) storage _poolState,
-        mapping(PoolId => uint256) storage poolCredit0,
-        mapping(PoolId => uint256) storage poolCredit1
+        mapping(PoolId => RawPoolState) storage _poolState
     ) external returns (uint256 amount0, uint256 amount1) {
         /// -----------------------------------------------------------------------
         /// Validation
@@ -384,16 +382,6 @@ library BunniHubLogic {
         uint256 rawAmount1 = state.rawBalance1.mulDiv(params.shares, currentTotalSupply);
         amount0 = reserveAmount0 + rawAmount0;
         amount1 = reserveAmount1 + rawAmount1;
-        uint256 poolCreditAmount0;
-        uint256 poolCreditAmount1;
-        if (state.poolCredit0Set) {
-            poolCreditAmount0 = poolCredit0[poolId].mulDiv(params.shares, currentTotalSupply);
-            amount0 += poolCreditAmount0;
-        }
-        if (state.poolCredit1Set) {
-            poolCreditAmount1 = poolCredit1[poolId].mulDiv(params.shares, currentTotalSupply);
-            amount1 += poolCreditAmount1;
-        }
 
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
             revert BunniHub__SlippageTooHigh();
@@ -434,50 +422,10 @@ library BunniHubLogic {
         }
 
         // withdraw raw tokens
-        if (rawAmount0 != 0) {
-            _poolState[poolId].rawBalance0 -= rawAmount0;
-            params.poolKey.currency0.transfer(params.recipient, rawAmount0);
-        }
-        if (rawAmount1 != 0) {
-            _poolState[poolId].rawBalance1 -= rawAmount1;
-            params.poolKey.currency1.transfer(params.recipient, rawAmount1);
-        }
-
-        // withdraw pool credits
-        if (state.poolCredit0Set) {
-            poolManager.lock(
-                address(this),
-                abi.encode(
-                    LockCallbackType.WITHDRAW_POOL_CREDIT,
-                    abi.encode(
-                        WithdrawPoolCreditInputData({
-                            poolId: poolId,
-                            currency: params.poolKey.currency0,
-                            currencyIdx: 0,
-                            poolCreditAmount: poolCreditAmount0,
-                            recipient: params.recipient
-                        })
-                    )
-                )
-            );
-        }
-        if (state.poolCredit1Set) {
-            poolManager.lock(
-                address(this),
-                abi.encode(
-                    LockCallbackType.WITHDRAW_POOL_CREDIT,
-                    abi.encode(
-                        WithdrawPoolCreditInputData({
-                            poolId: poolId,
-                            currency: params.poolKey.currency1,
-                            currencyIdx: 1,
-                            poolCreditAmount: poolCreditAmount1,
-                            recipient: params.recipient
-                        })
-                    )
-                )
-            );
-        }
+        poolManager.lock(
+            address(this),
+            abi.encode(LockCallbackType.WITHDRAW, abi.encode(params.recipient, params.poolKey, rawAmount0, rawAmount1))
+        );
 
         emit IBunniHub.Withdraw(msgSender, params.recipient, poolId, amount0, amount1, params.shares);
     }
@@ -711,8 +659,6 @@ library BunniHubLogic {
             vault0: vault0,
             vault1: vault1,
             statefulLdf: statefulLdf,
-            poolCredit0Set: rawState.poolCredit0Set,
-            poolCredit1Set: rawState.poolCredit1Set,
             rawBalance0: rawState.rawBalance0,
             rawBalance1: rawState.rawBalance1,
             reserve0: rawState.reserve0,

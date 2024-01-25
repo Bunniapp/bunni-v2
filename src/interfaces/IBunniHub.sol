@@ -198,15 +198,10 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         PoolKey calldata key,
         bool zeroForOne,
         uint256 inputAmount,
-        uint256 inputPoolCreditAmount,
         uint256 outputAmount,
         uint256 updatedRawTokenBalance0,
         uint256 updatedRawTokenBalance1
-    ) external payable;
-
-    /// @notice Clears the credits of a pool and deposit the assets into the vaults.
-    /// @param keys The PoolKeys of the Uniswap V4 pools
-    function clearPoolCredits(PoolKey[] calldata keys) external;
+    ) external;
 
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
@@ -216,20 +211,4 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
 
     /// @notice The PoolId of a given BunniToken.
     function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
-
-    /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
-    /// the edge case where 1) a vault is used 2) a swap occurs that crosses a rounded tick boundary
-    /// 3) PoolManager doesn't have enough balance for paying out the tokens of the withdrawn liquidity
-    /// before the swapper settles the swap so that the tokens can be deposited into the vault as reserve.
-    /// In this case, we mint PoolManager claim tokens to the pool's reserves so that later the tokens can be deposited
-    /// into the vault.
-    function poolCredit0(PoolId poolId) external view returns (uint256);
-
-    /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
-    /// the edge case where 1) a vault is used 2) a swap occurs that crosses a rounded tick boundary
-    /// 3) PoolManager doesn't have enough balance for paying out the tokens of the withdrawn liquidity
-    /// before the swapper settles the swap so that the tokens can be deposited into the vault as reserve.
-    /// In this case, we mint PoolManager claim tokens to the pool's reserves so that later the tokens can be deposited
-    /// into the vault.
-    function poolCredit1(PoolId poolId) external view returns (uint256);
 }

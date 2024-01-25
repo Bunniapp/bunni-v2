@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
-import {console2} from "forge-std/console2.sol";
-
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
@@ -339,8 +337,6 @@ library LibGeometricDistribution {
             xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
         }
 
-        console2.log("xWad: %d", xWad);
-
         // get rounded tick from xWad
         success = true;
         roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
@@ -404,8 +400,6 @@ library LibGeometricDistribution {
         assembly {
             xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
         }
-
-        console2.log("xWad: %d", xWad);
 
         // get rounded tick from xWad
         success = true;

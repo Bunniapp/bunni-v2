@@ -19,8 +19,6 @@ struct PoolState {
     ERC4626 vault0;
     ERC4626 vault1;
     bool statefulLdf;
-    bool poolCredit0Set;
-    bool poolCredit1Set;
     uint256 rawBalance0;
     uint256 rawBalance1;
     uint256 reserve0;
@@ -29,20 +27,34 @@ struct PoolState {
 
 struct RawPoolState {
     address immutableParamsPointer;
-    bool poolCredit0Set;
-    bool poolCredit1Set;
     uint256 rawBalance0;
     uint256 rawBalance1;
     uint256 reserve0;
     uint256 reserve1;
 }
 
-struct WithdrawPoolCreditInputData {
-    PoolId poolId;
-    Currency currency;
-    uint256 currencyIdx;
-    uint256 poolCreditAmount;
-    address recipient;
+struct HookHandleSwapCallbackInputData {
+    PoolKey key;
+    bool zeroForOne;
+    uint256 inputAmount;
+    uint256 outputAmount;
+    uint256 updatedRawTokenBalance0;
+    uint256 updatedRawTokenBalance1;
+}
+
+struct DepositCallbackInputData {
+    address user;
+    PoolKey poolKey;
+    uint256 msgValue;
+    uint256 rawAmount0;
+    uint256 rawAmount1;
+}
+
+struct WithdrawCallbackInputData {
+    address user;
+    PoolKey poolKey;
+    uint256 rawAmount0;
+    uint256 rawAmount1;
 }
 
 struct InitializePoolCallbackInputData {
@@ -53,7 +65,8 @@ struct InitializePoolCallbackInputData {
 }
 
 enum LockCallbackType {
-    WITHDRAW_POOL_CREDIT,
-    CLEAR_POOL_CREDITS,
+    SWAP,
+    DEPOSIT,
+    WITHDRAW,
     INITIALIZE_POOL
 }

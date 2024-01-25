@@ -10,26 +10,23 @@ import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 
 library AdditionalCurrencyLibrary {
     using SafeCastLib for uint256;
+    using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
 
     error NativeTransferToNotThis();
     error MsgValueInsufficient();
 
-    function safeTransferFrom(Currency currency, address from, address to, uint256 amount) internal {
+    function safeTransferFromPermit2(
+        Currency currency,
+        address from,
+        address to,
+        uint256 amount,
+        IPermit2 permit2,
+        uint256 msgValue
+    ) internal {
         if (currency.isNative()) {
-            if (to != address(this)) revert NativeTransferToNotThis();
-            if (amount > msg.value) revert MsgValueInsufficient();
-        } else {
-            SafeTransferLib.safeTransferFrom(Currency.unwrap(currency), from, to, amount);
-        }
-    }
-
-    function safeTransferFromPermit2(Currency currency, address from, address to, uint256 amount, IPermit2 permit2)
-        internal
-    {
-        if (currency.isNative()) {
-            if (to != address(this)) revert NativeTransferToNotThis();
-            if (amount > msg.value) revert MsgValueInsufficient();
+            if (amount > msgValue) revert MsgValueInsufficient();
+            if (to != address(this)) to.safeTransferETH(amount);
         } else {
             permit2.transferFrom(from, to, amount.toUint160(), Currency.unwrap(currency));
         }

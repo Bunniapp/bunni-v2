@@ -55,12 +55,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// @inheritdoc IBunniHub
     mapping(IBunniToken bunniToken => PoolId) public override poolIdOfBunniToken;
 
-    /// @inheritdoc IBunniHub
-    mapping(PoolId poolId => uint256) public override poolCredit0;
-
-    /// @inheritdoc IBunniHub
-    mapping(PoolId poolId => uint256) public override poolCredit1;
-
     /// -----------------------------------------------------------
     /// Modifiers
     /// -----------------------------------------------------------
@@ -93,7 +87,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         checkDeadline(params.deadline)
         returns (uint256 shares, uint256 amount0, uint256 amount1)
     {
-        return BunniHubLogic.deposit(params, weth, permit2, _poolState, poolCredit0, poolCredit1);
+        return BunniHubLogic.deposit(params, poolManager, weth, permit2, _poolState);
     }
 
     /// @inheritdoc IBunniHub
@@ -105,7 +99,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         checkDeadline(params.deadline)
         returns (uint256 amount0, uint256 amount1)
     {
-        return BunniHubLogic.withdraw(params, poolManager, weth, permit2, _poolState, poolCredit0, poolCredit1);
+        return BunniHubLogic.withdraw(params, poolManager, weth, permit2, _poolState);
     }
 
     /// @inheritdoc IBunniHub
@@ -123,52 +117,110 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         PoolKey calldata key,
         bool zeroForOne,
         uint256 inputAmount,
-        uint256 inputPoolCreditAmount,
         uint256 outputAmount,
         uint256 updatedRawTokenBalance0,
         uint256 updatedRawTokenBalance1
-    ) external payable override nonReentrant {
+    ) external override nonReentrant {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
+
+        poolManager.lock(
+            address(this),
+            abi.encode(
+                LockCallbackType.SWAP,
+                abi.encode(
+                    HookHandleSwapCallbackInputData({
+                        key: key,
+                        zeroForOne: zeroForOne,
+                        inputAmount: inputAmount,
+                        outputAmount: outputAmount,
+                        updatedRawTokenBalance0: updatedRawTokenBalance0,
+                        updatedRawTokenBalance1: updatedRawTokenBalance1
+                    })
+                )
+            )
+        );
+    }
+
+    receive() external payable {}
+
+    /// -----------------------------------------------------------------------
+    /// View functions
+    /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IBunniHub
+    function poolState(PoolId poolId) external view returns (PoolState memory) {
+        return _getPoolState(poolId);
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Uniswap callback
+    /// -----------------------------------------------------------------------
+
+    function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
+        // verify sender
+        if (msg.sender != address(poolManager) || lockCaller != address(this)) revert BunniHub__Unauthorized();
+
+        // decode input
+        (LockCallbackType t, bytes memory callbackData) = abi.decode(data, (LockCallbackType, bytes));
+
+        // redirect to respective callback
+        if (t == LockCallbackType.SWAP) {
+            _hookHandleSwapLockCallback(abi.decode(callbackData, (HookHandleSwapCallbackInputData)));
+        } else if (t == LockCallbackType.DEPOSIT) {
+            _depositLockCallback(abi.decode(callbackData, (DepositCallbackInputData)));
+        } else if (t == LockCallbackType.WITHDRAW) {
+            _withdrawLockCallback(abi.decode(callbackData, (WithdrawCallbackInputData)));
+        } else if (t == LockCallbackType.INITIALIZE_POOL) {
+            _initializePoolLockCallback(abi.decode(callbackData, (InitializePoolCallbackInputData)));
+        }
+        // fallback
+        return bytes("");
+    }
+
+    /// -----------------------------------------------------------
+    /// Internal functions
+    /// -----------------------------------------------------------
+
+    function _hookHandleSwapLockCallback(HookHandleSwapCallbackInputData memory data) internal {
+        (
+            PoolKey memory key,
+            bool zeroForOne,
+            uint256 inputAmount,
+            uint256 outputAmount,
+            uint256 updatedRawTokenBalance0,
+            uint256 updatedRawTokenBalance1
+        ) = (
+            data.key,
+            data.zeroForOne,
+            data.inputAmount,
+            data.outputAmount,
+            data.updatedRawTokenBalance0,
+            data.updatedRawTokenBalance1
+        );
 
         // load state
         PoolId poolId = key.toId();
         PoolState memory state = _getPoolState(poolId);
         (Currency inputToken, Currency outputToken) =
             zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        (uint256 initialReserve0, uint256 initialReserve1) = (state.reserve0, state.reserve1);
 
-        // pull input tokens from hook
+        // pull input claim tokens from hook
         if (inputAmount != 0) {
             if (zeroForOne) {
                 state.rawBalance0 += inputAmount;
             } else {
                 state.rawBalance1 += inputAmount;
             }
-            inputToken.safeTransferFrom(address(key.hooks), address(this), inputAmount);
+            poolManager.transferFrom(address(key.hooks), address(this), inputToken.toId(), inputAmount);
         }
 
-        // pull input pool credit from hook
-        if (inputPoolCreditAmount > 0) {
-            // increase poolCredit
-            mapping(PoolId => uint256) storage poolCredit = zeroForOne ? poolCredit0 : poolCredit1;
-
-            // we just cleared the pool credits, so we can assume it's zero
-            // credit zero -> non-zero
-            // set flag
-            if (zeroForOne) _poolState[poolId].poolCredit0Set = true;
-            else _poolState[poolId].poolCredit1Set = true;
-
-            poolCredit[poolId] = inputPoolCreditAmount;
-
-            // transfer claim tokens from hook
-            poolManager.transferFrom(address(key.hooks), address(this), inputToken.toId(), inputPoolCreditAmount);
-        }
-
-        // push output tokens to pool manager
+        // push output claim tokens to hook
         if (zeroForOne) {
             if (address(state.vault1) != address(0) && state.rawBalance1 < outputAmount) {
                 // insufficient token balance
                 // withdraw tokens from reserves
-                int256 reserve1Change = _updateVaultReserve(
+                int256 reserve1Change = _updateVaultReserveViaClaimTokens(
                     -(outputAmount - state.rawBalance1).toInt256(), outputToken, state.vault1, address(this), false
                 );
                 state.reserve1 = (state.reserve1.toInt256() + reserve1Change).toUint256();
@@ -179,7 +231,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             if (address(state.vault0) != address(0) && state.rawBalance0 < outputAmount) {
                 // insufficient token balance
                 // withdraw tokens from reserves
-                int256 reserve0Change = _updateVaultReserve(
+                int256 reserve0Change = _updateVaultReserveViaClaimTokens(
                     -(outputAmount - state.rawBalance0).toInt256(), outputToken, state.vault0, address(this), false
                 );
                 state.reserve0 = (state.reserve0.toInt256() + reserve0Change).toUint256();
@@ -187,7 +239,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             }
             state.rawBalance0 -= outputAmount;
         }
-        outputToken.transfer(address(poolManager), outputAmount);
+        poolManager.transfer(address(key.hooks), outputToken.toId(), outputAmount);
 
         // update raw token balances if we're using vaults
         /* if (address(state.vault0) != address(0) && updatedRawTokenBalance0 != state.rawBalance0) {
@@ -216,141 +268,68 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         // update state
         _poolState[poolId].rawBalance0 = state.rawBalance0;
         _poolState[poolId].rawBalance1 = state.rawBalance1;
-        if (address(state.vault0) != address(0)) {
+        if (address(state.vault0) != address(0) && initialReserve0 != state.reserve0) {
             _poolState[poolId].reserve0 = state.reserve0;
         }
-        if (address(state.vault1) != address(0)) {
+        if (address(state.vault1) != address(0) && initialReserve1 != state.reserve1) {
             _poolState[poolId].reserve1 = state.reserve1;
         }
     }
 
-    /// @inheritdoc IBunniHub
-    function clearPoolCredits(PoolKey[] calldata keys) external override nonReentrant {
-        poolManager.lock(address(this), abi.encode(LockCallbackType.CLEAR_POOL_CREDITS, abi.encode(keys)));
-    }
+    function _depositLockCallback(DepositCallbackInputData memory data) internal {
+        (address msgSender, PoolKey memory key, uint256 msgValue, uint256 rawAmount0, uint256 rawAmount1) =
+            (data.user, data.poolKey, data.msgValue, data.rawAmount0, data.rawAmount1);
 
-    receive() external payable {}
-
-    /// -----------------------------------------------------------------------
-    /// View functions
-    /// -----------------------------------------------------------------------
-
-    /// @inheritdoc IBunniHub
-    function poolState(PoolId poolId) external view returns (PoolState memory) {
-        return _getPoolState(poolId);
-    }
-
-    /// -----------------------------------------------------------------------
-    /// Uniswap callback
-    /// -----------------------------------------------------------------------
-
-    function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
-        // verify sender
-        if (msg.sender != address(poolManager) || lockCaller != address(this)) revert BunniHub__Unauthorized();
-
-        // decode input
-        (LockCallbackType t, bytes memory callbackData) = abi.decode(data, (LockCallbackType, bytes));
-
-        // redirect to respective callback
-        if (t == LockCallbackType.WITHDRAW_POOL_CREDIT) {
-            _withdrawPoolCredit(abi.decode(callbackData, (WithdrawPoolCreditInputData)));
-        } else if (t == LockCallbackType.CLEAR_POOL_CREDITS) {
-            _clearPoolCreditsLockCallback(abi.decode(callbackData, (PoolKey[])));
-        } else if (t == LockCallbackType.INITIALIZE_POOL) {
-            _initializePoolLockCallback(abi.decode(callbackData, (InitializePoolCallbackInputData)));
+        PoolId poolId = key.toId();
+        if (rawAmount0 != 0) {
+            key.currency0.safeTransferFromPermit2(msgSender, address(poolManager), rawAmount0, permit2, msgValue);
+            poolManager.settle(key.currency0);
+            poolManager.mint(address(this), key.currency0.toId(), rawAmount0);
+            _poolState[poolId].rawBalance0 += rawAmount0;
         }
-        // fallback
-        return bytes("");
-    }
-
-    /// -----------------------------------------------------------
-    /// Internal functions
-    /// -----------------------------------------------------------
-
-    function _withdrawPoolCredit(WithdrawPoolCreditInputData memory data) internal {
-        mapping(PoolId => uint256) storage poolCredit = data.currencyIdx == 0 ? poolCredit0 : poolCredit1;
-
-        // burn claim tokens
-        poolManager.burn(address(this), data.currency.toId(), data.poolCreditAmount);
-
-        // take assets
-        poolManager.take(data.currency, data.recipient, data.poolCreditAmount);
-
-        // update credit in state
-        uint256 existingPoolCredit = poolCredit[data.poolId];
-        poolCredit[data.poolId] = existingPoolCredit - data.poolCreditAmount;
-        if (existingPoolCredit == data.poolCreditAmount) {
-            // credit non-zero -> zero
-            // clear flag
-            if (data.currencyIdx == 0) _poolState[data.poolId].poolCredit0Set = false;
-            else _poolState[data.poolId].poolCredit1Set = false;
+        if (rawAmount1 != 0) {
+            key.currency1.safeTransferFromPermit2(msgSender, address(poolManager), rawAmount1, permit2, msgValue);
+            poolManager.settle(key.currency1);
+            poolManager.mint(address(this), key.currency1.toId(), rawAmount1);
+            _poolState[poolId].rawBalance1 += rawAmount1;
         }
     }
 
-    /// @dev Clears pool credits for the specified pools.
-    function _clearPoolCreditsLockCallback(PoolKey[] memory keys) internal {
-        for (uint256 i; i < keys.length; i++) {
-            PoolKey memory key = keys[i];
-            PoolId poolId = key.toId();
-            PoolState memory state = _getPoolState(poolId);
-            if (state.poolCredit0Set) {
-                _clearPoolCredit(poolId, key.currency0, state.vault0, 0);
-            }
-            if (state.poolCredit1Set) {
-                _clearPoolCredit(poolId, key.currency1, state.vault1, 1);
-            }
+    function _withdrawLockCallback(WithdrawCallbackInputData memory data) internal {
+        (address recipient, PoolKey memory key, uint256 rawAmount0, uint256 rawAmount1) =
+            (data.user, data.poolKey, data.rawAmount0, data.rawAmount1);
+
+        PoolId poolId = key.toId();
+        if (rawAmount0 != 0) {
+            _poolState[poolId].rawBalance0 -= rawAmount0;
+            poolManager.burn(address(this), key.currency0.toId(), rawAmount0);
+            poolManager.take(key.currency0, recipient, rawAmount0);
         }
-    }
-
-    function _clearPoolCredit(PoolId poolId, Currency currency, ERC4626 vault, uint256 currencyIdx) internal {
-        mapping(PoolId => uint256) storage poolCredit = currencyIdx == 0 ? poolCredit0 : poolCredit1;
-        uint256 poolCreditAmount = poolCredit[poolId];
-
-        // burn claim tokens
-        poolManager.burn(address(this), currency.toId(), poolCreditAmount);
-
-        // take assets
-        poolManager.take(currency, address(this), poolCreditAmount);
-
-        if (address(vault) != address(0)) {
-            // deposit into reserves
-            int256 reserveChange =
-                _updateVaultReserve(poolCreditAmount.toInt256(), currency, vault, address(this), false);
-            if (currencyIdx == 0) {
-                _poolState[poolId].reserve0 = (reserveChange + _poolState[poolId].reserve0.toInt256()).toUint256();
-            } else {
-                _poolState[poolId].reserve1 = (reserveChange + _poolState[poolId].reserve1.toInt256()).toUint256();
-            }
-        } else {
-            // increment raw balance
-            if (currencyIdx == 0) {
-                _poolState[poolId].rawBalance0 += poolCreditAmount;
-            } else {
-                _poolState[poolId].rawBalance1 += poolCreditAmount;
-            }
+        if (rawAmount1 != 0) {
+            _poolState[poolId].rawBalance1 -= rawAmount1;
+            poolManager.burn(address(this), key.currency1.toId(), rawAmount1);
+            poolManager.take(key.currency1, recipient, rawAmount1);
         }
-
-        // clear credit in state
-        delete poolCredit[poolId];
-        if (currencyIdx == 0) _poolState[poolId].poolCredit0Set = false;
-        else _poolState[poolId].poolCredit1Set = false;
     }
 
     function _initializePoolLockCallback(InitializePoolCallbackInputData memory data) internal {
         poolManager.initialize(data.poolKey, data.sqrtPriceX96, abi.encode(data.twapSecondsAgo, data.hookParams));
     }
 
-    /// @dev Deposits/withdraws tokens from a vault.
+    /// @dev Deposits/withdraws tokens from a vault. Mints PoolManager claim tokens in the withdraw case.
     /// @param amount The amount to deposit/withdraw. Positive for deposit, negative for withdraw.
     /// @param currency The currency to deposit/withdraw.
     /// @param vault The vault to deposit/withdraw from.
     /// @param user The user to pull tokens from / withdraw tokens to
     /// @param pullTokensFromUser Whether to pull tokens from the user or not in case of deposit.
     /// @return reserveChange The change in reserves. Positive for deposit, negative for withdraw.
-    function _updateVaultReserve(int256 amount, Currency currency, ERC4626 vault, address user, bool pullTokensFromUser)
-        internal
-        returns (int256 reserveChange)
-    {
+    function _updateVaultReserveViaClaimTokens(
+        int256 amount,
+        Currency currency,
+        ERC4626 vault,
+        address user,
+        bool pullTokensFromUser
+    ) internal returns (int256 reserveChange) {
         uint256 absAmount = FixedPointMathLib.abs(amount);
         if (amount > 0) {
             IERC20 token;
@@ -377,12 +356,19 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 // burn WETH for ETH
                 weth.withdraw(absAmount);
 
-                // transfer ETH to user
-                user.safeTransferETH(absAmount);
+                // transfer ETH to poolManager
+                address(poolManager).safeTransferETH(absAmount);
             } else {
                 // normal ERC20
-                return -vault.withdraw(absAmount, user, address(this)).toInt256();
+                // withdraw tokens to poolManager
+                reserveChange = -vault.withdraw(absAmount, address(poolManager), address(this)).toInt256();
             }
+
+            // settle with poolManager
+            poolManager.settle(currency);
+
+            // mint claim tokens to user
+            poolManager.mint(user, currency.toId(), absAmount);
         }
     }
 
@@ -422,8 +408,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             vault0: vault0,
             vault1: vault1,
             statefulLdf: statefulLdf,
-            poolCredit0Set: rawState.poolCredit0Set,
-            poolCredit1Set: rawState.poolCredit1Set,
             rawBalance0: rawState.rawBalance0,
             rawBalance1: rawState.rawBalance1,
             reserve0: rawState.reserve0,

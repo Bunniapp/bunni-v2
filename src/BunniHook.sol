@@ -294,6 +294,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             revert BunniHook__InvalidSwap();
         }
 
+        uint256 beforeGasLeft = gasleft();
+
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
         (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
@@ -309,8 +311,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
             getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
-        if (bunniState.poolCredit0Set) reserve0InUnderlying += hub.poolCredit0(id);
-        if (bunniState.poolCredit1Set) reserve1InUnderlying += hub.poolCredit1(id);
         (uint256 balance0, uint256 balance1) =
             (bunniState.rawBalance0 + reserve0InUnderlying, bunniState.rawBalance1 + reserve1InUnderlying);
 
@@ -373,8 +373,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             }
         }
 
+        console2.log("beforeSwap preparation gas cost: %d", beforeGasLeft - gasleft());
+
         // compute swap result
-        uint256 beforeGasLeft = gasleft();
+        beforeGasLeft = gasleft();
         (
             uint160 updatedSqrtPriceX96,
             int24 updatedTick,
@@ -403,6 +405,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         });
         console2.log("computeSwap gas cost: %d", beforeGasLeft - gasleft());
 
+        beforeGasLeft = gasleft();
+
         // update slot0
         slot0s[id] = Slot0({sqrtPriceX96: updatedSqrtPriceX96, tick: updatedTick});
 
@@ -425,68 +429,28 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             poolManager.mint(address(this), outputToken.toId(), hookFeesAmount);
         }
 
-        // clear pool credits of hub
-        if (bunniState.poolCredit0Set || bunniState.poolCredit1Set) {
-            PoolKey[] memory keys = new PoolKey[](1);
-            keys[0] = key;
-            hub.clearPoolCredits(keys);
-        }
-
-        // take input tokens from pool manager
-        // swapper will have to pay this debt to pool manager (since we're using access lock)
-        uint256 inputPoolCreditAmount;
-        uint256 poolManagerBalance = poolManager.reservesOf(inputToken);
-        if (poolManagerBalance >= inputAmount) {
-            // pool manager has enough balance for us to take
-            poolManager.take(inputToken, address(this), inputAmount);
-        } else {
-            // pool manager doesn't have enough balance for us to take
-            // mint difference as pool credits
-            if (poolManagerBalance != 0) {
-                poolManager.take(inputToken, address(this), poolManagerBalance);
-            }
-            inputPoolCreditAmount = inputAmount - poolManagerBalance;
-            poolManager.mint(address(this), inputToken.toId(), inputPoolCreditAmount);
-
-            // update inputAmount so hub.hookHandleSwap() pulls the correct amount of input tokens
-            inputAmount = poolManagerBalance;
-        }
-
-        // input token approval
-        if (inputAmount != 0) {
-            inputToken.safeApprove(address(hub), inputAmount);
-        }
+        // take input by minting claim tokens to hook
+        poolManager.mint(address(this), inputToken.toId(), inputAmount);
 
         // call hub to handle swap
-        // - pull input tokens from hook
+        // - pull input claim tokens from hook
         // - push output tokens to pool manager
         // - update raw token balances
-        hub.hookHandleSwap{value: inputToken.isNative() ? inputAmount : 0}(
-            key,
-            params.zeroForOne,
-            inputAmount,
-            inputPoolCreditAmount,
-            outputAmount,
-            updatedRoundedTickBalance0,
-            updatedRoundedTickBalance1
+        hub.hookHandleSwap(
+            key, params.zeroForOne, inputAmount, outputAmount, updatedRoundedTickBalance0, updatedRoundedTickBalance1
         );
 
-        // settle output tokens with pool manager
-        poolManager.settle(outputToken);
+        // burn output claim tokens
+        poolManager.burn(address(this), outputToken.toId(), outputAmount);
 
         // emit swap event
         unchecked {
             emit Swap(
-                id,
-                sender,
-                params.zeroForOne,
-                inputAmount + inputPoolCreditAmount, // deducted by credit amount before so add it back
-                outputAmount,
-                updatedSqrtPriceX96,
-                updatedTick,
-                swapFee
+                id, sender, params.zeroForOne, inputAmount, outputAmount, updatedSqrtPriceX96, updatedTick, swapFee
             );
         }
+
+        console2.log("execute swap gas cost: %d", beforeGasLeft - gasleft());
 
         return Hooks.NO_OP_SELECTOR;
     }

@@ -205,22 +205,22 @@ library LibDiscreteLaplaceDistribution {
                 xWad = numerator.mulDiv(totalDensityX96, sqrtRatioNegMu).toInt256().lnQ96().sDivWad(lnBaseX96);
             }
 
-            console2.log("xWadFirst", xWad);
+            // console2.log("xWadFirst", xWad);
 
             // if the resulting x < 1, then compute x assuming roundedTick < mu + tickSpacing, i.e. x < 1
             if (xWad < int256(WAD)) {
                 uint256 tmp = cumulativeAmount0DensityX96.mulDiv(totalDensityX96, c);
-                console2.log("tmp", tmp);
+                // console2.log("tmp", tmp);
                 uint256 term2 = sqrtRatioNegMu.mulDiv(Q96, Q96 - sqrtRatioNegTickSpacing.mulDiv(alphaX96, Q96));
-                console2.log("term2", term2);
+                // console2.log("term2", term2);
                 uint256 term1 = dist(tmp, term2);
-                console2.log("term1", term1);
+                // console2.log("term1", term1);
                 (bool term1DenominatorIsPositive, uint256 term1Denominator) = absDiff(alphaX96, sqrtRatioNegTickSpacing);
-                console2.log("alphaX96", alphaX96);
-                console2.log("sqrtRatioNegTickSpacing", sqrtRatioNegTickSpacing);
-                console2.log("term1Denominator", term1Denominator);
+                // console2.log("alphaX96", alphaX96);
+                // console2.log("sqrtRatioNegTickSpacing", sqrtRatioNegTickSpacing);
+                // console2.log("term1Denominator", term1Denominator);
                 uint256 term1Right = sqrtRatioNegMu.mulDiv(alphaX96, term1Denominator);
-                console2.log("term1Right", term1Right);
+                // console2.log("term1Right", term1Right);
                 bool term1NumeratorIsPositive = term1DenominatorIsPositive && tmp > term2;
 
                 if (!term1NumeratorIsPositive && term1 > term1Right) {
@@ -228,7 +228,7 @@ library LibDiscreteLaplaceDistribution {
                 }
 
                 uint256 term1Left = term1NumeratorIsPositive ? term1Right + term1 : term1Right - term1;
-                console2.log("term1Left", term1Left);
+                // console2.log("term1Left", term1Left);
                 xWad = term1Left.mulDiv(term1Denominator, alphaX96.mulDiv(sqrtRatioNegMu, Q96)).toInt256().lnQ96()
                     .sDivWad(int256(sqrtRatioNegTickSpacing.mulDiv(Q96, alphaX96)).lnQ96());
             }
@@ -247,8 +247,8 @@ library LibDiscreteLaplaceDistribution {
         success = true;
         roundedTick = xWadToRoundedTick(xWad, mu, tickSpacing, roundUp);
 
-        console2.log("xWad", xWad);
-        console2.log("roundedTick", roundedTick);
+        // console2.log("xWad", xWad);
+        // console2.log("roundedTick", roundedTick);
     }
 
     function inverseCumulativeAmount1(
@@ -278,7 +278,7 @@ library LibDiscreteLaplaceDistribution {
                 ).sDivWad(int256(alphaX96.mulDiv(Q96, sqrtRatioTickSpacing)).lnQ96());
             }
 
-            console2.log("xWadFirst", xWad);
+            // console2.log("xWadFirst", xWad);
 
             // if the resulting x > 0, then compute x assuming roundedTick > mu, i.e. x > 0
             if (xWad > 0) {
@@ -286,15 +286,15 @@ library LibDiscreteLaplaceDistribution {
 
                 (bool denominatorIsPositive, uint256 denominator) = absDiff(Q96, baseX96);
                 uint256 x = alphaX96.mulDiv(sqrtRatioMu, sqrtRatioTickSpacing - alphaX96);
-                console2.log("x", x);
+                // console2.log("x", x);
                 uint256 y = sqrtRatioMu.mulDiv(Q96, denominator);
-                console2.log("y", y);
+                // console2.log("y", y);
                 uint256 yzDist = cumulativeAmount1DensityX96.mulDiv(totalDensityX96, c) - x;
-                console2.log("yzDist", yzDist);
+                // console2.log("yzDist", yzDist);
                 if (denominatorIsPositive && y < yzDist) return (false, 0);
                 uint256 z = denominatorIsPositive ? y - yzDist : y + yzDist;
-                console2.log("z", z);
-                console2.log("ln input", z.mulDiv(denominator, sqrtRatioMu));
+                // console2.log("z", z);
+                // console2.log("ln input", z.mulDiv(denominator, sqrtRatioMu));
                 xWad =
                     z.mulDiv(denominator, sqrtRatioMu).toInt256().lnQ96().sDivWad(int256(baseX96).lnQ96()) - int256(WAD);
             }
@@ -313,8 +313,8 @@ library LibDiscreteLaplaceDistribution {
         success = true;
         roundedTick = xWadToRoundedTick(xWad, mu, tickSpacing, roundUp);
 
-        console2.log("xWad", xWad);
-        console2.log("roundedTick", roundedTick);
+        // console2.log("xWad", xWad);
+        // console2.log("roundedTick", roundedTick);
     }
 
     function liquidityDensityX96(int24 roundedTick, int24 tickSpacing, int24 mu, uint256 alphaX96)

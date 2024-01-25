@@ -290,8 +290,6 @@ library BunniSwapMath {
 
             // compute token amounts
             (int24 updatedRoundedTick, int24 updatedNextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
-            (uint160 updatedRoundedTickSqrtRatio, uint160 updatedNextRoundedTickSqrtRatio) =
-                (TickMath.getSqrtRatioAtTick(updatedRoundedTick), TickMath.getSqrtRatioAtTick(updatedNextRoundedTick));
             (
                 uint256 updatedLiquidityDensityOfRoundedTickX96,
                 uint256 updatedDensity0RightOfRoundedTickX96,
@@ -299,12 +297,11 @@ library BunniSwapMath {
             ) = liquidityDensityFunction.query(
                 key, updatedRoundedTick, arithmeticMeanTick, updatedTick, useTwap, ldfParams, ldfState
             );
-
             updatedRoundedTickLiquidity = ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
             (updatedRoundedTickBalance0, updatedRoundedTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
                 updatedSqrtPriceX96,
-                updatedRoundedTickSqrtRatio,
-                updatedNextRoundedTickSqrtRatio,
+                TickMath.getSqrtRatioAtTick(updatedRoundedTick),
+                TickMath.getSqrtRatioAtTick(updatedNextRoundedTick),
                 updatedRoundedTickLiquidity,
                 false
             );
