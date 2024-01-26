@@ -32,6 +32,9 @@ error BunniHub__InvalidLDFParams();
 error BunniHub__InvalidHookParams();
 error BunniHub__VaultAssetMismatch();
 error BunniHub__BunniTokenNotInitialized();
+error BunniHub__InvalidRawTokenRatioBounds();
+error BunniHub__VaultDepositedAmountIncorrect();
+error BunniHub__VaultWithdrawnAmountIncorrect();
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -70,10 +73,6 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         uint256 amount1,
         uint256 shares
     );
-    /// @notice Emitted when fees are compounded back into liquidity
-    /// @param poolId The Uniswap V4 pool's ID
-    /// @param feeDelta The amount of token0 and token1 added to the reserves
-    event Compound(PoolId indexed poolId, BalanceDelta feeDelta);
     /// @notice Emitted when a new IBunniToken is created
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
@@ -156,6 +155,12 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @param hookParams The parameters for the hooks
     /// @param vault0 The vault for token0. If address(0), then a vault is not used.
     /// @param vault1 The vault for token1. If address(0), then a vault is not used.
+    /// @param minRawTokenRatio0 The minimum (rawBalance / balance) ratio for token0
+    /// @param targetRawTokenRatio0 The target (rawBalance / balance) ratio for token0
+    /// @param maxRawTokenRatio0 The maximum (rawBalance / balance) ratio for token0
+    /// @param minRawTokenRatio1 The minimum (rawBalance / balance) ratio for token1
+    /// @param targetRawTokenRatio1 The target (rawBalance / balance) ratio for token1
+    /// @param maxRawTokenRatio1 The maximum (rawBalance / balance) ratio for token1
     /// @param sqrtPriceX96 The initial sqrt price of the Uniswap V4 pool
     /// @param cardinalityNext The cardinality target for the Uniswap V4 pool
     struct DeployBunniTokenParams {
@@ -170,6 +175,12 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         bytes32 hookParams;
         ERC4626 vault0;
         ERC4626 vault1;
+        uint24 minRawTokenRatio0;
+        uint24 targetRawTokenRatio0;
+        uint24 maxRawTokenRatio0;
+        uint24 minRawTokenRatio1;
+        uint24 targetRawTokenRatio1;
+        uint24 maxRawTokenRatio1;
         uint160 sqrtPriceX96;
         uint16 cardinalityNext;
     }
@@ -194,14 +205,8 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         external
         returns (IBunniToken token, PoolKey memory key);
 
-    function hookHandleSwap(
-        PoolKey calldata key,
-        bool zeroForOne,
-        uint256 inputAmount,
-        uint256 outputAmount,
-        uint256 updatedRawTokenBalance0,
-        uint256 updatedRawTokenBalance1
-    ) external;
+    function hookHandleSwap(PoolKey calldata key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount)
+        external;
 
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);

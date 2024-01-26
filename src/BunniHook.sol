@@ -201,7 +201,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
 
     /// @inheritdoc IBunniHook
     function isValidParams(bytes32 hookParams) external pure override returns (bool) {
-        (, uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo) =
+        (uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo) =
             _decodeParams(hookParams);
         return (feeMin <= feeMax) && (feeMax <= SWAP_FEE_BASE)
             && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0);
@@ -251,7 +251,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-        (,,,, uint24 feeTwapSecondsAgo) = _decodeParams(hookParams);
+        (,,, uint24 feeTwapSecondsAgo) = _decodeParams(hookParams);
         (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
             uint32(block.timestamp - FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo)), tick
         );
@@ -306,13 +306,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
             (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
 
-        // get reserves and add to balance
-        (uint256 reserve0InUnderlying, uint256 reserve1InUnderlying) = (
-            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        // get pool token balances
+        (uint256 balance0, uint256 balance1) = (
+            bunniState.rawBalance0 + getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
-        (uint256 balance0, uint256 balance1) =
-            (bunniState.rawBalance0 + reserve0InUnderlying, bunniState.rawBalance1 + reserve1InUnderlying);
 
         // (optional) get TWAP value
         int24 arithmeticMeanTick;
@@ -322,8 +320,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             // compute TWAP value
             arithmeticMeanTick = _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
         }
-        (uint8 compoundThreshold, uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo)
-        = _decodeParams(bunniState.hookParams);
+        (uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo) =
+            _decodeParams(bunniState.hookParams);
         int24 feeMeanTick;
         if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
             // fee calculation needs TWAP
@@ -377,14 +375,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
 
         // compute swap result
         beforeGasLeft = gasleft();
-        (
-            uint160 updatedSqrtPriceX96,
-            int24 updatedTick,
-            uint256 inputAmount,
-            uint256 outputAmount,
-            uint256 updatedRoundedTickBalance0,
-            uint256 updatedRoundedTickBalance1
-        ) = BunniSwapMath.computeSwap({
+        (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount) = BunniSwapMath
+            .computeSwap({
             key: key,
             totalLiquidity: totalLiquidity,
             liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
@@ -436,9 +428,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         // - pull input claim tokens from hook
         // - push output tokens to pool manager
         // - update raw token balances
-        hub.hookHandleSwap(
-            key, params.zeroForOne, inputAmount, outputAmount, updatedRoundedTickBalance0, updatedRoundedTickBalance1
-        );
+        hub.hookHandleSwap(key, params.zeroForOne, inputAmount, outputAmount);
 
         // burn output claim tokens
         poolManager.burn(address(this), outputToken.toId(), outputAmount);
@@ -497,20 +487,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     function _decodeParams(bytes32 hookParams)
         internal
         pure
-        returns (
-            uint8 compoundThreshold,
-            uint24 feeMin,
-            uint24 feeMax,
-            uint24 feeQuadraticMultiplier,
-            uint24 feeTwapSecondsAgo
-        )
+        returns (uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo)
     {
-        // | compoundThreshold - 1 byte | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes |
-        compoundThreshold = uint8(bytes1(hookParams));
-        feeMin = uint24(bytes3(hookParams << 8));
-        feeMax = uint24(bytes3(hookParams << 32));
-        feeQuadraticMultiplier = uint24(bytes3(hookParams << 56));
-        feeTwapSecondsAgo = uint24(bytes3(hookParams << 80));
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes |
+        feeMin = uint24(bytes3(hookParams));
+        feeMax = uint24(bytes3(hookParams << 24));
+        feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
+        feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
     }
 
     function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {

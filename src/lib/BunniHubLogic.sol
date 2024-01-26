@@ -244,16 +244,14 @@ library BunniHubLogic {
             // totalLiquidity could exceed uint128 so .toUint128() is used
             uint128 addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
-            // compute token amounts
+            // compute total token amounts
             (uint256 addedLiquidityAmount0, uint256 addedLiquidityAmount1) = LiquidityAmounts.getAmountsForLiquidity(
                 inputData.sqrtPriceX96, vars.roundedTickSqrtRatio, vars.nextRoundedTickSqrtRatio, addedLiquidity, true
             );
-            (returnData.depositAmount0, returnData.depositAmount1) = (
-                totalLiquidity.mulDivUp(density0RightOfRoundedTickX96, Q96),
-                totalLiquidity.mulDivUp(density1LeftOfRoundedTickX96, Q96)
+            (returnData.amount0, returnData.amount1) = (
+                addedLiquidityAmount0 + totalLiquidity.mulDivUp(density0RightOfRoundedTickX96, Q96),
+                addedLiquidityAmount1 + totalLiquidity.mulDivUp(density1LeftOfRoundedTickX96, Q96)
             );
-            (returnData.amount0, returnData.amount1) =
-                (addedLiquidityAmount0 + returnData.depositAmount0, addedLiquidityAmount1 + returnData.depositAmount1);
 
             // sanity check against desired amounts
             // the amounts can exceed the desired amounts due to math errors
@@ -263,18 +261,12 @@ library BunniHubLogic {
             ) {
                 // scale down amounts and take minimum
                 if (returnData.amount0 == 0) {
-                    (returnData.amount1, addedLiquidity) = (
-                        inputData.params.amount1Desired,
-                        uint128(addedLiquidity.mulDiv(inputData.params.amount1Desired, returnData.amount1))
-                    );
+                    returnData.amount1 = inputData.params.amount1Desired;
                 } else if (returnData.amount1 == 0) {
-                    (returnData.amount0, addedLiquidity) = (
-                        inputData.params.amount0Desired,
-                        uint128(addedLiquidity.mulDiv(inputData.params.amount0Desired, returnData.amount0))
-                    );
+                    returnData.amount0 = inputData.params.amount0Desired;
                 } else {
                     // both are non-zero
-                    (returnData.amount0, returnData.amount1, addedLiquidity) = (
+                    (returnData.amount0, returnData.amount1) = (
                         FixedPointMathLib.min(
                             inputData.params.amount0Desired,
                             returnData.amount0.mulDiv(inputData.params.amount1Desired, returnData.amount1)
@@ -282,27 +274,18 @@ library BunniHubLogic {
                         FixedPointMathLib.min(
                             inputData.params.amount1Desired,
                             returnData.amount1.mulDiv(inputData.params.amount0Desired, returnData.amount0)
-                            ),
-                        uint128(
-                            FixedPointMathLib.min(
-                                addedLiquidity.mulDiv(inputData.params.amount0Desired, returnData.amount0),
-                                addedLiquidity.mulDiv(inputData.params.amount1Desired, returnData.amount1)
-                            )
                             )
                     );
                 }
-
-                // update token amounts
-                (addedLiquidityAmount0, addedLiquidityAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-                    inputData.sqrtPriceX96,
-                    vars.roundedTickSqrtRatio,
-                    vars.nextRoundedTickSqrtRatio,
-                    addedLiquidity,
-                    true
-                );
-                (returnData.depositAmount0, returnData.depositAmount1) =
-                    (returnData.amount0 - addedLiquidityAmount0, returnData.amount1 - addedLiquidityAmount1);
             }
+
+            // update token amounts to deposit into vaults
+            (returnData.depositAmount0, returnData.depositAmount1) = (
+                returnData.amount0
+                    - returnData.amount0.mulDiv(inputData.state.targetRawTokenRatio0, RAW_TOKEN_RATIO_BASE),
+                returnData.amount1
+                    - returnData.amount1.mulDiv(inputData.state.targetRawTokenRatio1, RAW_TOKEN_RATIO_BASE)
+            );
         } else {
             // already initialized liquidity shape
             // simply add tokens at the current ratio
@@ -471,6 +454,28 @@ library BunniHubLogic {
         _validateVault(params.vault0, params.currency0, weth);
         _validateVault(params.vault1, params.currency1, weth);
 
+        // validate raw token ratio bounds
+        if (
+            (
+                address(params.vault0) != address(0)
+                    && !(
+                        (params.minRawTokenRatio0 <= params.targetRawTokenRatio0)
+                            && (params.targetRawTokenRatio0 <= params.maxRawTokenRatio0)
+                            && (params.maxRawTokenRatio0 <= RAW_TOKEN_RATIO_BASE)
+                    )
+            )
+                || (
+                    address(params.vault1) != address(0)
+                        && !(
+                            (params.minRawTokenRatio1 <= params.targetRawTokenRatio1)
+                                && (params.targetRawTokenRatio1 <= params.maxRawTokenRatio1)
+                                && (params.maxRawTokenRatio1 <= RAW_TOKEN_RATIO_BASE)
+                        )
+                )
+        ) {
+            revert BunniHub__InvalidRawTokenRatioBounds();
+        }
+
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
@@ -506,7 +511,13 @@ library BunniHubLogic {
             params.hookParams,
             params.vault0,
             params.vault1,
-            params.statefulLdf
+            params.statefulLdf,
+            params.minRawTokenRatio0,
+            params.targetRawTokenRatio0,
+            params.maxRawTokenRatio0,
+            params.minRawTokenRatio1,
+            params.targetRawTokenRatio1,
+            params.maxRawTokenRatio1
         ).write();
 
         /// -----------------------------------------------------------------------
@@ -601,7 +612,7 @@ library BunniHubLogic {
             }
 
             address(token).safeApprove(address(vault), absAmount);
-            return vault.deposit(absAmount, address(this)).toInt256();
+            reserveChange = vault.deposit(absAmount, address(this)).toInt256();
         } else if (amount < 0) {
             if (currency.isNative()) {
                 // withdraw WETH from vault to address(this)
@@ -614,7 +625,7 @@ library BunniHubLogic {
                 user.safeTransferETH(absAmount);
             } else {
                 // normal ERC20
-                return -vault.withdraw(absAmount, user, address(this)).toInt256();
+                reserveChange = -vault.withdraw(absAmount, user, address(this)).toInt256();
             }
         }
     }
@@ -638,6 +649,12 @@ library BunniHubLogic {
         ERC4626 vault0;
         ERC4626 vault1;
         bool statefulLdf;
+        uint24 minRawTokenRatio0;
+        uint24 targetRawTokenRatio0;
+        uint24 maxRawTokenRatio0;
+        uint24 minRawTokenRatio1;
+        uint24 targetRawTokenRatio1;
+        uint24 maxRawTokenRatio1;
 
         assembly ("memory-safe") {
             liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
@@ -648,6 +665,12 @@ library BunniHubLogic {
             vault0 := shr(96, mload(add(immutableParams, 139)))
             vault1 := shr(96, mload(add(immutableParams, 159)))
             statefulLdf := shr(248, mload(add(immutableParams, 179)))
+            minRawTokenRatio0 := shr(232, mload(add(immutableParams, 180)))
+            targetRawTokenRatio0 := shr(232, mload(add(immutableParams, 183)))
+            maxRawTokenRatio0 := shr(232, mload(add(immutableParams, 186)))
+            minRawTokenRatio1 := shr(232, mload(add(immutableParams, 189)))
+            targetRawTokenRatio1 := shr(232, mload(add(immutableParams, 192)))
+            maxRawTokenRatio1 := shr(232, mload(add(immutableParams, 195)))
         }
 
         state = PoolState({
@@ -659,6 +682,12 @@ library BunniHubLogic {
             vault0: vault0,
             vault1: vault1,
             statefulLdf: statefulLdf,
+            minRawTokenRatio0: minRawTokenRatio0,
+            targetRawTokenRatio0: targetRawTokenRatio0,
+            maxRawTokenRatio0: maxRawTokenRatio0,
+            minRawTokenRatio1: minRawTokenRatio1,
+            targetRawTokenRatio1: targetRawTokenRatio1,
+            maxRawTokenRatio1: maxRawTokenRatio1,
             rawBalance0: rawState.rawBalance0,
             rawBalance1: rawState.rawBalance1,
             reserve0: rawState.reserve0,

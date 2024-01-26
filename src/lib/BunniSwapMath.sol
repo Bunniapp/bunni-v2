@@ -37,14 +37,7 @@ library BunniSwapMath {
     )
         internal
         view
-        returns (
-            uint160 updatedSqrtPriceX96,
-            int24 updatedTick,
-            uint256 inputAmount,
-            uint256 outputAmount,
-            uint256 updatedRoundedTickBalance0,
-            uint256 updatedRoundedTickBalance1
-        )
+        returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {
         uint256 outputTokenBalance = params.zeroForOne ? balance1 : balance0;
         if (params.amountSpecified < 0 && uint256(-params.amountSpecified) > outputTokenBalance) {
@@ -54,14 +47,7 @@ library BunniSwapMath {
         }
 
         // compute first pass result
-        (
-            updatedSqrtPriceX96,
-            updatedTick,
-            inputAmount,
-            outputAmount,
-            updatedRoundedTickBalance0,
-            updatedRoundedTickBalance1
-        ) = _computeSwap(
+        (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = _computeSwap(
             key,
             totalLiquidity,
             liquidityDensityOfRoundedTickX96,
@@ -84,14 +70,7 @@ library BunniSwapMath {
             // exactly output the output token's balance
             // need to recompute swap
             params.amountSpecified = -outputTokenBalance.toInt256();
-            (
-                updatedSqrtPriceX96,
-                updatedTick,
-                inputAmount,
-                outputAmount,
-                updatedRoundedTickBalance0,
-                updatedRoundedTickBalance1
-            ) = _computeSwap(
+            (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = _computeSwap(
                 key,
                 totalLiquidity,
                 liquidityDensityOfRoundedTickX96,
@@ -130,14 +109,7 @@ library BunniSwapMath {
     )
         private
         view
-        returns (
-            uint160 updatedSqrtPriceX96,
-            int24 updatedTick,
-            uint256 inputAmount,
-            uint256 outputAmount,
-            uint256 updatedRoundedTickBalance0,
-            uint256 updatedRoundedTickBalance1
-        )
+        returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {
         // compute updated current tick liquidity
         // totalLiquidity could exceed uint128 so .toUint128() is used
@@ -178,9 +150,6 @@ library BunniSwapMath {
             }
 
             updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
-            (updatedRoundedTickBalance0, updatedRoundedTickBalance1) = params.zeroForOne
-                ? (roundedTickBalance0 + inputAmount, roundedTickBalance1 - outputAmount)
-                : (roundedTickBalance0 - outputAmount, roundedTickBalance1 + inputAmount);
         } else {
             // swap crosses rounded tick
             (uint256 currentActiveBalance0, uint256 currentActiveBalance1) = (
@@ -289,30 +258,34 @@ library BunniSwapMath {
             }
 
             // compute token amounts
-            (int24 updatedRoundedTick, int24 updatedNextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
-            (
-                uint256 updatedLiquidityDensityOfRoundedTickX96,
-                uint256 updatedDensity0RightOfRoundedTickX96,
-                uint256 updatedDensity1LeftOfRoundedTickX96,
-            ) = liquidityDensityFunction.query(
-                key, updatedRoundedTick, arithmeticMeanTick, updatedTick, useTwap, ldfParams, ldfState
-            );
-            updatedRoundedTickLiquidity = ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
-            (updatedRoundedTickBalance0, updatedRoundedTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-                updatedSqrtPriceX96,
-                TickMath.getSqrtRatioAtTick(updatedRoundedTick),
-                TickMath.getSqrtRatioAtTick(updatedNextRoundedTick),
-                updatedRoundedTickLiquidity,
-                false
-            );
-            (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
-                updatedRoundedTickBalance0 + ((updatedDensity0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-                updatedRoundedTickBalance1 + ((updatedDensity1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
-            );
+            {
+                (int24 updatedRoundedTick, int24 updatedNextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
+                (
+                    uint256 updatedLiquidityDensityOfRoundedTickX96,
+                    uint256 updatedDensity0RightOfRoundedTickX96,
+                    uint256 updatedDensity1LeftOfRoundedTickX96,
+                ) = liquidityDensityFunction.query(
+                    key, updatedRoundedTick, arithmeticMeanTick, updatedTick, useTwap, ldfParams, ldfState
+                );
+                updatedRoundedTickLiquidity =
+                    ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
+                (uint256 updatedRoundedTickBalance0, uint256 updatedRoundedTickBalance1) = LiquidityAmounts
+                    .getAmountsForLiquidity(
+                    updatedSqrtPriceX96,
+                    TickMath.getSqrtRatioAtTick(updatedRoundedTick),
+                    TickMath.getSqrtRatioAtTick(updatedNextRoundedTick),
+                    updatedRoundedTickLiquidity,
+                    false
+                );
+                (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
+                    updatedRoundedTickBalance0 + ((updatedDensity0RightOfRoundedTickX96 * totalLiquidity) >> 96),
+                    updatedRoundedTickBalance1 + ((updatedDensity1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
+                );
 
-            (inputAmount, outputAmount) = params.zeroForOne
-                ? (updatedActiveBalance0 - currentActiveBalance0, currentActiveBalance1 - updatedActiveBalance1)
-                : (updatedActiveBalance1 - currentActiveBalance1, currentActiveBalance0 - updatedActiveBalance0);
+                (inputAmount, outputAmount) = params.zeroForOne
+                    ? (updatedActiveBalance0 - currentActiveBalance0, currentActiveBalance1 - updatedActiveBalance1)
+                    : (updatedActiveBalance1 - currentActiveBalance1, currentActiveBalance0 - updatedActiveBalance0);
+            }
         }
     }
 

@@ -13,9 +13,11 @@ import {WETH} from "solady/src/tokens/WETH.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
+import "./lib/VaultMath.sol";
 import "./lib/Constants.sol";
 import "./interfaces/IBunniHub.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
@@ -38,6 +40,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
+    using FixedPointMathLib for uint256;
     using AdditionalCurrencyLibrary for Currency;
 
     WETH internal immutable weth;
@@ -113,14 +116,11 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     }
 
     /// @inheritdoc IBunniHub
-    function hookHandleSwap(
-        PoolKey calldata key,
-        bool zeroForOne,
-        uint256 inputAmount,
-        uint256 outputAmount,
-        uint256 updatedRawTokenBalance0,
-        uint256 updatedRawTokenBalance1
-    ) external override nonReentrant {
+    function hookHandleSwap(PoolKey calldata key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount)
+        external
+        override
+        nonReentrant
+    {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
 
         poolManager.lock(
@@ -132,9 +132,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                         key: key,
                         zeroForOne: zeroForOne,
                         inputAmount: inputAmount,
-                        outputAmount: outputAmount,
-                        updatedRawTokenBalance0: updatedRawTokenBalance0,
-                        updatedRawTokenBalance1: updatedRawTokenBalance1
+                        outputAmount: outputAmount
                     })
                 )
             )
@@ -182,21 +180,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// -----------------------------------------------------------
 
     function _hookHandleSwapLockCallback(HookHandleSwapCallbackInputData memory data) internal {
-        (
-            PoolKey memory key,
-            bool zeroForOne,
-            uint256 inputAmount,
-            uint256 outputAmount,
-            uint256 updatedRawTokenBalance0,
-            uint256 updatedRawTokenBalance1
-        ) = (
-            data.key,
-            data.zeroForOne,
-            data.inputAmount,
-            data.outputAmount,
-            data.updatedRawTokenBalance0,
-            data.updatedRawTokenBalance1
-        );
+        (PoolKey memory key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount) =
+            (data.key, data.zeroForOne, data.inputAmount, data.outputAmount);
 
         // load state
         PoolId poolId = key.toId();
@@ -220,50 +205,60 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             if (address(state.vault1) != address(0) && state.rawBalance1 < outputAmount) {
                 // insufficient token balance
                 // withdraw tokens from reserves
-                int256 reserve1Change = _updateVaultReserveViaClaimTokens(
-                    -(outputAmount - state.rawBalance1).toInt256(), outputToken, state.vault1, address(this), false
+                (int256 reserve1Change, int256 rawBalance1Change) = _updateVaultReserveViaClaimTokens(
+                    (outputAmount - state.rawBalance1).toInt256(), outputToken, state.vault1
                 );
                 state.reserve1 = (state.reserve1.toInt256() + reserve1Change).toUint256();
-                state.rawBalance1 = outputAmount;
+                state.rawBalance1 = (state.rawBalance1.toInt256() + rawBalance1Change).toUint256();
             }
             state.rawBalance1 -= outputAmount;
         } else {
             if (address(state.vault0) != address(0) && state.rawBalance0 < outputAmount) {
                 // insufficient token balance
                 // withdraw tokens from reserves
-                int256 reserve0Change = _updateVaultReserveViaClaimTokens(
-                    -(outputAmount - state.rawBalance0).toInt256(), outputToken, state.vault0, address(this), false
+                (int256 reserve0Change, int256 rawBalance0Change) = _updateVaultReserveViaClaimTokens(
+                    (outputAmount - state.rawBalance0).toInt256(), outputToken, state.vault0
                 );
                 state.reserve0 = (state.reserve0.toInt256() + reserve0Change).toUint256();
-                state.rawBalance0 = outputAmount;
+                state.rawBalance0 = (state.rawBalance0.toInt256() + rawBalance0Change).toUint256();
             }
             state.rawBalance0 -= outputAmount;
         }
         poolManager.transfer(address(key.hooks), outputToken.toId(), outputAmount);
 
-        // update raw token balances if we're using vaults
-        /* if (address(state.vault0) != address(0) && updatedRawTokenBalance0 != state.rawBalance0) {
-            int256 reserve0Change = _updateVaultReserve(
-                state.rawBalance0.toInt256() - updatedRawTokenBalance0.toInt256(),
-                key.currency0,
-                state.vault0,
-                address(this),
-                false
+        // update raw token balances if we're using vaults and the (rawBalance / balance) ratio is outside the bounds
+        if (address(state.vault0) != address(0)) {
+            uint256 balance0 = state.rawBalance0 + getReservesInUnderlying(state.reserve0, state.vault0);
+            (uint256 minRawBalance0, uint256 maxRawBalance0) = (
+                balance0.mulDiv(state.minRawTokenRatio0, RAW_TOKEN_RATIO_BASE),
+                balance0.mulDiv(state.maxRawTokenRatio0, RAW_TOKEN_RATIO_BASE)
             );
-            state.reserve0 = (state.reserve0.toInt256() + reserve0Change).toUint256();
-            state.rawBalance0 = updatedRawTokenBalance0;
+            if (state.rawBalance0 < minRawBalance0 || state.rawBalance0 > maxRawBalance0) {
+                // update raw balance to target
+                uint256 targetRawBalance0 = balance0.mulDiv(state.targetRawTokenRatio0, RAW_TOKEN_RATIO_BASE);
+                (int256 reserve0Change, int256 rawBalance0Change) = _updateVaultReserveViaClaimTokens(
+                    targetRawBalance0.toInt256() - state.rawBalance0.toInt256(), key.currency0, state.vault0
+                );
+                state.reserve0 = (state.reserve0.toInt256() + reserve0Change).toUint256();
+                state.rawBalance0 = (state.rawBalance0.toInt256() + rawBalance0Change).toUint256();
+            }
         }
-        if (address(state.vault1) != address(0) && updatedRawTokenBalance1 != state.rawBalance1) {
-            int256 reserve1Change = _updateVaultReserve(
-                state.rawBalance1.toInt256() - updatedRawTokenBalance1.toInt256(),
-                key.currency1,
-                state.vault1,
-                address(this),
-                false
+        if (address(state.vault1) != address(0)) {
+            uint256 balance1 = state.rawBalance1 + getReservesInUnderlying(state.reserve1, state.vault1);
+            (uint256 minRawBalance1, uint256 maxRawBalance1) = (
+                balance1.mulDiv(state.minRawTokenRatio1, RAW_TOKEN_RATIO_BASE),
+                balance1.mulDiv(state.maxRawTokenRatio1, RAW_TOKEN_RATIO_BASE)
             );
-            state.reserve1 = (state.reserve1.toInt256() + reserve1Change).toUint256();
-            state.rawBalance1 = updatedRawTokenBalance1;
-        } */
+            if (state.rawBalance1 < minRawBalance1 || state.rawBalance1 > maxRawBalance1) {
+                // update raw balance to target
+                uint256 targetRawBalance1 = balance1.mulDiv(state.targetRawTokenRatio1, RAW_TOKEN_RATIO_BASE);
+                (int256 reserve1Change, int256 rawBalance1Change) = _updateVaultReserveViaClaimTokens(
+                    targetRawBalance1.toInt256() - state.rawBalance1.toInt256(), key.currency1, state.vault1
+                );
+                state.reserve1 = (state.reserve1.toInt256() + reserve1Change).toUint256();
+                state.rawBalance1 = (state.rawBalance1.toInt256() + rawBalance1Change).toUint256();
+            }
+        }
 
         // update state
         _poolState[poolId].rawBalance0 = state.rawBalance0;
@@ -316,39 +311,48 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         poolManager.initialize(data.poolKey, data.sqrtPriceX96, abi.encode(data.twapSecondsAgo, data.hookParams));
     }
 
-    /// @dev Deposits/withdraws tokens from a vault. Mints PoolManager claim tokens in the withdraw case.
-    /// @param amount The amount to deposit/withdraw. Positive for deposit, negative for withdraw.
+    /// @dev Deposits/withdraws tokens from a vault via claim tokens.
+    /// @param rawBalanceChange The amount to deposit/withdraw. Positive for withdraw, negative for deposit.
     /// @param currency The currency to deposit/withdraw.
     /// @param vault The vault to deposit/withdraw from.
-    /// @param user The user to pull tokens from / withdraw tokens to
-    /// @param pullTokensFromUser Whether to pull tokens from the user or not in case of deposit.
     /// @return reserveChange The change in reserves. Positive for deposit, negative for withdraw.
-    function _updateVaultReserveViaClaimTokens(
-        int256 amount,
-        Currency currency,
-        ERC4626 vault,
-        address user,
-        bool pullTokensFromUser
-    ) internal returns (int256 reserveChange) {
-        uint256 absAmount = FixedPointMathLib.abs(amount);
-        if (amount > 0) {
+    /// @return actualRawBalanceChange The actual amount of raw tokens deposited/withdrawn. Positive for withdraw, negative for deposit.
+    function _updateVaultReserveViaClaimTokens(int256 rawBalanceChange, Currency currency, ERC4626 vault)
+        internal
+        returns (int256 reserveChange, int256 actualRawBalanceChange)
+    {
+        uint256 absAmount = FixedPointMathLib.abs(rawBalanceChange);
+        if (rawBalanceChange < 0) {
+            // take tokens from poolManager
+            uint256 poolManagerReserve = poolManager.reservesOf(currency);
+            if (absAmount > poolManagerReserve) {
+                // poolManager doesn't have enough tokens
+                // only take what we can
+                // we're only maintaining the raw balance ratio so it's fine to take less
+                absAmount = poolManagerReserve;
+            }
+            poolManager.take(currency, address(this), absAmount);
+
+            // burn claim tokens from this
+            poolManager.burn(address(this), currency.toId(), absAmount);
+
+            // deposit tokens into vault
             IERC20 token;
             if (currency.isNative()) {
                 // wrap ETH
-                // no need to pull tokens from user since WETH is already in the contract
                 weth.deposit{value: absAmount}();
                 token = IERC20(address(weth));
             } else {
                 // normal ERC20
                 token = IERC20(Currency.unwrap(currency));
-                if (pullTokensFromUser) {
-                    permit2.transferFrom(user, address(this), absAmount.toUint160(), address(token));
-                }
             }
-
+            uint256 beforeTokenBalance = token.balanceOf(address(this));
             address(token).safeApprove(address(vault), absAmount);
-            return vault.deposit(absAmount, address(this)).toInt256();
-        } else if (amount < 0) {
+            reserveChange = vault.deposit(absAmount, address(this)).toInt256();
+            uint256 depositedAmount = beforeTokenBalance - token.balanceOf(address(this));
+            if (depositedAmount != absAmount) revert BunniHub__VaultDepositedAmountIncorrect();
+            actualRawBalanceChange = -depositedAmount.toInt256();
+        } else if (rawBalanceChange > 0) {
             if (currency.isNative()) {
                 // withdraw WETH from vault to address(this)
                 reserveChange = -vault.withdraw(absAmount, address(this), address(this)).toInt256();
@@ -365,10 +369,13 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             }
 
             // settle with poolManager
-            poolManager.settle(currency);
+            // check actual settled amount to prevent malicious vaults from giving us less than we asked for
+            uint256 settleAmount = poolManager.settle(currency);
+            if (settleAmount != absAmount) revert BunniHub__VaultWithdrawnAmountIncorrect();
+            actualRawBalanceChange = settleAmount.toInt256();
 
-            // mint claim tokens to user
-            poolManager.mint(user, currency.toId(), absAmount);
+            // mint claim tokens to this
+            poolManager.mint(address(this), currency.toId(), absAmount);
         }
     }
 
@@ -387,6 +394,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         ERC4626 vault0;
         ERC4626 vault1;
         bool statefulLdf;
+        uint24 minRawTokenRatio0;
+        uint24 targetRawTokenRatio0;
+        uint24 maxRawTokenRatio0;
+        uint24 minRawTokenRatio1;
+        uint24 targetRawTokenRatio1;
+        uint24 maxRawTokenRatio1;
 
         assembly ("memory-safe") {
             liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
@@ -397,6 +410,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             vault0 := shr(96, mload(add(immutableParams, 139)))
             vault1 := shr(96, mload(add(immutableParams, 159)))
             statefulLdf := shr(248, mload(add(immutableParams, 179)))
+            minRawTokenRatio0 := shr(232, mload(add(immutableParams, 180)))
+            targetRawTokenRatio0 := shr(232, mload(add(immutableParams, 183)))
+            maxRawTokenRatio0 := shr(232, mload(add(immutableParams, 186)))
+            minRawTokenRatio1 := shr(232, mload(add(immutableParams, 189)))
+            targetRawTokenRatio1 := shr(232, mload(add(immutableParams, 192)))
+            maxRawTokenRatio1 := shr(232, mload(add(immutableParams, 195)))
         }
 
         state = PoolState({
@@ -408,6 +427,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             vault0: vault0,
             vault1: vault1,
             statefulLdf: statefulLdf,
+            minRawTokenRatio0: minRawTokenRatio0,
+            targetRawTokenRatio0: targetRawTokenRatio0,
+            maxRawTokenRatio0: maxRawTokenRatio0,
+            minRawTokenRatio1: minRawTokenRatio1,
+            targetRawTokenRatio1: targetRawTokenRatio1,
+            maxRawTokenRatio1: maxRawTokenRatio1,
             rawBalance0: rawState.rawBalance0,
             rawBalance1: rawState.rawBalance1,
             reserve0: rawState.reserve0,

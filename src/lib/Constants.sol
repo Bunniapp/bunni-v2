@@ -9,3 +9,4 @@ uint256 constant MAX_NONCE = 0x0FFFFF;
 uint256 constant MIN_INITIAL_SHARES = 1e3;
 uint256 constant SWAP_FEE_BASE = 1e6;
 uint256 constant SWAP_FEE_BASE_SQUARED = 1e12;
+uint256 constant RAW_TOKEN_RATIO_BASE = 1e6;

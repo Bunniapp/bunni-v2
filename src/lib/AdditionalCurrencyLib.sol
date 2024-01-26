@@ -31,10 +31,4 @@ library AdditionalCurrencyLibrary {
             permit2.transferFrom(from, to, amount.toUint160(), Currency.unwrap(currency));
         }
     }
-
-    function safeApprove(Currency currency, address spender, uint256 amount) internal {
-        if (!currency.isNative()) {
-            SafeTransferLib.safeApprove(Currency.unwrap(currency), spender, amount);
-        }
-    }
 }

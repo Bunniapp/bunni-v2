@@ -321,7 +321,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault1_,
             new GeometricDistribution(),
             bytes32(abi.encodePacked(int16(-3), int16(6), uint32(5e7), uint8(0))),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+            bytes32(abi.encodePacked(FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
 
         uint256 inputAmount = 0.15e18;
@@ -546,7 +546,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault0_,
             vault1_,
             bytes32(abi.encodePacked(ALPHA)),
-            bytes32(abi.encodePacked(uint8(0), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+            bytes32(abi.encodePacked(FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
 
         uint256 inputAmount = PRECISION * 100;
@@ -789,7 +789,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault1_,
             ldf,
             bytes32(abi.encodePacked(ALPHA)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+            bytes32(abi.encodePacked(FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
     }
 
@@ -807,7 +807,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault1_,
             ldf_,
             bytes32(abi.encodePacked(ALPHA)),
-            bytes32(abi.encodePacked(uint8(100), FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
+            bytes32(abi.encodePacked(FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO))
         );
     }
 
@@ -845,6 +845,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 hookParams: hookParams,
                 vault0: vault0_,
                 vault1: vault1_,
+                minRawTokenRatio0: 0.08e6,
+                targetRawTokenRatio0: 0.1e6,
+                maxRawTokenRatio0: 0.12e6,
+                minRawTokenRatio1: 0.08e6,
+                targetRawTokenRatio1: 0.1e6,
+                maxRawTokenRatio1: 0.12e6,
                 sqrtPriceX96: TickMath.getSqrtRatioAtTick(4),
                 cardinalityNext: 100
             })

@@ -19,6 +19,12 @@ struct PoolState {
     ERC4626 vault0;
     ERC4626 vault1;
     bool statefulLdf;
+    uint24 minRawTokenRatio0;
+    uint24 targetRawTokenRatio0;
+    uint24 maxRawTokenRatio0;
+    uint24 minRawTokenRatio1;
+    uint24 targetRawTokenRatio1;
+    uint24 maxRawTokenRatio1;
     uint256 rawBalance0;
     uint256 rawBalance1;
     uint256 reserve0;
@@ -38,8 +44,6 @@ struct HookHandleSwapCallbackInputData {
     bool zeroForOne;
     uint256 inputAmount;
     uint256 outputAmount;
-    uint256 updatedRawTokenBalance0;
-    uint256 updatedRawTokenBalance1;
 }
 
 struct DepositCallbackInputData {
