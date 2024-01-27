@@ -66,7 +66,7 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
         console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
 
         uint256 beforeGasLeft = gasleft();
-        (bool success, int24 resultRoundedTick) = LibDiscreteLaplaceDistribution.inverseCumulativeAmount0(
+        (, int24 resultRoundedTick) = LibDiscreteLaplaceDistribution.inverseCumulativeAmount0(
             cumulativeAmount0DensityX96, liquidity, tickSpacing, mu, alphaX96, roundUp
         );
         console2.log("gasUsed", beforeGasLeft - gasleft());
@@ -110,7 +110,7 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
         console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
 
         uint256 beforeGasLeft = gasleft();
-        (bool success, int24 resultRoundedTick) = LibDiscreteLaplaceDistribution.inverseCumulativeAmount1(
+        (, int24 resultRoundedTick) = LibDiscreteLaplaceDistribution.inverseCumulativeAmount1(
             cumulativeAmount1DensityX96, liquidity, tickSpacing, mu, alphaX96, roundUp
         );
         console2.log("gasUsed", beforeGasLeft - gasleft());
@@ -119,5 +119,19 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
         int24 expectedTick = roundedTick - tickSpacing;
         console2.log("x", (expectedTick - mu) / tickSpacing);
         assertEq(resultRoundedTick, expectedTick, "tick incorrect");
+    }
+
+    function test_debug() external {
+        PoolKey memory key;
+        key.tickSpacing = 2591;
+        ldf.query(
+            key,
+            712525,
+            0,
+            0,
+            false,
+            0xf40f6e0c59ea48da1946c6000000000000000000000000000000000000000000,
+            0x0000000000000000000000000000000000000000000000000000000000000000
+        );
     }
 }

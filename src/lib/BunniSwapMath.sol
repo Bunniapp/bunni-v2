@@ -169,79 +169,38 @@ library BunniSwapMath {
                     inverseCumulativeAmountFnInput =
                         params.zeroForOne ? currentActiveBalance1 - outputAmount : currentActiveBalance0 - outputAmount;
                 }
-                (bool success, int24 updatedRoundedTick) = (
-                    (exactIn == params.zeroForOne)
-                        ? liquidityDensityFunction.inverseCumulativeAmount0
-                        : liquidityDensityFunction.inverseCumulativeAmount1
-                )(
+
+                (bool success, int24 updatedRoundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) =
+                liquidityDensityFunction.computeSwap(
                     key,
                     inverseCumulativeAmountFnInput,
                     totalLiquidity,
+                    params.zeroForOne,
+                    exactIn,
                     arithmeticMeanTick,
                     currentTick,
                     useTwap,
                     ldfParams,
-                    ldfState,
-                    params.zeroForOne
+                    ldfState
                 );
 
-                if (success) {
-                    // liquidity is sufficient to handle all of the input/output tokens
-
-                    // cumulative amount up to updatedRoundedTick
-                    uint256 cumulativeAmount = (
-                        (exactIn == params.zeroForOne)
-                            ? liquidityDensityFunction.cumulativeAmount0
-                            : liquidityDensityFunction.cumulativeAmount1
-                    )(
-                        key,
-                        updatedRoundedTick,
-                        totalLiquidity,
-                        arithmeticMeanTick,
-                        currentTick,
-                        useTwap,
-                        ldfParams,
-                        ldfState
-                    );
-
-                    // liquidity of the rounded tick that will handle the swap
-                    uint128 swapLiquidity = (
-                        (
-                            liquidityDensityFunction.liquidityDensityX96(
-                                key,
-                                updatedRoundedTick + (params.zeroForOne ? -key.tickSpacing : key.tickSpacing),
-                                arithmeticMeanTick,
-                                currentTick,
-                                useTwap,
-                                ldfParams,
-                                ldfState
-                            ) * totalLiquidity
-                        ) >> 96
-                    ).toUint128();
-
-                    if (swapLiquidity != 0) {
-                        // use Uniswap math to compute updated sqrt price
-                        uint160 startSqrtPriceX96 = TickMath.getSqrtRatioAtTick(updatedRoundedTick);
-                        updatedSqrtPriceX96 = exactIn
-                            ? SqrtPriceMath.getNextSqrtPriceFromInput(
-                                startSqrtPriceX96,
-                                swapLiquidity,
-                                inverseCumulativeAmountFnInput - cumulativeAmount,
-                                params.zeroForOne
-                            )
-                            : SqrtPriceMath.getNextSqrtPriceFromOutput(
-                                startSqrtPriceX96,
-                                swapLiquidity,
-                                inverseCumulativeAmountFnInput - cumulativeAmount,
-                                params.zeroForOne
-                            );
-                        updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
-                    } else {
-                        // liquidity is insufficient to handle all of the input/output tokens
-                        (updatedTick, updatedSqrtPriceX96) = params.zeroForOne
-                            ? (TickMath.MIN_TICK, TickMath.MIN_SQRT_RATIO)
-                            : (TickMath.MAX_TICK, TickMath.MAX_SQRT_RATIO);
-                    }
+                if (success && swapLiquidity != 0) {
+                    // use Uniswap math to compute updated sqrt price
+                    uint160 startSqrtPriceX96 = TickMath.getSqrtRatioAtTick(updatedRoundedTick);
+                    updatedSqrtPriceX96 = exactIn
+                        ? SqrtPriceMath.getNextSqrtPriceFromInput(
+                            startSqrtPriceX96,
+                            swapLiquidity,
+                            inverseCumulativeAmountFnInput - cumulativeAmount,
+                            params.zeroForOne
+                        )
+                        : SqrtPriceMath.getNextSqrtPriceFromOutput(
+                            startSqrtPriceX96,
+                            swapLiquidity,
+                            inverseCumulativeAmountFnInput - cumulativeAmount,
+                            params.zeroForOne
+                        );
+                    updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
                 } else {
                     // liquidity is insufficient to handle all of the input/output tokens
                     (updatedTick, updatedSqrtPriceX96) = params.zeroForOne

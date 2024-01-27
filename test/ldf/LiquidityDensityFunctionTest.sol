@@ -39,8 +39,9 @@ abstract contract LiquidityDensityFunctionTest is Test {
         key.tickSpacing = tickSpacing;
         int24 spotPriceTick = 0;
         for (int24 tick = minTick; tick <= maxTick; tick += tickSpacing) {
-            cumulativeLiquidityDensity +=
-                ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
+            (uint256 liquidityDensityX96,,,) =
+                ldf.query(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
+            cumulativeLiquidityDensity += liquidityDensityX96;
         }
 
         assertApproxEqRel(
@@ -84,8 +85,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         int24 spotPriceTick = 0;
         int24 maxTick = TickMath.maxUsableTick(tickSpacing) - tickSpacing;
         for (int24 tick = roundedTick; tick <= maxTick; tick += tickSpacing) {
-            uint256 liquidityDensityX96 =
-                ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
+            (uint256 liquidityDensityX96,,,) =
+                ldf.query(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
             uint256 amount0DensityX96 = _amount0DensityX96(tick, tickSpacing);
             cumulativeAmount0DensityX96 += amount0DensityX96.fullMulDiv(liquidityDensityX96, FixedPoint96.Q96);
         }
@@ -111,8 +112,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         int24 spotPriceTick = 0;
         int24 minTick = TickMath.minUsableTick(tickSpacing);
         for (int24 tick = minTick; tick <= roundedTick; tick += tickSpacing) {
-            uint256 liquidityDensityX96 =
-                ldf.liquidityDensityX96(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
+            (uint256 liquidityDensityX96,,,) =
+                ldf.query(key, tick, 0, spotPriceTick, false, decodedLDFParams, LDF_STATE);
             uint256 amount1DensityX96 = _amount1DensityX96(tick, tickSpacing);
             cumulativeAmount1DensityX96 += amount1DensityX96.fullMulDiv(liquidityDensityX96, FixedPoint96.Q96);
         }

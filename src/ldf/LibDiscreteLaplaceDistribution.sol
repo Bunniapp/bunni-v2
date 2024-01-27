@@ -70,6 +70,7 @@ library LibDiscreteLaplaceDistribution {
             uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtRatioAtTick();
             uint256 c = sqrtRatioTickSpacing - Q96;
             int24 roundedTickLeft = roundedTick - tickSpacing;
+
             if (roundedTickLeft < mu) {
                 uint256 term1 = roundedTick.getSqrtRatioAtTick().mulDiv(
                     alphaX96.rpow(uint256(int256((mu - roundedTickLeft) / tickSpacing)), Q96),
@@ -86,9 +87,11 @@ library LibDiscreteLaplaceDistribution {
                     alphaX96.rpow(uint256(int256((roundedTick - mu) / tickSpacing)), Q96), denominator
                 );
                 if (denominatorIsPositive) {
-                    cumulativeAmount1DensityX96 = c.mulDiv(x + y - z, totalDensityX96);
+                    if (x + y < z) cumulativeAmount1DensityX96 = 0;
+                    else cumulativeAmount1DensityX96 = c.mulDiv(x + y - z, totalDensityX96);
                 } else {
-                    cumulativeAmount1DensityX96 = c.mulDiv(x + z - y, totalDensityX96);
+                    if (x + z < y) cumulativeAmount1DensityX96 = 0;
+                    else cumulativeAmount1DensityX96 = c.mulDiv(x + z - y, totalDensityX96);
                 }
             }
         }
@@ -166,9 +169,11 @@ library LibDiscreteLaplaceDistribution {
                     alphaX96.rpow(uint256(int256((roundedTick + tickSpacing - mu) / tickSpacing)), Q96), denominator
                 );
                 if (denominatorIsPositive) {
-                    cumulativeAmount1DensityX96 = c.mulDiv(x + y - z, totalDensityX96);
+                    if (x + y < z) cumulativeAmount1DensityX96 = 0;
+                    else cumulativeAmount1DensityX96 = c.mulDiv(x + y - z, totalDensityX96);
                 } else {
-                    cumulativeAmount1DensityX96 = c.mulDiv(x + z - y, totalDensityX96);
+                    if (x + z < y) cumulativeAmount1DensityX96 = 0;
+                    else cumulativeAmount1DensityX96 = c.mulDiv(x + z - y, totalDensityX96);
                 }
             }
         }
@@ -355,16 +360,33 @@ library LibDiscreteLaplaceDistribution {
         return true;
     }
 
-    function _totalDensityX96(uint256 alphaX96, int24 mu, int24 minTick, int24 maxTick, int24 tickSpacing)
-        private
-        pure
-        returns (uint256)
-    {
-        return alphaX96.mulDiv(
-            Q96 + Q96.mulDiv(Q96, alphaX96) - alphaX96.rpow(uint256(int256((mu - minTick) / tickSpacing)), Q96)
-                - alphaX96.rpow(uint256(int256((maxTick - mu) / tickSpacing)), Q96),
-            Q96 - alphaX96
+    function computeSwap(
+        uint256 inverseCumulativeAmountInput,
+        uint256 totalLiquidity,
+        bool zeroForOne,
+        bool exactIn,
+        int24 tickSpacing,
+        int24 mu,
+        uint256 alphaX96
+    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
+        // compute roundedTick by inverting the cumulative amount
+        (success, roundedTick) = ((exactIn == zeroForOne) ? inverseCumulativeAmount0 : inverseCumulativeAmount1)(
+            inverseCumulativeAmountInput, totalLiquidity, tickSpacing, mu, alphaX96, zeroForOne
         );
+        if (!success) return (false, 0, 0, 0);
+
+        // compute the cumulative amount up to roundedTick
+        cumulativeAmount = ((exactIn == zeroForOne) ? cumulativeAmount0 : cumulativeAmount1)(
+            roundedTick, totalLiquidity, tickSpacing, mu, alphaX96
+        );
+
+        // compute liquidity of the rounded tick that will handle the remainder of the swap
+        swapLiquidity = (
+            (
+                liquidityDensityX96(roundedTick + (zeroForOne ? -tickSpacing : tickSpacing), tickSpacing, mu, alphaX96)
+                    * totalLiquidity
+            ) >> 96
+        ).toUint128();
     }
 
     /// @return mu Center of the distribution
@@ -389,5 +411,17 @@ library LibDiscreteLaplaceDistribution {
             shiftMode = ShiftMode.BOTH;
         }
         alphaX96 = alpha.mulDiv(Q96, WAD);
+    }
+
+    function _totalDensityX96(uint256 alphaX96, int24 mu, int24 minTick, int24 maxTick, int24 tickSpacing)
+        private
+        pure
+        returns (uint256)
+    {
+        return alphaX96.mulDiv(
+            Q96 + Q96.mulDiv(Q96, alphaX96) - alphaX96.rpow(uint256(int256((mu - minTick) / tickSpacing)), Q96)
+                - alphaX96.rpow(uint256(int256((maxTick - mu) / tickSpacing)), Q96),
+            Q96 - alphaX96
+        );
     }
 }

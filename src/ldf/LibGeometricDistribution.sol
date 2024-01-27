@@ -490,6 +490,37 @@ library LibGeometricDistribution {
         }
     }
 
+    function computeSwap(
+        uint256 inverseCumulativeAmountInput,
+        uint256 totalLiquidity,
+        bool zeroForOne,
+        bool exactIn,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alphaX96
+    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
+        // compute roundedTick by inverting the cumulative amount
+        (success, roundedTick) = ((exactIn == zeroForOne) ? inverseCumulativeAmount0 : inverseCumulativeAmount1)(
+            inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, zeroForOne
+        );
+        if (!success) return (false, 0, 0, 0);
+
+        // compute the cumulative amount up to roundedTick
+        cumulativeAmount = ((exactIn == zeroForOne) ? cumulativeAmount0 : cumulativeAmount1)(
+            roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96
+        );
+
+        // compute liquidity of the rounded tick that will handle the remainder of the swap
+        swapLiquidity = (
+            (
+                liquidityDensityX96(
+                    roundedTick + (zeroForOne ? -tickSpacing : tickSpacing), tickSpacing, minTick, length, alphaX96
+                ) * totalLiquidity
+            ) >> 96
+        ).toUint128();
+    }
+
     /// @return minTick The minimum rounded tick of the distribution
     /// @return length The length of the distribution in number of rounded ticks (i.e. the number of ticks / tickSpacing)
     /// @return alphaX96 Parameter of the discrete laplace distribution, FixedPoint96
