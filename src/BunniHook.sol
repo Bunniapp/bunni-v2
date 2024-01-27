@@ -27,11 +27,12 @@ import {Ownable} from "./lib/Ownable.sol";
 import {BaseHook} from "./lib/BaseHook.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {BunniSwapMath} from "./lib/BunniSwapMath.sol";
+import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 
 /// @notice Bunni Hook
-contract BunniHook is BaseHook, Ownable, IBunniHook {
+contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
@@ -103,6 +104,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         external
         override
         poolManagerOnly
+        nonReentrant
         returns (bytes memory)
     {
         // decode data
@@ -275,6 +277,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         external
         override(BaseHook, IHooks)
         poolManagerOnly
+        nonReentrant
         returns (bytes4)
     {
         PoolId id = key.toId();
