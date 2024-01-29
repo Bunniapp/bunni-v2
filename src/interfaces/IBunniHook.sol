@@ -132,6 +132,9 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         external
         returns (int24 arithmeticMeanTick);
 
+    /// @notice Update the LDF state of the given pool. Only callable by BunniHub.
+    /// @param id The pool id
+    /// @param newState The new LDF state
     function updateLdfState(PoolId id, bytes32 newState) external;
 
     /// -----------------------------------------------------------------------

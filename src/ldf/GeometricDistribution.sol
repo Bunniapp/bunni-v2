@@ -54,7 +54,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        view
+        pure
         override
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity)
     {

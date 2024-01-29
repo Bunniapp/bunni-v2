@@ -100,13 +100,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc ILockCallback
-    function lockAcquired(address, /* lockCaller */ bytes calldata data)
+    function lockAcquired(address lockCaller, bytes calldata data)
         external
         override
         poolManagerOnly
         nonReentrant
         returns (bytes memory)
     {
+        if (lockCaller != owner()) revert BunniHook__Unauthorized();
+
         // decode data
         Currency[] memory currencyList = abi.decode(data, (Currency[]));
 
@@ -144,6 +146,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         return 0;
     }
 
+    /// @inheritdoc IBunniHook
     function updateLdfState(PoolId id, bytes32 newState) external override {
         if (msg.sender != address(hub)) revert BunniHook__Unauthorized();
 
@@ -233,6 +236,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
 
     /// @inheritdoc IDynamicFeeManager
     function getFee(address, /* sender */ PoolKey calldata /* key */ ) external pure override returns (uint24) {
+        // always return 0 since the swap fee is taken in the beforeSwap hook
         return 0;
     }
 
