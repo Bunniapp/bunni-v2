@@ -37,6 +37,7 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// @param sqrtPriceX96 The sqrt(price) of the pool after the swap, as a Q64.96
     /// @param tick The log base 1.0001 of the price of the pool after the swap
     /// @param fee The swap fee rate charged, 6 decimals
+    /// @param totalLiquidity The total virtual liquidity of the pool during and after the swap
     event Swap(
         PoolId indexed id,
         address indexed sender,
@@ -45,7 +46,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         uint256 outputAmount,
         uint160 sqrtPriceX96,
         int24 tick,
-        uint24 fee
+        uint24 fee,
+        uint256 totalLiquidity
     );
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
 

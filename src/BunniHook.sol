@@ -443,7 +443,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // emit swap event
         unchecked {
             emit Swap(
-                id, sender, params.zeroForOne, inputAmount, outputAmount, updatedSqrtPriceX96, updatedTick, swapFee
+                id,
+                sender,
+                params.zeroForOne,
+                inputAmount,
+                outputAmount,
+                updatedSqrtPriceX96,
+                updatedTick,
+                swapFee,
+                totalLiquidity
             );
         }
 
