@@ -221,26 +221,32 @@ library BunniHubLogic {
                 ldfState
             );
             if (inputData.state.statefulLdf) hook.updateLdfState(inputData.poolId, newLdfState);
-            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                .getAmountsForLiquidity(
-                inputData.sqrtPriceX96,
-                vars.roundedTickSqrtRatio,
-                vars.nextRoundedTickSqrtRatio,
-                uint128(liquidityDensityOfRoundedTickX96),
-                false
-            );
 
             // compute how much liquidity we'd get from the desired token amounts
-            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-            uint256 totalLiquidity = FixedPointMathLib.min(
-                totalDensity0X96 == 0
-                    ? type(uint256).max
-                    : inputData.params.amount0Desired.mulDiv(Q96, totalDensity0X96),
-                totalDensity1X96 == 0
-                    ? type(uint256).max
-                    : inputData.params.amount1Desired.mulDiv(Q96, totalDensity1X96)
-            );
+            uint256 totalLiquidity;
+            {
+                (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
+                    .getAmountsForLiquidity(
+                    inputData.sqrtPriceX96,
+                    vars.roundedTickSqrtRatio,
+                    vars.nextRoundedTickSqrtRatio,
+                    uint128(liquidityDensityOfRoundedTickX96),
+                    false
+                );
+                uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+                uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+                uint256 totalLiquidityEstimate0 =
+                    totalDensity0X96 == 0 ? 0 : inputData.params.amount0Desired.mulDiv(Q96, totalDensity0X96);
+                uint256 totalLiquidityEstimate1 =
+                    totalDensity1X96 == 0 ? 0 : inputData.params.amount1Desired.mulDiv(Q96, totalDensity1X96);
+                if (totalLiquidityEstimate0 == 0) {
+                    totalLiquidity = totalLiquidityEstimate1;
+                } else if (totalLiquidityEstimate1 == 0) {
+                    totalLiquidity = totalLiquidityEstimate0;
+                } else {
+                    totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
+                }
+            }
             // totalLiquidity could exceed uint128 so .toUint128() is used
             uint128 addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 

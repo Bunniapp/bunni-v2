@@ -371,19 +371,19 @@ library LibDiscreteLaplaceDistribution {
     ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
         // compute roundedTick by inverting the cumulative amount
         (success, roundedTick) = ((exactIn == zeroForOne) ? inverseCumulativeAmount0 : inverseCumulativeAmount1)(
-            inverseCumulativeAmountInput, totalLiquidity, tickSpacing, mu, alphaX96, zeroForOne
+            inverseCumulativeAmountInput, totalLiquidity, tickSpacing, mu, alphaX96, true
         );
         if (!success) return (false, 0, 0, 0);
 
         // compute the cumulative amount up to roundedTick
-        cumulativeAmount = ((exactIn == zeroForOne) ? cumulativeAmount0 : cumulativeAmount1)(
-            roundedTick, totalLiquidity, tickSpacing, mu, alphaX96
-        );
+        cumulativeAmount = (exactIn == zeroForOne)
+            ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, mu, alphaX96)
+            : cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, mu, alphaX96);
 
         // compute liquidity of the rounded tick that will handle the remainder of the swap
         swapLiquidity = (
             (
-                liquidityDensityX96(roundedTick + (zeroForOne ? -tickSpacing : tickSpacing), tickSpacing, mu, alphaX96)
+                liquidityDensityX96(zeroForOne ? roundedTick - tickSpacing : roundedTick, tickSpacing, mu, alphaX96)
                     * totalLiquidity
             ) >> 96
         ).toUint128();

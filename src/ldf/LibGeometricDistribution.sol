@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import {console2} from "forge-std/console2.sol";
+
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
@@ -147,12 +149,10 @@ library LibGeometricDistribution {
         int24 x;
         if (roundedTick < minTick) {
             // roundedTick is to the left of the distribution
-            // set x = -1
-            x = -1;
+            x = 0;
         } else if (roundedTick >= minTick + length * tickSpacing) {
             // roundedTick is to the right of the distribution
-            // set x = length
-            x = length;
+            return 0;
         } else {
             // roundedTick is in the distribution
             x = (roundedTick - minTick) / tickSpacing;
@@ -220,12 +220,11 @@ library LibGeometricDistribution {
         int24 x;
         if (roundedTick < minTick) {
             // roundedTick is to the left of the distribution
-            // set x = -1
-            x = -1;
+            return 0;
         } else if (roundedTick >= minTick + length * tickSpacing) {
             // roundedTick is to the right of the distribution
             // set x = length
-            x = length;
+            x = length - 1;
         } else {
             // roundedTick is in the distribution
             x = (roundedTick - minTick) / tickSpacing;
@@ -311,13 +310,9 @@ library LibGeometricDistribution {
                 denominator, Q96 - sqrtRatioNegTickSpacing
             );
             uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtRatioAtTick();
-            uint256 tmpX96 = (
-                (
-                    Q96 >= baseX96
-                        ? (sqrtRatioNegTickSpacingMulLength << 96) + numerator
-                        : (sqrtRatioNegTickSpacingMulLength << 96) - numerator
-                ) >> 96
-            );
+            uint256 tmp0 = sqrtRatioNegTickSpacingMulLength << 96;
+            if (Q96 <= baseX96 && tmp0 < numerator) return (false, 0);
+            uint256 tmpX96 = ((Q96 >= baseX96 ? tmp0 + numerator : tmp0 - numerator) >> 96);
             xWad = (tmpX96.toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96()).sDivWad(lnBaseX96);
         } else {
             uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
@@ -329,13 +324,15 @@ library LibGeometricDistribution {
         }
 
         // round xWad to reduce error
-        // limits tick precision to 1e-6 of a rounded tick
-        int256 remainder = xWad % 1e12;
-        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
-        // if (remainder > 5e11) xWad += 1e12;
+        // limits tick precision to 1e-9 of a rounded tick
+        int256 remainder = xWad % 1e9;
+        xWad = (xWad / 1e9) * 1e9; // clear everything beyond 9 decimals
+        // if (remainder > 5e8) xWad += 1e9;
         assembly {
-            xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
+            xWad := add(mul(sgt(remainder, 500000000), 1000000000), xWad) // round up if remainder > 0.5
         }
+
+        console2.log("xWad: %d", xWad);
 
         // get rounded tick from xWad
         success = true;
@@ -387,19 +384,28 @@ library LibGeometricDistribution {
             uint256 numerator = cumulativeAmount1DensityX96.fullMulDiv(denominator, Q96).fullMulDiv(
                 sqrtRatioNegMinTick, sqrtRatioTickSpacing - Q96
             );
+            if (Q96 > baseX96 && Q96 < numerator / (Q96 - alphaX96)) return (false, 0);
             uint256 basePowXPlusOneX96 =
                 Q96 > baseX96 ? Q96 - numerator / (Q96 - alphaX96) : Q96 + numerator / (Q96 - alphaX96);
             xWad = basePowXPlusOneX96.toInt256().lnQ96().sDivWad(lnBaseX96) - int256(WAD);
         }
 
+        console2.log("xWad: %d", xWad);
+
         // round xWad to reduce error
-        // limits tick precision to 1e-6 of a rounded tick
-        int256 remainder = xWad % 1e12;
-        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
-        // if (remainder > 5e11) xWad += 1e12;
-        assembly {
-            xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
+        // limits tick precision to 1e-9 of a rounded tick
+        if (xWad < 0) {
+            xWad = 0;
+        } else {
+            int256 remainder = xWad % 1e9;
+            xWad = (xWad / 1e9) * 1e9; // clear everything beyond 9 decimals
+            // if (remainder > 5e8) xWad += 1e9;
+            assembly {
+                xWad := add(mul(sgt(remainder, 500000000), 1000000000), xWad) // round up if remainder > 0.5
+            }
         }
+
+        console2.log("xWad: %d", xWad);
 
         // get rounded tick from xWad
         success = true;
@@ -502,20 +508,20 @@ library LibGeometricDistribution {
     ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
         // compute roundedTick by inverting the cumulative amount
         (success, roundedTick) = ((exactIn == zeroForOne) ? inverseCumulativeAmount0 : inverseCumulativeAmount1)(
-            inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, zeroForOne
+            inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
         );
         if (!success) return (false, 0, 0, 0);
 
         // compute the cumulative amount up to roundedTick
-        cumulativeAmount = ((exactIn == zeroForOne) ? cumulativeAmount0 : cumulativeAmount1)(
-            roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96
-        );
+        cumulativeAmount = (exactIn == zeroForOne)
+            ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96)
+            : cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
 
         // compute liquidity of the rounded tick that will handle the remainder of the swap
         swapLiquidity = (
             (
                 liquidityDensityX96(
-                    roundedTick + (zeroForOne ? -tickSpacing : tickSpacing), tickSpacing, minTick, length, alphaX96
+                    zeroForOne ? roundedTick - tickSpacing : roundedTick, tickSpacing, minTick, length, alphaX96
                 ) * totalLiquidity
             ) >> 96
         ).toUint128();

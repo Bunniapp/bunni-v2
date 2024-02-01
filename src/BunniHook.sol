@@ -364,17 +364,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
 
             // Strategy: If one of the two liquidity estimates is 0, use the other one;
-            // if both are non-zero, use the average of the two.
-            // This is because if we simply used max(), shifting the LDF does not change the
-            // current tick liquidity (at least for exponential LDFs) making the shifting kind of
-            // useless, while using min() can lead to underutilization of the reserves we have.
-            // Taking the average gives us a middle ground.
+            // if both are non-zero, use the minimum of the two.
+            // We must take the minimum because if the total liquidity we use is higher than
+            // the min of the two estimates, then it's possible to extract a profit by
+            // buying and immediately selling assuming the swap fee is non-zero. This happens
+            // because the swap fee is added to the pool's balance, which can increase the total
+            // liquidity estimate.
             if (totalLiquidityEstimate0 == 0) {
                 totalLiquidity = totalLiquidityEstimate1;
             } else if (totalLiquidityEstimate1 == 0) {
                 totalLiquidity = totalLiquidityEstimate0;
             } else {
-                totalLiquidity = (totalLiquidityEstimate0 + totalLiquidityEstimate1) / 2;
+                totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
             }
         }
 
@@ -415,17 +416,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // charge LP fee and hook fee
         // we do this by reducing the output token amount
         uint24 swapFee;
+        uint256 hookFeesAmount;
         {
             swapFee = _getFee(updatedSqrtPriceX96, arithmeticMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
             uint256 swapFeeAmount = outputAmount.mulDiv(swapFee, SWAP_FEE_BASE);
             uint96 hookFeesModifier = _hookFeesModifier;
-            uint256 hookFeesAmount = swapFeeAmount.mulDiv(hookFeesModifier, WAD);
+            hookFeesAmount = swapFeeAmount.mulDiv(hookFeesModifier, WAD);
 
             // deduct swap fee from output
             outputAmount -= swapFeeAmount;
-
-            // mint PoolManager claim tokens to hook to be claimed later
-            poolManager.mint(address(this), outputToken.toId(), hookFeesAmount);
         }
 
         // take input by minting claim tokens to hook
@@ -433,9 +432,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
 
         // call hub to handle swap
         // - pull input claim tokens from hook
-        // - push output tokens to pool manager
+        // - push output tokens to pool manager and mint claim tokens to hook
         // - update raw token balances
-        hub.hookHandleSwap(key, params.zeroForOne, inputAmount, outputAmount);
+        // need to add hookFeesAmount to output so that we can get the hook fees
+        hub.hookHandleSwap(key, params.zeroForOne, inputAmount, outputAmount + hookFeesAmount);
 
         // burn output claim tokens
         poolManager.burn(address(this), outputToken.toId(), outputAmount);
@@ -476,6 +476,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
 
         uint256 ratio =
             uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
+        if (ratio > MAX_SWAP_FEE_RATIO) ratio = MAX_SWAP_FEE_RATIO;
         ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
         uint256 delta = dist(ratio, SWAP_FEE_BASE);
         // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]

@@ -95,9 +95,8 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         console2.log("roundedTick", roundedTick);
 
-        (, uint256 cumulativeAmount0DensityX96,) =
-            LibGeometricDistribution.query(roundTickSingle(tick, tickSpacing), tickSpacing, minTick, length, alphaX96);
-
+        uint256 cumulativeAmount0DensityX96 =
+            LibGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
         console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
 
         (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount0(
@@ -107,7 +106,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         int24 expectedTick = roundedTick < minTick
             ? minTick
-            : roundedTick >= minTick + length * tickSpacing ? minTick + length * tickSpacing : roundedTick + tickSpacing;
+            : roundedTick >= minTick + length * tickSpacing ? minTick + length * tickSpacing : roundedTick;
         console2.log("x", (expectedTick - minTick) / tickSpacing);
         assertEq(resultRoundedTick, expectedTick, "tick incorrect");
     }
@@ -144,9 +143,8 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         console2.log("roundedTick", roundedTick);
 
-        (,, uint256 cumulativeAmount1DensityX96) =
-            LibGeometricDistribution.query(roundTickSingle(tick, tickSpacing), tickSpacing, minTick, length, alphaX96);
-
+        uint256 cumulativeAmount1DensityX96 =
+            LibGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
         console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
 
         (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount1(
@@ -154,11 +152,9 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         );
         console2.log("resultRoundedTick", resultRoundedTick);
 
-        int24 expectedTick = roundedTick <= minTick
+        int24 expectedTick = roundedTick < minTick
             ? minTick - tickSpacing
-            : roundedTick >= minTick + length * tickSpacing
-                ? minTick + (length - 1) * tickSpacing
-                : roundedTick - tickSpacing;
+            : roundedTick >= minTick + length * tickSpacing ? minTick + (length - 1) * tickSpacing : roundedTick;
         console2.log("x", (expectedTick - minTick) / tickSpacing);
         assertEq(resultRoundedTick, expectedTick, "tick incorrect");
     }

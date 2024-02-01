@@ -55,6 +55,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
     uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
     address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
+    uint24 internal constant TWAP_SECONDS_AGO = 7 days;
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -705,6 +706,205 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         _swap(key, params, 0, "");
     }
 
+    function test_fuzz_swapNoArb(
+        uint256 swapAmount,
+        bool zeroForOneFirstSwap,
+        bool useVault0,
+        bool useVault1,
+        uint256 waitTime,
+        uint32 alpha,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        swapAmount = bound(swapAmount, 1e6, 1e36);
+        waitTime = bound(waitTime, 10, 300);
+        feeMin = uint24(bound(feeMin, 0, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+
+        GeometricDistribution ldf_ = new GeometricDistribution();
+        bytes32 ldfParams = bytes32(abi.encodePacked(int16(-3), int16(6), alpha, uint8(0)));
+        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            bytes32(abi.encodePacked(feeMin, feeMax, feeQuadraticMultiplier, FEE_TWAP_SECONDS_AGO))
+        );
+
+        // execute first swap
+        (Currency firstSwapInputToken, Currency firstSwapOutputToken) =
+            zeroForOneFirstSwap ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        _mint(firstSwapInputToken, address(this), swapAmount * 2);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOneFirstSwap,
+            amountSpecified: int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 firstSwapInputAmount;
+        uint256 firstSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            firstSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
+            firstSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        // wait for some time
+        skip(waitTime);
+
+        // execute second swap
+        params = IPoolManager.SwapParams({
+            zeroForOne: !zeroForOneFirstSwap,
+            amountSpecified: int256(firstSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 secondSwapInputAmount;
+        uint256 secondSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            secondSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
+            secondSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        // verify no profits
+        assertLeDecimal(secondSwapOutputAmount, firstSwapInputAmount, 18, "arb has profit");
+    }
+
+    function test_fuzz_swapNoArb_double(
+        uint256 swapAmount,
+        bool zeroForOneFirstSwap,
+        bool useVault0,
+        bool useVault1,
+        uint256 waitTime,
+        uint32 alpha,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        swapAmount = bound(swapAmount, 1e6, 1e36);
+        waitTime = bound(waitTime, 10, 100);
+        feeMin = uint24(bound(feeMin, 0, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+
+        GeometricDistribution ldf_ = new GeometricDistribution();
+        bytes32 ldfParams = bytes32(abi.encodePacked(int16(-3), int16(6), alpha, uint8(0)));
+        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            bytes32(abi.encodePacked(feeMin, feeMax, feeQuadraticMultiplier, FEE_TWAP_SECONDS_AGO))
+        );
+
+        // execute first swap
+        (Currency firstSwapInputToken, Currency firstSwapOutputToken) =
+            zeroForOneFirstSwap ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        _mint(firstSwapInputToken, address(this), swapAmount * 2);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOneFirstSwap,
+            amountSpecified: int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 firstSwapInputAmount;
+        uint256 firstSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            firstSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
+            firstSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        console2.log("firstSwapInputAmount", firstSwapInputAmount);
+        console2.log("firstSwapOutputAmount", firstSwapOutputAmount);
+
+        // wait for some time
+        skip(waitTime);
+
+        // execute second swap
+        params = IPoolManager.SwapParams({
+            zeroForOne: !zeroForOneFirstSwap,
+            amountSpecified: int256(firstSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 secondSwapInputAmount;
+        uint256 secondSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            secondSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
+            secondSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        console2.log("secondSwapInputAmount", secondSwapInputAmount);
+        console2.log("secondSwapOutputAmount", secondSwapOutputAmount);
+
+        // wait for some time
+        skip(waitTime);
+
+        // execute third swap
+        params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOneFirstSwap,
+            amountSpecified: int256(secondSwapOutputAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 thirdSwapInputAmount;
+        uint256 thirdSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            thirdSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
+            thirdSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        console2.log("thirdSwapInputAmount", thirdSwapInputAmount);
+        console2.log("thirdSwapOutputAmount", thirdSwapOutputAmount);
+
+        // wait for some time
+        skip(waitTime);
+
+        // execute fourth swap
+        params = IPoolManager.SwapParams({
+            zeroForOne: !zeroForOneFirstSwap,
+            amountSpecified: int256(thirdSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 fourthSwapInputAmount;
+        uint256 fourthSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            fourthSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
+            fourthSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        console2.log("fourthSwapInputAmount", fourthSwapInputAmount);
+        console2.log("fourthSwapOutputAmount", fourthSwapOutputAmount);
+
+        // verify no profits
+        assertLeDecimal(
+            secondSwapOutputAmount + fourthSwapOutputAmount,
+            firstSwapInputAmount + thirdSwapInputAmount,
+            18,
+            "arb has profit"
+        );
+    }
+
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
         internal
         returns (uint256 shares, uint256 amount0, uint256 amount1)
@@ -837,7 +1037,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 currency0: currency0,
                 currency1: currency1,
                 tickSpacing: TICK_SPACING,
-                twapSecondsAgo: 1 hours,
+                twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: ldf_,
                 statefulLdf: true,
                 ldfParams: ldfParams,

@@ -8,13 +8,17 @@ import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManage
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
 import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
+import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
 
 import "./Math.sol";
+import "./Constants.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
 library BunniSwapMath {
+    using TickMath for int24;
     using SafeCastLib for uint256;
+    using FixedPointMathLib for uint256;
 
     function computeSwap(
         PoolKey calldata key,
@@ -87,6 +91,12 @@ library BunniSwapMath {
                 ldfState,
                 params
             );
+
+            if (outputAmount > outputTokenBalance) {
+                // somehow the output amount is still greater than the balance due to rounding errors
+                // just set outputAmount to the balance
+                outputAmount = outputTokenBalance;
+            }
         }
     }
 
@@ -111,12 +121,22 @@ library BunniSwapMath {
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {
+        // bound sqrtPriceLimit so that we never end up at an invalid rounded tick
+        (uint160 minSqrtPrice, uint160 maxSqrtPrice) = (
+            TickMath.minUsableTick(key.tickSpacing).getSqrtRatioAtTick(),
+            TickMath.maxUsableTick(key.tickSpacing).getSqrtRatioAtTick()
+        );
+        uint160 sqrtPriceLimitX96 = params.sqrtPriceLimitX96;
+        if (
+            (params.zeroForOne && sqrtPriceLimitX96 < minSqrtPrice)
+                || (!params.zeroForOne && sqrtPriceLimitX96 >= maxSqrtPrice)
+        ) {
+            sqrtPriceLimitX96 = params.zeroForOne ? minSqrtPrice : maxSqrtPrice - 1;
+        }
+
         // compute updated current tick liquidity
         // totalLiquidity could exceed uint128 so .toUint128() is used
         uint128 updatedRoundedTickLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
-        (uint256 roundedTickBalance0, uint256 roundedTickBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, false
-        );
 
         bool exactIn = params.amountSpecified >= 0;
 
@@ -124,20 +144,26 @@ library BunniSwapMath {
         outputAmount = exactIn ? 0 : uint256(-params.amountSpecified);
 
         // handle special case when we don't cross rounded ticks
-        uint160 naiveSwapNextSqrtPriceX96 = exactIn
-            ? SqrtPriceMath.getNextSqrtPriceFromInput(
-                sqrtPriceX96, updatedRoundedTickLiquidity, inputAmount, params.zeroForOne
-            )
-            : SqrtPriceMath.getNextSqrtPriceFromOutput(
-                sqrtPriceX96, updatedRoundedTickLiquidity, outputAmount, params.zeroForOne
-            );
+        uint160 naiveSwapNextSqrtPriceX96;
+        if (updatedRoundedTickLiquidity != 0) {
+            naiveSwapNextSqrtPriceX96 = exactIn
+                ? SqrtPriceMath.getNextSqrtPriceFromInput(
+                    sqrtPriceX96, updatedRoundedTickLiquidity, inputAmount, params.zeroForOne
+                )
+                : SqrtPriceMath.getNextSqrtPriceFromOutput(
+                    sqrtPriceX96, updatedRoundedTickLiquidity, outputAmount, params.zeroForOne
+                );
+        }
         if (
-            (params.zeroForOne && naiveSwapNextSqrtPriceX96 >= roundedTickSqrtRatio)
-                || (!params.zeroForOne && naiveSwapNextSqrtPriceX96 <= nextRoundedTickSqrtRatio)
+            (updatedRoundedTickLiquidity != 0)
+                && (
+                    (params.zeroForOne && naiveSwapNextSqrtPriceX96 >= roundedTickSqrtRatio)
+                        || (!params.zeroForOne && naiveSwapNextSqrtPriceX96 < nextRoundedTickSqrtRatio)
+                )
         ) {
             // swap doesn't cross rounded tick
             updatedSqrtPriceX96 =
-                _boundSqrtPriceByLimit(naiveSwapNextSqrtPriceX96, params.sqrtPriceLimitX96, params.zeroForOne);
+                _boundSqrtPriceByLimit(naiveSwapNextSqrtPriceX96, sqrtPriceLimitX96, params.zeroForOne);
 
             if (exactIn) {
                 outputAmount = params.zeroForOne
@@ -152,9 +178,12 @@ library BunniSwapMath {
             updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
         } else {
             // swap crosses rounded tick
-            (uint256 currentActiveBalance0, uint256 currentActiveBalance1) = (
-                roundedTickBalance0 + ((density0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-                roundedTickBalance1 + ((density1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
+            (uint256 currentActiveBalance0, uint256 currentActiveBalance1) = LiquidityAmounts.getAmountsForLiquidity(
+                sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, false
+            );
+            (currentActiveBalance0, currentActiveBalance1) = (
+                currentActiveBalance0 + ((density0RightOfRoundedTickX96 * totalLiquidity) >> 96),
+                currentActiveBalance1 + ((density1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
             );
 
             // compute updated sqrt ratio & tick
@@ -197,10 +226,12 @@ library BunniSwapMath {
                         : SqrtPriceMath.getNextSqrtPriceFromOutput(
                             startSqrtPriceX96,
                             swapLiquidity,
-                            inverseCumulativeAmountFnInput - cumulativeAmount,
+                            cumulativeAmount - inverseCumulativeAmountFnInput,
                             params.zeroForOne
                         );
                     updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
+                    console2.log("updatedTick", updatedTick);
+                    console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
                 } else {
                     // liquidity is insufficient to handle all of the input/output tokens
                     (updatedTick, updatedSqrtPriceX96) = params.zeroForOne
@@ -209,9 +240,8 @@ library BunniSwapMath {
                 }
 
                 // bound sqrt price by limit
-                updatedSqrtPriceX96 =
-                    _boundSqrtPriceByLimit(updatedSqrtPriceX96, params.sqrtPriceLimitX96, params.zeroForOne);
-                if (updatedSqrtPriceX96 == params.sqrtPriceLimitX96) {
+                updatedSqrtPriceX96 = _boundSqrtPriceByLimit(updatedSqrtPriceX96, sqrtPriceLimitX96, params.zeroForOne);
+                if (updatedSqrtPriceX96 == sqrtPriceLimitX96) {
                     updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
                 }
             }
@@ -228,22 +258,37 @@ library BunniSwapMath {
                 );
                 updatedRoundedTickLiquidity =
                     ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
-                (uint256 updatedRoundedTickBalance0, uint256 updatedRoundedTickBalance1) = LiquidityAmounts
-                    .getAmountsForLiquidity(
+                console2.log("updatedRoundedTickLiquidity", updatedRoundedTickLiquidity);
+                (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = LiquidityAmounts.getAmountsForLiquidity(
                     updatedSqrtPriceX96,
                     TickMath.getSqrtRatioAtTick(updatedRoundedTick),
                     TickMath.getSqrtRatioAtTick(updatedNextRoundedTick),
                     updatedRoundedTickLiquidity,
-                    false
+                    true
                 );
-                (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
-                    updatedRoundedTickBalance0 + ((updatedDensity0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-                    updatedRoundedTickBalance1 + ((updatedDensity1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
+                (updatedActiveBalance0, updatedActiveBalance1) = (
+                    updatedActiveBalance0 + updatedDensity0RightOfRoundedTickX96.mulDivUp(totalLiquidity, Q96),
+                    updatedActiveBalance1 + updatedDensity1LeftOfRoundedTickX96.mulDivUp(totalLiquidity, Q96)
                 );
+                console2.log("updatedActiveBalance0", updatedActiveBalance0);
+                console2.log("updatedActiveBalance1", updatedActiveBalance1);
+                console2.log("currentActiveBalance0", currentActiveBalance0);
+                console2.log("currentActiveBalance1", currentActiveBalance1);
 
                 (inputAmount, outputAmount) = params.zeroForOne
-                    ? (updatedActiveBalance0 - currentActiveBalance0, currentActiveBalance1 - updatedActiveBalance1)
-                    : (updatedActiveBalance1 - currentActiveBalance1, currentActiveBalance0 - updatedActiveBalance0);
+                    ? (
+                        updatedActiveBalance0 - currentActiveBalance0,
+                        currentActiveBalance1 < updatedActiveBalance1 ? 0 : currentActiveBalance1 - updatedActiveBalance1
+                    )
+                    : (
+                        updatedActiveBalance1 - currentActiveBalance1,
+                        currentActiveBalance0 < updatedActiveBalance0 ? 0 : currentActiveBalance0 - updatedActiveBalance0
+                    );
+
+                if (exactIn && inputAmount == uint256(params.amountSpecified) + 1) {
+                    // exact input swap where the input amount exceeds the amount specified
+                    (inputAmount, outputAmount) = (uint256(params.amountSpecified), outputAmount - 1);
+                }
             }
         }
     }
