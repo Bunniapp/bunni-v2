@@ -121,7 +121,7 @@ contract DiscreteLaplaceDistributionTest is LiquidityDensityFunctionTest {
         assertEq(resultRoundedTick, expectedTick, "tick incorrect");
     }
 
-    function test_debug() external {
+    function test_debug() external view {
         PoolKey memory key;
         key.tickSpacing = 2591;
         ldf.query(

@@ -26,7 +26,8 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
-            bytes32 newLdfState
+            bytes32 newLdfState,
+            bool shouldSurge
         )
     {
         (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
@@ -34,6 +35,7 @@ contract DiscreteLaplaceDistribution is ILiquidityDensityFunction {
         (bool initialized, int24 lastMu) = _decodeState(ldfState);
         if (initialized) {
             mu = enforceShiftMode(mu, lastMu, shiftMode);
+            shouldSurge = mu != lastMu;
         }
 
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =

@@ -26,7 +26,8 @@ contract GeometricDistribution is ILiquidityDensityFunction {
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
-            bytes32 newLdfState
+            bytes32 newLdfState,
+            bool shouldSurge
         )
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
@@ -34,6 +35,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
+            shouldSurge = minTick != lastMinTick;
         }
 
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =

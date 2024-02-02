@@ -67,6 +67,7 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     struct Slot0 {
         uint160 sqrtPriceX96;
         int24 tick;
+        uint64 lastSurgeTimestamp;
     }
 
     /// -----------------------------------------------------------------------
@@ -106,7 +107,7 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
 
     function ldfStates(PoolId id) external view returns (bytes32);
 
-    function slot0s(PoolId id) external view returns (uint160 sqrtPriceX96, int24 tick);
+    function slot0s(PoolId id) external view returns (uint160 sqrtPriceX96, int24 tick, uint64 surgeHalflife);
 
     /// -----------------------------------------------------------------------
     /// External functions

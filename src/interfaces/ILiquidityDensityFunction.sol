@@ -21,7 +21,8 @@ interface ILiquidityDensityFunction {
             uint256 liquidityDensityX96,
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
-            bytes32 newLdfState
+            bytes32 newLdfState,
+            bool shouldSurge
         );
 
     function computeSwap(

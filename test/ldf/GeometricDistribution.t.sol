@@ -99,7 +99,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
             LibGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
         console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
 
-        (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount0(
+        (, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount0(
             cumulativeAmount0DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, roundUp
         );
         console2.log("resultRoundedTick", resultRoundedTick);
@@ -147,7 +147,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
             LibGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
         console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
 
-        (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount1(
+        (, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount1(
             cumulativeAmount1DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, roundUp
         );
         console2.log("resultRoundedTick", resultRoundedTick);

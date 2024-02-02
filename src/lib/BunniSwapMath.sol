@@ -253,6 +253,7 @@ library BunniSwapMath {
                     uint256 updatedLiquidityDensityOfRoundedTickX96,
                     uint256 updatedDensity0RightOfRoundedTickX96,
                     uint256 updatedDensity1LeftOfRoundedTickX96,
+                    ,
                 ) = liquidityDensityFunction.query(
                     key, updatedRoundedTick, arithmeticMeanTick, updatedTick, useTwap, ldfParams, ldfState
                 );
