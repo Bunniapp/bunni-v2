@@ -4,7 +4,7 @@ pragma solidity ^0.8.4;
 import "forge-std/Test.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "../src/lib/ExpMath.sol";
 

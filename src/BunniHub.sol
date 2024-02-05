@@ -9,11 +9,11 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
-import {WETH} from "solady/src/tokens/WETH.sol";
-import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
-import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
-import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
+import {WETH} from "solady/tokens/WETH.sol";
+import {SSTORE2} from "solady/utils/SSTORE2.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";

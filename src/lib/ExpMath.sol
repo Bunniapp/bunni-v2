@@ -2,8 +2,8 @@
 
 pragma solidity ^0.8.19;
 
-import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 library ExpMath {
     using ExpMath for int256;

@@ -5,7 +5,7 @@ pragma abicoder v2;
 
 import {PoolId, PoolKey, BalanceDelta, Currency} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
-import {ERC4626} from "solady/src/tokens/ERC4626.sol";
+import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";

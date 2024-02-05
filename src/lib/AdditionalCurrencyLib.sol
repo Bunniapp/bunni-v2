@@ -5,8 +5,8 @@ import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 
-import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 library AdditionalCurrencyLibrary {
     using SafeCastLib for uint256;

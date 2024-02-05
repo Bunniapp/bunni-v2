@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.13;
 
-import {LibString} from "solady/src/utils/LibString.sol";
-import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
+import {LibString} from "solady/utils/LibString.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 

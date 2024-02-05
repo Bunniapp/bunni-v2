@@ -2,8 +2,8 @@
 
 pragma solidity ^0.8.15;
 
-import {ERC20} from "solady/src/tokens/ERC20.sol";
-import {ERC4626} from "solady/src/tokens/ERC4626.sol";
+import {ERC20} from "solady/tokens/ERC20.sol";
+import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 

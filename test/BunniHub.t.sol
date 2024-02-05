@@ -20,8 +20,8 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
-import {WETH} from "solady/src/tokens/WETH.sol";
-import {ERC4626} from "solady/src/tokens/ERC4626.sol";
+import {WETH} from "solady/tokens/WETH.sol";
+import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import "../src/lib/Math.sol";
 import "../src/lib/Structs.sol";
