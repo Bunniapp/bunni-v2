@@ -37,6 +37,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
+    using FixedPointMathLib for int256;
     using FixedPointMathLib for uint256;
     using Oracle for Oracle.Observation[65535];
     using AdditionalCurrencyLibrary for Currency;
@@ -212,7 +213,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint24 feeQuadraticMultiplier,
             uint24 feeTwapSecondsAgo,
             uint24 surgeFee,
-            uint16 surgeFeeHalflife
+            uint16 surgeFeeHalflife,
         ) = _decodeParams(hookParams);
         return (feeMin <= feeMax) && (feeMax <= SWAP_FEE_BASE)
             && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0) && (surgeFee <= SWAP_FEE_BASE)
@@ -259,12 +260,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         PoolId id = key.toId();
 
         // initialize slot0
-        slot0s[id] = Slot0({sqrtPriceX96: sqrtPriceX96, tick: tick, lastSurgeTimestamp: 0});
+        slot0s[id] = Slot0({
+            sqrtPriceX96: sqrtPriceX96,
+            tick: tick,
+            lastSwapTimestamp: uint32(block.timestamp),
+            lastSurgeTimestamp: 0
+        });
 
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-        (,,, uint24 feeTwapSecondsAgo,,) = _decodeParams(hookParams);
+        (,,, uint24 feeTwapSecondsAgo,,,) = _decodeParams(hookParams);
         (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
             uint32(block.timestamp - FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo)), tick
         );
@@ -341,7 +347,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint24 feeQuadraticMultiplier,
             uint24 feeTwapSecondsAgo,
             uint24 surgeFee,
-            uint16 surgeFeeHalfLife
+            uint16 surgeFeeHalfLife,
+            uint16 surgeFeeAutostartThreshold
         ) = _decodeParams(bunniState.hookParams);
         int24 feeMeanTick;
         if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
@@ -423,9 +430,26 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         beforeGasLeft = gasleft();
 
         // update slot0
-        uint64 lastSurgeTimestamp = shouldSurge ? uint64(block.timestamp) : slot0.lastSurgeTimestamp;
-        slot0s[id] =
-            Slot0({sqrtPriceX96: updatedSqrtPriceX96, tick: updatedTick, lastSurgeTimestamp: lastSurgeTimestamp});
+        uint32 lastSurgeTimestamp = slot0.lastSurgeTimestamp;
+        if (shouldSurge) {
+            // use unchecked so that if uint32 overflows we wrap around
+            // overflows are ok since we only look at differences
+            unchecked {
+                uint32 timeSinceLastSwap = uint32(block.timestamp) - slot0.lastSwapTimestamp;
+                // if more than `surgeFeeAutostartThreshold` seconds has passed since the last swap,
+                // we pretend that the surge started at `slot0.lastSwapTimestamp + surgeFeeAutostartThreshold`
+                // so that the pool never gets stuck with a high fee
+                lastSurgeTimestamp = timeSinceLastSwap >= surgeFeeAutostartThreshold
+                    ? slot0.lastSwapTimestamp + surgeFeeAutostartThreshold
+                    : uint32(block.timestamp);
+            }
+        }
+        slot0s[id] = Slot0({
+            sqrtPriceX96: updatedSqrtPriceX96,
+            tick: updatedTick,
+            lastSwapTimestamp: uint32(block.timestamp),
+            lastSurgeTimestamp: lastSurgeTimestamp
+        });
 
         (Currency inputToken, Currency outputToken) =
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
@@ -493,7 +517,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     function _getFee(
         uint160 postSwapSqrtPriceX96,
         int24 arithmeticMeanTick,
-        uint64 lastSurgeTimestamp,
+        uint32 lastSurgeTimestamp,
         uint24 feeMin,
         uint24 feeMax,
         uint24 feeQuadraticMultiplier,
@@ -504,7 +528,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // surge fee gets applied after the LDF shifts (if it's dynamic)
         unchecked {
             uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
-            fee = surgeFee >> (timeSinceLastSurge / surgeFeeHalfLife);
+            fee = uint24(
+                uint256(surgeFee).mulWadUp(
+                    uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
+                )
+            );
         }
 
         // special case for fixed fee pools
@@ -545,16 +573,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint24 feeQuadraticMultiplier,
             uint24 feeTwapSecondsAgo,
             uint24 surgeFee,
-            uint16 surgeFeeHalfLife
+            uint16 surgeFeeHalfLife,
+            uint16 surgeFeeAutostartThreshold
         )
     {
-        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes |
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes |
         feeMin = uint24(bytes3(hookParams));
         feeMax = uint24(bytes3(hookParams << 24));
         feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
         feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
         surgeFee = uint24(bytes3(hookParams << 96));
         surgeFeeHalfLife = uint16(bytes2(hookParams << 120));
+        surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
     }
 
     function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {

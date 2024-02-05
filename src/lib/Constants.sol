@@ -11,3 +11,4 @@ uint256 constant MAX_SWAP_FEE_RATIO = 2.88e20; // max ratio that avoids overflow
 uint256 constant SWAP_FEE_BASE = 1e6;
 uint256 constant SWAP_FEE_BASE_SQUARED = 1e12;
 uint256 constant RAW_TOKEN_RATIO_BASE = 1e6;
+uint256 constant LN2_WAD = 693147180559945309;

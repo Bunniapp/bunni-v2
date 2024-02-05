@@ -61,7 +61,7 @@ library BunniHubLogic {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = _getPoolState(poolId, _poolState);
 
-        (uint160 sqrtPriceX96, int24 currentTick,) = IBunniHook(address(params.poolKey.hooks)).slot0s(poolId);
+        (uint160 sqrtPriceX96, int24 currentTick,,) = IBunniHook(address(params.poolKey.hooks)).slot0s(poolId);
 
         DepositLogicReturnData memory depositReturnData = _depositLogic(
             DepositLogicInputData({

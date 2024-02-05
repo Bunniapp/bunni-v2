@@ -57,7 +57,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
     uint24 internal constant TWAP_SECONDS_AGO = 7 days;
     uint24 internal constant SURGE_FEE = 0.5e6;
-    uint16 internal constant SURGE_HALFLIFE = 5 minutes;
+    uint16 internal constant SURGE_HALFLIFE = 2 minutes;
+    uint16 internal constant SURGE_AUTOSTART_TIME = 5 minutes;
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -326,7 +327,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             bytes32(abi.encodePacked(int16(-3), int16(6), uint32(5e7), uint8(0))),
             bytes32(
                 abi.encodePacked(
-                    FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO, SURGE_FEE, SURGE_HALFLIFE
+                    FEE_MIN,
+                    FEE_MAX,
+                    FEE_QUADRATIC_MULTIPLIER,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME
                 )
             )
         );
@@ -336,7 +343,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,) = bunniHook.slot0s(key.toId());
+        (, int24 currentTick,,) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -347,7 +354,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = bunniHook.slot0s(key.toId());
+        (, currentTick,,) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
     }
@@ -374,7 +381,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency0, address(this), inputAmount);
 
-        (, int24 currentTick,) = bunniHook.slot0s(key.toId());
+        (, int24 currentTick,,) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -385,7 +392,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = bunniHook.slot0s(key.toId());
+        (, currentTick,,) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
     }
@@ -481,7 +488,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency1, address(this), inputAmount);
 
-        (, int24 currentTick,) = bunniHook.slot0s(key.toId());
+        (, int24 currentTick,,) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -492,7 +499,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = bunniHook.slot0s(key.toId());
+        (, currentTick,,) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
     }
@@ -517,7 +524,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _mint(key.currency1, address(this), inputAmount);
 
-        (, int24 currentTick,) = bunniHook.slot0s(key.toId());
+        (, int24 currentTick,,) = bunniHook.slot0s(key.toId());
         int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -528,7 +535,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         _swap(key, params, value, snapLabel);
 
-        (, currentTick,) = bunniHook.slot0s(key.toId());
+        (, currentTick,,) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
     }
@@ -555,7 +562,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             bytes32(abi.encodePacked(ALPHA)),
             bytes32(
                 abi.encodePacked(
-                    FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO, SURGE_FEE, SURGE_HALFLIFE
+                    FEE_MIN,
+                    FEE_MAX,
+                    FEE_QUADRATIC_MULTIPLIER,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME
                 )
             )
         );
@@ -728,7 +741,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint24 feeQuadraticMultiplier
     ) external {
         swapAmount = bound(swapAmount, 1e6, 1e36);
-        waitTime = bound(waitTime, 10, TWAP_SECONDS_AGO);
+        waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 6);
         feeMin = uint24(bound(feeMin, 2e5, 1e6));
         feeMax = uint24(bound(feeMax, feeMin, 1e6));
         alpha = uint32(bound(alpha, 1e3, 12e8));
@@ -745,7 +758,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             ldfParams,
             bytes32(
                 abi.encodePacked(
-                    feeMin, feeMax, feeQuadraticMultiplier, FEE_TWAP_SECONDS_AGO, SURGE_FEE, SURGE_HALFLIFE
+                    feeMin,
+                    feeMax,
+                    feeQuadraticMultiplier,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME
                 )
             )
         );
@@ -810,7 +829,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint24 feeQuadraticMultiplier
     ) external {
         swapAmount = bound(swapAmount, 1e6, 1e36);
-        waitTime = bound(waitTime, 10, TWAP_SECONDS_AGO / 3);
+        waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 3);
         feeMin = uint24(bound(feeMin, 0, 1e6));
         feeMax = uint24(bound(feeMax, feeMin, 1e6));
         alpha = uint32(bound(alpha, 1e3, 12e8));
@@ -827,7 +846,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             ldfParams,
             bytes32(
                 abi.encodePacked(
-                    feeMin, feeMax, feeQuadraticMultiplier, FEE_TWAP_SECONDS_AGO, SURGE_FEE, SURGE_HALFLIFE
+                    feeMin,
+                    feeMax,
+                    feeQuadraticMultiplier,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME
                 )
             )
         );
@@ -1015,7 +1040,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             bytes32(abi.encodePacked(ALPHA)),
             bytes32(
                 abi.encodePacked(
-                    FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO, SURGE_FEE, SURGE_HALFLIFE
+                    FEE_MIN,
+                    FEE_MAX,
+                    FEE_QUADRATIC_MULTIPLIER,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME
                 )
             )
         );
@@ -1037,7 +1068,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             bytes32(abi.encodePacked(ALPHA)),
             bytes32(
                 abi.encodePacked(
-                    FEE_MIN, FEE_MAX, FEE_QUADRATIC_MULTIPLIER, FEE_TWAP_SECONDS_AGO, SURGE_FEE, SURGE_HALFLIFE
+                    FEE_MIN,
+                    FEE_MAX,
+                    FEE_QUADRATIC_MULTIPLIER,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME
                 )
             )
         );
