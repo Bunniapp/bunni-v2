@@ -35,8 +35,6 @@ struct RawPoolState {
     address immutableParamsPointer;
     uint256 rawBalance0;
     uint256 rawBalance1;
-    uint256 reserve0;
-    uint256 reserve1;
 }
 
 struct HookHandleSwapCallbackInputData {

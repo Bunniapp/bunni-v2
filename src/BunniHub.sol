@@ -51,6 +51,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// -----------------------------------------------------------
 
     mapping(PoolId poolId => RawPoolState) internal _poolState;
+    mapping(PoolId poolId => uint256) internal _reserve0;
+    mapping(PoolId poolId => uint256) internal _reserve1;
 
     /// @inheritdoc IBunniHub
     mapping(bytes32 bunniSubspace => uint24) public override nonce;
@@ -90,7 +92,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         checkDeadline(params.deadline)
         returns (uint256 shares, uint256 amount0, uint256 amount1)
     {
-        return BunniHubLogic.deposit(params, poolManager, weth, permit2, _poolState);
+        return BunniHubLogic.deposit(params, poolManager, weth, permit2, _poolState, _reserve0, _reserve1);
     }
 
     /// @inheritdoc IBunniHub
@@ -102,7 +104,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         checkDeadline(params.deadline)
         returns (uint256 amount0, uint256 amount1)
     {
-        return BunniHubLogic.withdraw(params, poolManager, weth, permit2, _poolState);
+        return BunniHubLogic.withdraw(params, poolManager, weth, permit2, _poolState, _reserve0, _reserve1);
     }
 
     /// @inheritdoc IBunniHub
@@ -264,10 +266,10 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         _poolState[poolId].rawBalance0 = state.rawBalance0;
         _poolState[poolId].rawBalance1 = state.rawBalance1;
         if (address(state.vault0) != address(0) && initialReserve0 != state.reserve0) {
-            _poolState[poolId].reserve0 = state.reserve0;
+            _reserve0[poolId] = state.reserve0;
         }
         if (address(state.vault1) != address(0) && initialReserve1 != state.reserve1) {
-            _poolState[poolId].reserve1 = state.reserve1;
+            _reserve1[poolId] = state.reserve1;
         }
     }
 
@@ -386,57 +388,121 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         // read params via SSLOAD2
         bytes memory immutableParams = rawState.immutableParamsPointer.read();
 
-        ILiquidityDensityFunction liquidityDensityFunction;
-        IBunniToken bunniToken;
-        uint24 twapSecondsAgo;
-        bytes32 ldfParams;
-        bytes32 hookParams;
-        ERC4626 vault0;
-        ERC4626 vault1;
-        bool statefulLdf;
-        uint24 minRawTokenRatio0;
-        uint24 targetRawTokenRatio0;
-        uint24 maxRawTokenRatio0;
-        uint24 minRawTokenRatio1;
-        uint24 targetRawTokenRatio1;
-        uint24 maxRawTokenRatio1;
-
-        assembly ("memory-safe") {
-            liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
-            bunniToken := shr(96, mload(add(immutableParams, 52)))
-            twapSecondsAgo := shr(232, mload(add(immutableParams, 72)))
-            ldfParams := mload(add(immutableParams, 75))
-            hookParams := mload(add(immutableParams, 107))
-            vault0 := shr(96, mload(add(immutableParams, 139)))
-            vault1 := shr(96, mload(add(immutableParams, 159)))
-            statefulLdf := shr(248, mload(add(immutableParams, 179)))
-            minRawTokenRatio0 := shr(232, mload(add(immutableParams, 180)))
-            targetRawTokenRatio0 := shr(232, mload(add(immutableParams, 183)))
-            maxRawTokenRatio0 := shr(232, mload(add(immutableParams, 186)))
-            minRawTokenRatio1 := shr(232, mload(add(immutableParams, 189)))
-            targetRawTokenRatio1 := shr(232, mload(add(immutableParams, 192)))
-            maxRawTokenRatio1 := shr(232, mload(add(immutableParams, 195)))
+        {
+            ILiquidityDensityFunction liquidityDensityFunction;
+            assembly ("memory-safe") {
+                liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
+            }
+            state.liquidityDensityFunction = liquidityDensityFunction;
         }
 
-        state = PoolState({
-            liquidityDensityFunction: liquidityDensityFunction,
-            bunniToken: bunniToken,
-            twapSecondsAgo: twapSecondsAgo,
-            ldfParams: ldfParams,
-            hookParams: hookParams,
-            vault0: vault0,
-            vault1: vault1,
-            statefulLdf: statefulLdf,
-            minRawTokenRatio0: minRawTokenRatio0,
-            targetRawTokenRatio0: targetRawTokenRatio0,
-            maxRawTokenRatio0: maxRawTokenRatio0,
-            minRawTokenRatio1: minRawTokenRatio1,
-            targetRawTokenRatio1: targetRawTokenRatio1,
-            maxRawTokenRatio1: maxRawTokenRatio1,
-            rawBalance0: rawState.rawBalance0,
-            rawBalance1: rawState.rawBalance1,
-            reserve0: rawState.reserve0,
-            reserve1: rawState.reserve1
-        });
+        {
+            IBunniToken bunniToken;
+            assembly ("memory-safe") {
+                bunniToken := shr(96, mload(add(immutableParams, 52)))
+            }
+            state.bunniToken = bunniToken;
+        }
+
+        {
+            uint24 twapSecondsAgo;
+            assembly ("memory-safe") {
+                twapSecondsAgo := shr(232, mload(add(immutableParams, 72)))
+            }
+            state.twapSecondsAgo = twapSecondsAgo;
+        }
+
+        {
+            bytes32 ldfParams;
+            assembly ("memory-safe") {
+                ldfParams := mload(add(immutableParams, 75))
+            }
+            state.ldfParams = ldfParams;
+        }
+
+        {
+            bytes32 hookParams;
+            assembly ("memory-safe") {
+                hookParams := mload(add(immutableParams, 107))
+            }
+            state.hookParams = hookParams;
+        }
+
+        {
+            ERC4626 vault0;
+            assembly ("memory-safe") {
+                vault0 := shr(96, mload(add(immutableParams, 139)))
+            }
+            state.vault0 = vault0;
+        }
+
+        {
+            ERC4626 vault1;
+            assembly ("memory-safe") {
+                vault1 := shr(96, mload(add(immutableParams, 159)))
+            }
+            state.vault1 = vault1;
+        }
+
+        {
+            bool statefulLdf;
+            assembly ("memory-safe") {
+                statefulLdf := shr(248, mload(add(immutableParams, 179)))
+            }
+            state.statefulLdf = statefulLdf;
+        }
+
+        {
+            uint24 minRawTokenRatio0;
+            assembly ("memory-safe") {
+                minRawTokenRatio0 := shr(232, mload(add(immutableParams, 180)))
+            }
+            state.minRawTokenRatio0 = minRawTokenRatio0;
+        }
+
+        {
+            uint24 targetRawTokenRatio0;
+            assembly ("memory-safe") {
+                targetRawTokenRatio0 := shr(232, mload(add(immutableParams, 183)))
+            }
+            state.targetRawTokenRatio0 = targetRawTokenRatio0;
+        }
+
+        {
+            uint24 maxRawTokenRatio0;
+            assembly ("memory-safe") {
+                maxRawTokenRatio0 := shr(232, mload(add(immutableParams, 186)))
+            }
+            state.maxRawTokenRatio0 = maxRawTokenRatio0;
+        }
+
+        {
+            uint24 minRawTokenRatio1;
+            assembly ("memory-safe") {
+                minRawTokenRatio1 := shr(232, mload(add(immutableParams, 189)))
+            }
+            state.minRawTokenRatio1 = minRawTokenRatio1;
+        }
+
+        {
+            uint24 targetRawTokenRatio1;
+            assembly ("memory-safe") {
+                targetRawTokenRatio1 := shr(232, mload(add(immutableParams, 192)))
+            }
+            state.targetRawTokenRatio1 = targetRawTokenRatio1;
+        }
+
+        {
+            uint24 maxRawTokenRatio1;
+            assembly ("memory-safe") {
+                maxRawTokenRatio1 := shr(232, mload(add(immutableParams, 195)))
+            }
+            state.maxRawTokenRatio1 = maxRawTokenRatio1;
+        }
+
+        state.rawBalance0 = rawState.rawBalance0;
+        state.rawBalance1 = rawState.rawBalance1;
+        state.reserve0 = address(state.vault0) != address(0) ? _reserve0[poolId] : 0;
+        state.reserve1 = address(state.vault1) != address(0) ? _reserve1[poolId] : 0;
     }
 }
