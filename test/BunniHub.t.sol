@@ -729,6 +729,69 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         _swap(key, params, 0, "");
     }
 
+    function test_fuzz_swapZeroAmountDoesNothing(
+        bool zeroForOne,
+        bool useVault0,
+        bool useVault1,
+        uint32 alpha,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        feeMin = uint24(bound(feeMin, 2e5, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+
+        GeometricDistribution ldf_ = new GeometricDistribution();
+        bytes32 ldfParams = bytes32(abi.encodePacked(int16(-3), int16(6), alpha, uint8(0)));
+        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            bytes32(
+                abi.encodePacked(
+                    feeMin,
+                    feeMax,
+                    feeQuadraticMultiplier,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME
+                )
+            )
+        );
+
+        // execute swap with zero amount
+        (Currency inputToken, Currency outputToken) =
+            zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: int256(0),
+            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 inputAmount;
+        uint256 outputAmount;
+        (uint160 sqrtPriceX96, int24 tick,,) = bunniHook.slot0s(key.toId());
+        {
+            uint256 beforeInputTokenBalance = inputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = outputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            inputAmount = beforeInputTokenBalance - inputToken.balanceOfSelf();
+            outputAmount = outputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        assertEq(inputAmount, 0, "input amount not 0");
+        assertEq(outputAmount, 0, "output amount not 0");
+
+        (uint160 afterSqrtPriceX96, int24 afterTick,,) = bunniHook.slot0s(key.toId());
+        assertEq(afterSqrtPriceX96, sqrtPriceX96, "sqrtPriceX96 changed");
+        assertEq(afterTick, tick, "tick changed");
+    }
+
     function test_fuzz_swapNoArb(
         uint256 swapAmount,
         bool zeroForOneFirstSwap,
