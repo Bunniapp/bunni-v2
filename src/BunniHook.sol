@@ -50,6 +50,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
 
+    struct VaultSharePrices {
+        bool initialized;
+        uint120 sharePrice0;
+        uint120 sharePrice1;
+    }
+
+    mapping(PoolId => VaultSharePrices) internal _vaultSharePricesAtLastSwap;
+
     mapping(PoolId => bytes32) public ldfStates;
     mapping(PoolId => Slot0) public slot0s;
 
@@ -214,10 +222,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint24 feeTwapSecondsAgo,
             uint24 surgeFee,
             uint16 surgeFeeHalflife,
+            ,
+            uint16 vaultSurgeThreshold
         ) = _decodeParams(hookParams);
         return (feeMin <= feeMax) && (feeMax <= SWAP_FEE_BASE)
             && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0) && (surgeFee <= SWAP_FEE_BASE)
-            && (surgeFeeHalflife != 0);
+            && (surgeFeeHalflife != 0) && (vaultSurgeThreshold != 0);
     }
 
     /// -----------------------------------------------------------------------
@@ -270,7 +280,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-        (,,, uint24 feeTwapSecondsAgo,,,) = _decodeParams(hookParams);
+        (,,, uint24 feeTwapSecondsAgo,,,,) = _decodeParams(hookParams);
         (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
             uint32(block.timestamp - FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo)), tick
         );
@@ -322,11 +332,58 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
             (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
 
+        // decode hook params
+        (
+            uint24 feeMin,
+            uint24 feeMax,
+            uint24 feeQuadraticMultiplier,
+            uint24 feeTwapSecondsAgo,
+            uint24 surgeFee,
+            uint16 surgeFeeHalfLife,
+            uint16 surgeFeeAutostartThreshold,
+            uint16 vaultSurgeThreshold
+        ) = _decodeParams(bunniState.hookParams);
+
         // get pool token balances
-        (uint256 balance0, uint256 balance1) = (
-            bunniState.rawBalance0 + getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
+            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
+        (uint256 balance0, uint256 balance1) =
+            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
+        bool shouldSurge;
+
+        if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
+            // compute share prices
+            VaultSharePrices memory sharePrices = VaultSharePrices({
+                initialized: true,
+                sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
+                sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
+            });
+
+            // compare with share prices at last swap to see if we need to apply the surge fee
+            VaultSharePrices memory prevSharePrices = _vaultSharePricesAtLastSwap[id];
+            if (
+                prevSharePrices.initialized
+                    && (
+                        dist(sharePrices.sharePrice0, prevSharePrices.sharePrice0)
+                            >= prevSharePrices.sharePrice0 / vaultSurgeThreshold
+                            || dist(sharePrices.sharePrice1, prevSharePrices.sharePrice1)
+                                >= prevSharePrices.sharePrice1 / vaultSurgeThreshold
+                    )
+            ) {
+                // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
+                shouldSurge = true;
+            }
+
+            // update share prices at last swap
+            if (
+                !prevSharePrices.initialized || sharePrices.sharePrice0 != prevSharePrices.sharePrice0
+                    || sharePrices.sharePrice1 != prevSharePrices.sharePrice1
+            ) {
+                _vaultSharePricesAtLastSwap[id] = sharePrices;
+            }
+        }
 
         bool useTwap = bunniState.twapSecondsAgo != 0;
 
@@ -341,15 +398,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             // compute TWAP value
             arithmeticMeanTick = _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
         }
-        (
-            uint24 feeMin,
-            uint24 feeMax,
-            uint24 feeQuadraticMultiplier,
-            uint24 feeTwapSecondsAgo,
-            uint24 surgeFee,
-            uint16 surgeFeeHalfLife,
-            uint16 surgeFeeAutostartThreshold
-        ) = _decodeParams(bunniState.hookParams);
+
         int24 feeMeanTick;
         if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
             // fee calculation needs TWAP
@@ -363,10 +412,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96,
             bytes32 newLdfState,
-            bool shouldSurge
+            bool shouldSurgeLDF
         ) = bunniState.liquidityDensityFunction.query(
             key, roundedTick, arithmeticMeanTick, currentTick, useTwap, bunniState.ldfParams, ldfState
         );
+        shouldSurge = shouldSurge || shouldSurgeLDF;
         if (bunniState.statefulLdf) ldfStates[id] = newLdfState;
 
         // compute total liquidity
@@ -564,6 +614,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 
+    /// @dev Decodes hookParams into params used by this hook
+    /// @param hookParams The hook params raw bytes32
+    /// @return feeMin The minimum swap fee, 6 decimals
+    /// @return feeMax The maximum swap fee (may be exceeded if surge fee is active), 6 decimals
+    /// @return feeQuadraticMultiplier The quadratic multiplier for the dynamic swap fee formula, 6 decimals
+    /// @return feeTwapSecondsAgo The time window for the TWAP used by the dynamic swap fee formula
+    /// @return surgeFee The max surge swap fee, 6 decimals
+    /// @return surgeFeeHalfLife The half-life of the surge fee in seconds. The surge fee decays exponentially, and the half-life is the time it takes for the surge fee to decay to half its value.
+    /// @return surgeFeeAutostartThreshold Time after a swap when the surge fee exponential decay autostarts, in seconds. The autostart avoids the pool being stuck on a high fee.
+    /// @return vaultSurgeThreshold The threshold for the vault share price change to trigger the surge fee. Only used if both vaults are set.
+    ///         If 0, the surge fee is triggered by any change in the vault share price. If not, 1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
     function _decodeParams(bytes32 hookParams)
         internal
         pure
@@ -574,10 +635,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint24 feeTwapSecondsAgo,
             uint24 surgeFee,
             uint16 surgeFeeHalfLife,
-            uint16 surgeFeeAutostartThreshold
+            uint16 surgeFeeAutostartThreshold,
+            uint16 vaultSurgeThreshold
         )
     {
-        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes |
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold - 2 bytes |
         feeMin = uint24(bytes3(hookParams));
         feeMax = uint24(bytes3(hookParams << 24));
         feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
@@ -585,6 +647,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         surgeFee = uint24(bytes3(hookParams << 96));
         surgeFeeHalfLife = uint16(bytes2(hookParams << 120));
         surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
+        vaultSurgeThreshold = uint16(bytes2(hookParams << 152));
     }
 
     function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {
