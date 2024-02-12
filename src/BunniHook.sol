@@ -226,32 +226,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint16 vaultSurgeThreshold0,
             uint16 vaultSurgeThreshold1
         ) = _decodeParams(hookParams);
-        return (feeMin <= feeMax) && (feeMax <= SWAP_FEE_BASE)
-            && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0) && (surgeFee <= SWAP_FEE_BASE)
-            && (surgeFeeHalflife != 0) && (vaultSurgeThreshold0 != 0) && (vaultSurgeThreshold1 != 0);
+        unchecked {
+            return (feeMin <= feeMax) && (feeMax <= SWAP_FEE_BASE)
+                && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0)
+                && (surgeFee <= SWAP_FEE_BASE)
+                && (uint256(surgeFeeHalflife) * uint256(vaultSurgeThreshold0) * uint256(vaultSurgeThreshold1) != 0);
+        }
     }
 
     /// -----------------------------------------------------------------------
     /// Hooks
     /// -----------------------------------------------------------------------
-
-    /// @inheritdoc IBaseHook
-    function getHooksCalls() public pure override(BaseHook, IBaseHook) returns (Hooks.Permissions memory) {
-        return Hooks.Permissions({
-            beforeInitialize: false,
-            afterInitialize: true,
-            beforeAddLiquidity: true,
-            afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
-            afterRemoveLiquidity: false,
-            beforeSwap: true,
-            afterSwap: false,
-            beforeDonate: false,
-            afterDonate: false,
-            noOp: true,
-            accessLock: true
-        });
-    }
 
     /// @inheritdoc IDynamicFeeManager
     function getFee(address, /* sender */ PoolKey calldata /* key */ ) external pure override returns (uint24) {
@@ -325,8 +310,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             revert BunniHook__InvalidSwap();
         }
 
-        uint256 beforeGasLeft = gasleft();
-
         // get current tick token balances
         PoolState memory bunniState = hub.poolState(id);
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
@@ -389,22 +372,26 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
 
         bool useTwap = bunniState.twapSecondsAgo != 0;
 
+        int24 arithmeticMeanTick;
+        int24 feeMeanTick;
+
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
-        (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
+        {
+            (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
 
-        // (optional) get TWAP value
-        int24 arithmeticMeanTick;
-        if (useTwap) {
-            // need to use TWAP
-            // compute TWAP value
-            arithmeticMeanTick = _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
-        }
+            // (optional) get TWAP value
+            if (useTwap) {
+                // need to use TWAP
+                // compute TWAP value
+                arithmeticMeanTick =
+                    _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
+            }
 
-        int24 feeMeanTick;
-        if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
-            // fee calculation needs TWAP
-            feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
+            if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
+                // fee calculation needs TWAP
+                feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
+            }
         }
 
         // get densities
@@ -453,10 +440,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             }
         }
 
-        console2.log("beforeSwap preparation gas cost: %d", beforeGasLeft - gasleft());
-
         // compute swap result
-        beforeGasLeft = gasleft();
         (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount) = BunniSwapMath
             .computeSwap({
             key: key,
@@ -477,9 +461,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             ldfState: ldfState,
             params: params
         });
-        console2.log("computeSwap gas cost: %d", beforeGasLeft - gasleft());
-
-        beforeGasLeft = gasleft();
 
         // update slot0
         uint32 lastSurgeTimestamp = slot0.lastSurgeTimestamp;
@@ -556,8 +537,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
                 totalLiquidity
             );
         }
-
-        console2.log("execute swap gas cost: %d", beforeGasLeft - gasleft());
 
         return Hooks.NO_OP_SELECTOR;
     }

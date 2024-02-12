@@ -12,7 +12,6 @@ abstract contract BaseHook is IBaseHook {
 
     constructor(IPoolManager _poolManager) {
         poolManager = _poolManager;
-        validateHookAddress(this);
     }
 
     /// @dev Only the pool manager may call this function
@@ -33,34 +32,19 @@ abstract contract BaseHook is IBaseHook {
         _;
     }
 
-    function getHooksCalls() public pure virtual returns (Hooks.Permissions memory);
-
-    // this function is virtual so that we can override it during testing,
-    // which allows us to deploy an implementation to any address
-    // and then etch the bytecode into the correct address
-    function validateHookAddress(BaseHook _this) internal pure virtual {
-        Hooks.validateHookPermissions(_this, getHooksCalls());
-    }
-
-    function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external virtual returns (bytes4) {
-        revert HookNotImplemented();
-    }
+    function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external virtual returns (bytes4) {}
 
     function afterInitialize(address, PoolKey calldata, uint160, int24, bytes calldata)
         external
         virtual
         returns (bytes4)
-    {
-        revert HookNotImplemented();
-    }
+    {}
 
     function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
         external
         virtual
         returns (bytes4)
-    {
-        revert HookNotImplemented();
-    }
+    {}
 
     function afterAddLiquidity(
         address,
@@ -68,18 +52,14 @@ abstract contract BaseHook is IBaseHook {
         IPoolManager.ModifyLiquidityParams calldata,
         BalanceDelta,
         bytes calldata
-    ) external virtual returns (bytes4) {
-        revert HookNotImplemented();
-    }
+    ) external virtual returns (bytes4) {}
 
     function beforeRemoveLiquidity(
         address,
         PoolKey calldata,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
-    ) external virtual returns (bytes4) {
-        revert HookNotImplemented();
-    }
+    ) external virtual returns (bytes4) {}
 
     function afterRemoveLiquidity(
         address,
@@ -87,39 +67,29 @@ abstract contract BaseHook is IBaseHook {
         IPoolManager.ModifyLiquidityParams calldata,
         BalanceDelta,
         bytes calldata
-    ) external virtual returns (bytes4) {
-        revert HookNotImplemented();
-    }
+    ) external virtual returns (bytes4) {}
 
     function beforeSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
         external
         virtual
         returns (bytes4)
-    {
-        revert HookNotImplemented();
-    }
+    {}
 
     function afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
         external
         virtual
         returns (bytes4)
-    {
-        revert HookNotImplemented();
-    }
+    {}
 
     function beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         external
         virtual
         returns (bytes4)
-    {
-        revert HookNotImplemented();
-    }
+    {}
 
     function afterDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         external
         virtual
         returns (bytes4)
-    {
-        revert HookNotImplemented();
-    }
+    {}
 }

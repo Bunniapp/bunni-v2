@@ -40,19 +40,18 @@ contract DeployScript is CREATE3Script {
             )
         );
 
-        /*  unchecked {
+        unchecked {
             bytes32 hookBaseSalt = getCreate3ContractSalt("BunniHook");
             uint256 hookFlags = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
                 + Hooks.ACCESS_LOCK_FLAG + Hooks.NO_OP_FLAG;
-            for (uint256 offset; offset < 10000; offset++) {
+            for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(uint256(hookBaseSalt) + offset);
                 address hookDeployed = create3.getDeployed(deployer, hookSalt);
-                if (uint160((bytes20(hookDeployed) >> 148) << 148) == hookFlags) {
+                if (uint160((bytes20(hookDeployed) >> 148) << 148) == hookFlags && hookDeployed.code.length == 0) {
                     break;
                 }
             }
-        } */
-        hookSalt = bytes32(0x94ec71366f7d23b6b928e8224c5c43811da127fc60e69550677a43d22ee9a601);
+        }
         hook = BunniHook(
             payable(
                 create3.deploy(
