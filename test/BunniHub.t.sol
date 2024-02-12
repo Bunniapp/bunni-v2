@@ -59,7 +59,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     uint24 internal constant SURGE_FEE = 0.5e6;
     uint16 internal constant SURGE_HALFLIFE = 2 minutes;
     uint16 internal constant SURGE_AUTOSTART_TIME = 5 minutes;
-    uint16 internal constant VAULT_SURGE_THRESHOLD = 1e4; // 0.01% change in share price
+    uint16 internal constant VAULT_SURGE_THRESHOLD_0 = 1e4; // 0.01% change in share price
+    uint16 internal constant VAULT_SURGE_THRESHOLD_1 = 1e3; // 0.1% change in share price
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -335,7 +336,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                     SURGE_FEE,
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
                 )
             )
         );
@@ -571,7 +573,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                     SURGE_FEE,
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
                 )
             )
         );
@@ -764,7 +767,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                     SURGE_FEE,
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
                 )
             )
         );
@@ -832,7 +836,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                     SURGE_FEE,
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
                 )
             )
         );
@@ -921,7 +926,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                     SURGE_FEE,
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
                 )
             )
         );
@@ -1116,7 +1122,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                     SURGE_FEE,
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
                 )
             )
         );
@@ -1145,7 +1152,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                     SURGE_FEE,
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
                 )
             )
         );
