@@ -605,9 +605,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     /// @return surgeFeeHalfLife The half-life of the surge fee in seconds. The surge fee decays exponentially, and the half-life is the time it takes for the surge fee to decay to half its value.
     /// @return surgeFeeAutostartThreshold Time after a swap when the surge fee exponential decay autostarts, in seconds. The autostart avoids the pool being stuck on a high fee.
     /// @return vaultSurgeThreshold0 The threshold for the vault0 share price change to trigger the surge fee. Only used if both vaults are set.
-    ///         If 0, the surge fee is triggered by any change in the vault share price. If not, 1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
+    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
     /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
-    ///         If 0, the surge fee is triggered by any change in the vault share price. If not, 1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
+    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
     function _decodeParams(bytes32 hookParams)
         internal
         pure
