@@ -201,8 +201,7 @@ library BunniHubLogic {
                 assembly ("memory-safe") {
                     twapSecondsAgo := mul(twapSecondsAgo, requiresLDF)
                 }
-                vars.arithmeticMeanTick =
-                    hook.updateOracleAndObserve(inputData.poolId, inputData.currentTick, twapSecondsAgo);
+                vars.arithmeticMeanTick = _getTwap(inputData.params.poolKey, twapSecondsAgo);
             }
 
             // compute density
@@ -780,5 +779,15 @@ library BunniHubLogic {
                 revert BunniHub__VaultAssetMismatch();
             }
         }
+    }
+
+    function _getTwap(PoolKey memory poolKey, uint24 twapSecondsAgo) internal view returns (int24 arithmeticMeanTick) {
+        IBunniHook hook = IBunniHook(address(poolKey.hooks));
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = twapSecondsAgo;
+        secondsAgos[1] = 0;
+        int56[] memory tickCumulatives = hook.observe(poolKey, secondsAgos);
+        int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
+        return int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 }

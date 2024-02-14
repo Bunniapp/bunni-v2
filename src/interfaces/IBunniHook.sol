@@ -71,6 +71,12 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         uint32 lastSurgeTimestamp;
     }
 
+    struct VaultSharePrices {
+        bool initialized;
+        uint120 sharePrice0;
+        uint120 sharePrice1;
+    }
+
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
@@ -113,6 +119,11 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         view
         returns (uint160 sqrtPriceX96, int24 tick, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp);
 
+    function vaultSharePricesAtLastSwap(PoolId id)
+        external
+        view
+        returns (bool initialized, uint120 sharePrice0, uint120 sharePrice1);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------
@@ -129,15 +140,6 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// -----------------------------------------------------------------------
     /// BunniHub functions
     /// -----------------------------------------------------------------------
-
-    /// @notice Update the TWAP oracle for the given pool. Only callable by BunniHub.
-    /// @param id The pool id
-    /// @param tick The current tick
-    /// @param twapSecondsAgo The time window for the TWAP observed
-    /// @return arithmeticMeanTick The TWAP tick. 0 if `twapSecondsAgo` is 0.
-    function updateOracleAndObserve(PoolId id, int24 tick, uint24 twapSecondsAgo)
-        external
-        returns (int24 arithmeticMeanTick);
 
     /// @notice Update the LDF state of the given pool. Only callable by BunniHub.
     /// @param id The pool id

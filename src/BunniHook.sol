@@ -50,14 +50,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
 
-    struct VaultSharePrices {
-        bool initialized;
-        uint120 sharePrice0;
-        uint120 sharePrice1;
-    }
-
-    mapping(PoolId => VaultSharePrices) internal _vaultSharePricesAtLastSwap;
-
+    mapping(PoolId => VaultSharePrices) public vaultSharePricesAtLastSwap;
     mapping(PoolId => bytes32) public ldfStates;
     mapping(PoolId => Slot0) public slot0s;
 
@@ -136,24 +129,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     /// -----------------------------------------------------------------------
     /// BunniHub functions
     /// -----------------------------------------------------------------------
-
-    /// @inheritdoc IBunniHook
-    function updateOracleAndObserve(PoolId id, int24 tick, uint24 twapSecondsAgo)
-        external
-        override
-        returns (int24 arithmeticMeanTick)
-    {
-        if (msg.sender != address(hub)) revert BunniHook__Unauthorized();
-
-        // update TWAP oracle
-        (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, tick);
-
-        // observe if needed
-        if (twapSecondsAgo != 0) {
-            return _getTwap(id, tick, twapSecondsAgo, updatedIndex, updatedCardinality);
-        }
-        return 0;
-    }
 
     /// @inheritdoc IBunniHook
     function updateLdfState(PoolId id, bytes32 newState) external override {
@@ -347,7 +322,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             });
 
             // compare with share prices at last swap to see if we need to apply the surge fee
-            VaultSharePrices memory prevSharePrices = _vaultSharePricesAtLastSwap[id];
+            VaultSharePrices memory prevSharePrices = vaultSharePricesAtLastSwap[id];
             if (
                 prevSharePrices.initialized
                     && (
@@ -366,7 +341,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
                 !prevSharePrices.initialized || sharePrices.sharePrice0 != prevSharePrices.sharePrice0
                     || sharePrices.sharePrice1 != prevSharePrices.sharePrice1
             ) {
-                _vaultSharePricesAtLastSwap[id] = sharePrices;
+                vaultSharePricesAtLastSwap[id] = sharePrices;
             }
         }
 

@@ -21,7 +21,7 @@ library BunniSwapMath {
     using FixedPointMathLib for uint256;
 
     function computeSwap(
-        PoolKey calldata key,
+        PoolKey memory key,
         uint256 totalLiquidity,
         uint256 liquidityDensityOfRoundedTickX96,
         uint256 density0RightOfRoundedTickX96,
@@ -101,7 +101,7 @@ library BunniSwapMath {
     }
 
     function _computeSwap(
-        PoolKey calldata key,
+        PoolKey memory key,
         uint256 totalLiquidity,
         uint256 liquidityDensityOfRoundedTickX96,
         uint256 density0RightOfRoundedTickX96,

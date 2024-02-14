@@ -34,7 +34,9 @@ import {Uniswapper} from "./mocks/Uniswapper.sol";
 import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
+import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
 import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
+import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
@@ -79,6 +81,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             )
         )
     );
+    BunniQuoter internal quoter;
     DiscreteLaplaceDistribution internal ldf;
     Uniswapper internal swapper;
     WETH internal weth;
@@ -135,6 +138,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             address(bunniHook)
         );
         vm.label(address(bunniHook), "BunniHook");
+
+        // deploy quoter
+        quoter = new BunniQuoter(hub);
 
         // initialize LDF
         ldf = new DiscreteLaplaceDistribution();
@@ -1027,6 +1033,148 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             18,
             "arb has profit"
         );
+    }
+
+    function test_fuzz_quoter_quoteSwap(
+        uint256 swapAmount,
+        bool zeroForOne,
+        bool useVault0,
+        bool useVault1,
+        uint32 alpha,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        swapAmount = bound(swapAmount, 1e6, 1e36);
+        feeMin = uint24(bound(feeMin, 2e5, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+
+        GeometricDistribution ldf_ = new GeometricDistribution();
+        bytes32 ldfParams = bytes32(abi.encodePacked(int16(-3), int16(6), alpha, uint8(0)));
+        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            bytes32(
+                abi.encodePacked(
+                    feeMin,
+                    feeMax,
+                    feeQuadraticMultiplier,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME,
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
+                )
+            )
+        );
+
+        (Currency inputToken, Currency outputToken) =
+            zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        _mint(inputToken, address(this), swapAmount * 2);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+
+        // quote swap
+        (
+            bool success,
+            uint160 updatedSqrtPriceX96,
+            int24 updatedTick,
+            uint256 inputAmount,
+            uint256 outputAmount,
+            uint24 swapFee,
+            uint256 totalLiquidity
+        ) = quoter.quoteSwap(key, params);
+
+        // execute swap
+        uint256 actualInputAmount;
+        uint256 actualOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = inputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = outputToken.balanceOfSelf();
+            bytes memory data = abi.encode(key, params);
+            poolManager.lock(address(swapper), data);
+            actualInputAmount = beforeInputTokenBalance - inputToken.balanceOfSelf();
+            actualOutputAmount = outputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        // check if actual amounts match quoted amounts
+        assertEq(actualInputAmount, inputAmount, "actual input amount doesn't match quoted input amount");
+        assertEq(actualOutputAmount, outputAmount, "actual output amount doesn't match quoted output amount");
+    }
+
+    function test_fuzz_quoter_quoteDeposit(
+        uint256 depositAmount0,
+        uint256 depositAmount1,
+        bool zeroForOne,
+        bool useVault0,
+        bool useVault1,
+        uint32 alpha,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        depositAmount0 = bound(depositAmount0, 1e6, 1e36);
+        depositAmount1 = bound(depositAmount1, 1e6, 1e36);
+        feeMin = uint24(bound(feeMin, 2e5, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+
+        GeometricDistribution ldf_ = new GeometricDistribution();
+        bytes32 ldfParams = bytes32(abi.encodePacked(int16(-3), int16(6), alpha, uint8(0)));
+        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            bytes32(
+                abi.encodePacked(
+                    feeMin,
+                    feeMax,
+                    feeQuadraticMultiplier,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME,
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
+                )
+            )
+        );
+
+        // quote deposit
+        IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
+            poolKey: key,
+            amount0Desired: depositAmount0,
+            amount1Desired: depositAmount1,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            recipient: address(this),
+            refundETHRecipient: address(this)
+        });
+        (uint256 shares, uint256 amount0, uint256 amount1) = quoter.quoteDeposit(depositParams);
+
+        // deposit tokens
+        (uint256 actualShares, uint256 actualAmount0, uint256 actualAmount1) =
+            _makeDeposit(key, depositAmount0, depositAmount1, address(this), "");
+
+        // check if actual amounts match quoted amounts
+        assertEq(actualShares, shares, "actual shares doesn't match quoted shares");
+        assertEq(actualAmount0, amount0, "actual amount0 doesn't match quoted amount0");
+        assertEq(actualAmount1, amount1, "actual amount1 doesn't match quoted amount1");
     }
 
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
