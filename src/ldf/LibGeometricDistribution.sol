@@ -28,6 +28,12 @@ library LibGeometricDistribution {
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
 
+    /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
+    /// @param roundedTick The rounded tick to query
+    /// @param tickSpacing The spacing of the ticks
+    /// @return liquidityDensityX96_ The liquidity density at the given rounded tick. Range is [0, 1]. Scaled by 2^96.
+    /// @return cumulativeAmount0DensityX96 The cumulative amount of token0 in the rounded ticks [roundedTick + tickSpacing, minTick + length * tickSpacing)
+    /// @return cumulativeAmount1DensityX96 The cumulative amount of token1 in the rounded ticks [minTick, roundedTick - tickSpacing]
     function query(int24 roundedTick, int24 tickSpacing, int24 minTick, int24 length, uint256 alphaX96)
         internal
         pure
@@ -134,6 +140,7 @@ library LibGeometricDistribution {
         }
     }
 
+    /// @dev Computes the cumulative amount of token0 in the rounded ticks [roundedTick, tickUpper).
     function cumulativeAmount0(
         int24 roundedTick,
         uint256 totalLiquidity,
@@ -205,6 +212,7 @@ library LibGeometricDistribution {
         amount0 = cumulativeAmount0DensityX96.mulDiv(totalLiquidity, Q96);
     }
 
+    /// @dev Computes the cumulative amount of token1 in the rounded ticks [tickLower, roundedTick].
     function cumulativeAmount1(
         int24 roundedTick,
         uint256 totalLiquidity,
@@ -278,6 +286,10 @@ library LibGeometricDistribution {
         amount1 = cumulativeAmount1DensityX96.mulDiv(totalLiquidity, Q96);
     }
 
+    /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
+    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
+    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
+    ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
         uint256 totalLiquidity,
@@ -324,12 +336,12 @@ library LibGeometricDistribution {
         }
 
         // round xWad to reduce error
-        // limits tick precision to 1e-9 of a rounded tick
-        int256 remainder = xWad % 1e9;
-        xWad = (xWad / 1e9) * 1e9; // clear everything beyond 9 decimals
-        // if (remainder > 5e8) xWad += 1e9;
+        // limits tick precision to 1e-6 of a rounded tick
+        int256 remainder = xWad % 1e12;
+        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 9 decimals
+        // if (remainder > 5e11) xWad += 1e12;
         assembly {
-            xWad := add(mul(sgt(remainder, 500000000), 1000000000), xWad) // round up if remainder > 0.5
+            xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
         }
 
         console2.log("xWad: %d", xWad);
@@ -339,11 +351,15 @@ library LibGeometricDistribution {
         roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
 
         // ensure roundedTick is within the valid range
-        if (roundedTick < minTick - tickSpacing || roundedTick > minTick + length * tickSpacing) {
+        if (roundedTick < minTick || roundedTick > minTick + length * tickSpacing) {
             return (false, 0);
         }
     }
 
+    /// @dev Given a cumulativeAmount1, computes the rounded tick whose cumulativeAmount1 is closest to the input. Range is [tickLower - tickSpacing, tickUpper - tickSpacing].
+    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
+    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount1 is less than or equal to the input.
+    ///      In the case that the input exceeds the cumulativeAmount1 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount1(
         uint256 cumulativeAmount1_,
         uint256 totalLiquidity,
@@ -353,7 +369,7 @@ library LibGeometricDistribution {
         uint256 alphaX96,
         bool roundUp
     ) internal pure returns (bool success, int24 roundedTick) {
-        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.mulDiv(Q96, totalLiquidity);
+        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.fullMulDiv(Q96, totalLiquidity);
         if (cumulativeAmount1DensityX96 == 0) {
             // return left boundary of distribution
             return (true, minTick - tickSpacing);
@@ -374,9 +390,9 @@ library LibGeometricDistribution {
             uint256 numerator1 = alphaX96 - Q96;
             uint256 denominator1 = baseX96 - Q96;
             uint256 denominator2 = Q96 - alphaInvPowLengthX96;
-            uint256 numerator2 = cumulativeAmount1DensityX96.mulDiv(denominator1, numerator1).mulDiv(
+            uint256 numerator2 = cumulativeAmount1DensityX96.fullMulDiv(denominator1, numerator1).fullMulDiv(
                 denominator2, sqrtRatioTickSpacing - Q96
-            ).mulDiv(sqrtRatioNegMinTick, Q96);
+            ).fullMulDiv(sqrtRatioNegMinTick, Q96);
             xWad = ((numerator2 + alphaInvPowLengthX96).toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96())
                 .sDivWad(lnBaseX96) - int256(WAD);
         } else {
@@ -393,16 +409,12 @@ library LibGeometricDistribution {
         console2.log("xWad: %d", xWad);
 
         // round xWad to reduce error
-        // limits tick precision to 1e-9 of a rounded tick
-        if (xWad < 0) {
-            xWad = 0;
-        } else {
-            int256 remainder = xWad % 1e9;
-            xWad = (xWad / 1e9) * 1e9; // clear everything beyond 9 decimals
-            // if (remainder > 5e8) xWad += 1e9;
-            assembly {
-                xWad := add(mul(sgt(remainder, 500000000), 1000000000), xWad) // round up if remainder > 0.5
-            }
+        // limits tick precision to 1e-6 of a rounded tick
+        uint256 remainder = (xWad % 1e12).abs();
+        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
+        // if (remainder > 5e11) xWad += 1e12;
+        assembly {
+            xWad := add(mul(mul(gt(remainder, 500000000000), 1000000000000), sub(mul(sgt(xWad, 0), 2), 1)), xWad) // round towards infinity if remainder > 0.5
         }
 
         console2.log("xWad: %d", xWad);
@@ -412,7 +424,7 @@ library LibGeometricDistribution {
         roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
 
         // ensure roundedTick is within the valid range
-        if (roundedTick < minTick - tickSpacing || roundedTick > minTick + length * tickSpacing) {
+        if (roundedTick < minTick - tickSpacing || roundedTick >= minTick + length * tickSpacing) {
             return (false, 0);
         }
     }
@@ -496,6 +508,9 @@ library LibGeometricDistribution {
         }
     }
 
+    /// @dev Combines several operations used during a swap into one function to save gas.
+    ///      Given a cumulative amount, it computes its inverse to find the closest rounded tick, then computes the cumulative amount at that tick,
+    ///      and finally computes the liquidity of the tick that will handle the remainder of the swap.
     function computeSwap(
         uint256 inverseCumulativeAmountInput,
         uint256 totalLiquidity,
@@ -513,9 +528,15 @@ library LibGeometricDistribution {
         if (!success) return (false, 0, 0, 0);
 
         // compute the cumulative amount up to roundedTick
-        cumulativeAmount = (exactIn == zeroForOne)
-            ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96)
-            : cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+        if (exactIn) {
+            cumulativeAmount = zeroForOne
+                ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96)
+                : cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+        } else {
+            cumulativeAmount = !zeroForOne
+                ? cumulativeAmount0(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96)
+                : cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+        }
 
         // compute liquidity of the rounded tick that will handle the remainder of the swap
         swapLiquidity = (
