@@ -7,7 +7,6 @@ import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
@@ -393,6 +392,7 @@ library LibGeometricDistribution {
             uint256 numerator2 = cumulativeAmount1DensityX96.fullMulDiv(denominator1, numerator1).fullMulDiv(
                 denominator2, sqrtRatioTickSpacing - Q96
             ).fullMulDiv(sqrtRatioNegMinTick, Q96);
+            if (numerator2 + alphaInvPowLengthX96 == 0) return (false, 0);
             xWad = ((numerator2 + alphaInvPowLengthX96).toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96())
                 .sDivWad(lnBaseX96) - int256(WAD);
         } else {
@@ -400,7 +400,7 @@ library LibGeometricDistribution {
             uint256 numerator = cumulativeAmount1DensityX96.fullMulDiv(denominator, Q96).fullMulDiv(
                 sqrtRatioNegMinTick, sqrtRatioTickSpacing - Q96
             );
-            if (Q96 > baseX96 && Q96 < numerator / (Q96 - alphaX96)) return (false, 0);
+            if (Q96 > baseX96 && Q96 <= numerator / (Q96 - alphaX96)) return (false, 0);
             uint256 basePowXPlusOneX96 =
                 Q96 > baseX96 ? Q96 - numerator / (Q96 - alphaX96) : Q96 + numerator / (Q96 - alphaX96);
             xWad = basePowXPlusOneX96.toInt256().lnQ96().sDivWad(lnBaseX96) - int256(WAD);
