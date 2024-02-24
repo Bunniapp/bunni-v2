@@ -39,7 +39,6 @@ import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
 import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
-import {DiscreteLaplaceDistribution} from "../src/ldf/DiscreteLaplaceDistribution.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
 contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
@@ -50,7 +49,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
     uint96 internal constant HOOK_SWAP_FEE = 0.1e18;
-    uint64 internal constant ALPHA = 0.7e18;
+    uint32 internal constant ALPHA = 0.7e8;
     uint256 internal constant MAX_ERROR = 1e9;
     uint24 internal constant FEE_MIN = 0.0001e6;
     uint24 internal constant FEE_MAX = 0.1e6;
@@ -82,7 +81,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         )
     );
     BunniQuoter internal quoter;
-    DiscreteLaplaceDistribution internal ldf;
+    ILiquidityDensityFunction internal ldf;
     Uniswapper internal swapper;
     WETH internal weth;
     IPermit2 internal permit2;
@@ -143,7 +142,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         quoter = new BunniQuoter(hub);
 
         // initialize LDF
-        ldf = new DiscreteLaplaceDistribution();
+        ldf = new GeometricDistribution();
 
         // approve tokens
         token0.approve(address(permit2), type(uint256).max);
@@ -291,7 +290,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 numSwaps = 10;
-        uint256 inputAmount = PRECISION / 100;
+        uint256 inputAmount = PRECISION / 1000;
         uint256 value = key.currency0.isNative() ? inputAmount : 0;
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -456,7 +455,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 numSwaps = 10;
-        uint256 inputAmount = PRECISION / 100;
+        uint256 inputAmount = PRECISION / 1000;
         uint256 value = key.currency1.isNative() ? inputAmount : 0;
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -563,27 +562,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         ERC4626 vault1_,
         string memory snapLabel
     ) internal {
-        // create new bunni token with 0 compound threshold
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            vault0_,
-            vault1_,
-            bytes32(abi.encodePacked(ALPHA)),
-            bytes32(
-                abi.encodePacked(
-                    FEE_MIN,
-                    FEE_MAX,
-                    FEE_QUADRATIC_MULTIPLIER,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
-            )
-        );
+        // create new bunni token
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION * 100;
         IPoolManager.SwapParams memory paramsZeroToOne = IPoolManager.SwapParams({
@@ -717,7 +697,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         // set mu to be far to the left of rounded tick 0
         // so that the pool will have mostly token1
-        ldf_.setMu(-100);
+        ldf_.setMinTick(-100);
 
         // deploy pool and init liquidity
         Currency currency0 = CurrencyLibrary.NATIVE;
@@ -727,7 +707,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         // set mu to rounded tick 0
         // so that the pool has less token0 than the LDF suggests
-        ldf_.setMu(0);
+        ldf_.setMinTick(0);
 
         // make a big swap from token1 to token0
         // such that the pool has insufficient tokens to output
@@ -1224,10 +1204,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         vm.stopPrank();
     }
 
-    function _decodeHookFee(uint8 fee, bool zeroForOne) internal pure returns (uint8) {
-        return zeroForOne ? (fee % 16) : (fee >> 4);
-    }
-
     function _vaultBalanceOf(ERC4626 vault, address account) internal view returns (uint256) {
         if (address(vault) == address(0)) return 0;
         return vault.balanceOf(account);
@@ -1260,7 +1236,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault0_,
             vault1_,
             ldf,
-            bytes32(abi.encodePacked(ALPHA)),
+            bytes32(abi.encodePacked(int16(-3), int16(6), ALPHA, ShiftMode.BOTH)),
             bytes32(
                 abi.encodePacked(
                     FEE_MIN,
@@ -1290,7 +1266,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vault0_,
             vault1_,
             ldf_,
-            bytes32(abi.encodePacked(ALPHA)),
+            bytes32(abi.encodePacked(int16(-3), int16(6), ALPHA, ShiftMode.BOTH)),
             bytes32(
                 abi.encodePacked(
                     FEE_MIN,
