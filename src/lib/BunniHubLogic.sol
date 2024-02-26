@@ -4,6 +4,8 @@ pragma solidity ^0.8.19;
 
 import {console2} from "forge-std/console2.sol";
 
+import {ClonesWithImmutableArgs} from "clones-with-immutable-args/ClonesWithImmutableArgs.sol";
+
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
@@ -15,7 +17,6 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
-import {CREATE3} from "solady/utils/CREATE3.sol";
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 
@@ -44,6 +45,7 @@ library BunniHubLogic {
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint128;
     using FixedPointMathLib for uint256;
+    using ClonesWithImmutableArgs for address;
     using AdditionalCurrencyLibrary for Currency;
 
     /// -----------------------------------------------------------------------
@@ -428,6 +430,7 @@ library BunniHubLogic {
 
     function deployBunniToken(
         IBunniHub.DeployBunniTokenParams calldata params,
+        IBunniToken implementation,
         IPoolManager poolManager,
         mapping(PoolId => RawPoolState) storage _poolState,
         mapping(bytes32 => uint24) storage nonce,
@@ -491,11 +494,7 @@ library BunniHubLogic {
 
         // deploy BunniToken
         token = IBunniToken(
-            CREATE3.deploy(
-                keccak256(abi.encode(bunniSubspace, nonce_)),
-                abi.encodePacked(type(BunniToken).creationCode, abi.encode(this, params.currency0, params.currency1)),
-                0
-            )
+            address(implementation).clone({data: abi.encodePacked(address(this), params.currency0, params.currency1)})
         );
 
         key = PoolKey({

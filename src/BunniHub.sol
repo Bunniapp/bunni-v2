@@ -45,6 +45,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
     WETH internal immutable weth;
     IPoolManager internal immutable poolManager;
+    IBunniToken internal immutable bunniTokenImplementation;
 
     /// -----------------------------------------------------------
     /// Storage variables
@@ -73,9 +74,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// Constructor
     /// -----------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, WETH weth_, IPermit2 permit2_) Permit2Enabled(permit2_) {
+    constructor(IPoolManager poolManager_, WETH weth_, IPermit2 permit2_, IBunniToken bunniTokenImplementation_)
+        Permit2Enabled(permit2_)
+    {
         poolManager = poolManager_;
         weth = weth_;
+        bunniTokenImplementation = bunniTokenImplementation_;
     }
 
     /// -----------------------------------------------------------
@@ -114,7 +118,9 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         nonReentrant
         returns (IBunniToken token, PoolKey memory key)
     {
-        return BunniHubLogic.deployBunniToken(params, poolManager, _poolState, nonce, poolIdOfBunniToken, weth);
+        return BunniHubLogic.deployBunniToken(
+            params, bunniTokenImplementation, poolManager, _poolState, nonce, poolIdOfBunniToken, weth
+        );
     }
 
     /// @inheritdoc IBunniHub

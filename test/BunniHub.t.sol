@@ -30,11 +30,11 @@ import {MockLDF} from "./mocks/MockLDF.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
+import {BunniToken} from "../src/BunniToken.sol";
 import {Uniswapper} from "./mocks/Uniswapper.sol";
 import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
-import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
 import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
 import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
@@ -128,7 +128,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         swapper = new Uniswapper(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, permit2);
+        hub = new BunniHub(poolManager, weth, permit2, new BunniToken());
 
         // initialize bunni hook
         deployCodeTo(
