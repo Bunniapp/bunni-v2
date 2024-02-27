@@ -734,29 +734,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         feeMax = uint24(bound(feeMax, feeMin, 1e6));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
-        GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int16(-3), int16(6), alpha, uint8(0)));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
             useVault0 ? vault0 : ERC4626(address(0)),
-            useVault1 ? vault1 : ERC4626(address(0)),
-            ldf_,
-            ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
-            )
+            useVault1 ? vault1 : ERC4626(address(0))
         );
 
         // execute swap with zero amount
@@ -1166,7 +1148,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         {
             uint256 beforeInputTokenBalance = inputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = outputToken.balanceOfSelf();
-            bytes memory data = abi.encode(key, params);
+            bytes memory data = abi.encode(key, params, type(uint256).max, 0);
             poolManager.lock(address(swapper), data);
             actualInputAmount = beforeInputTokenBalance - inputToken.balanceOfSelf();
             actualOutputAmount = outputToken.balanceOfSelf() - beforeOutputTokenBalance;
@@ -1525,7 +1507,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         internal
     {
         Uniswapper swapper_ = swapper;
-        bytes memory data = abi.encode(key, params);
+        bytes memory data = abi.encode(key, params, type(uint256).max, 0);
         if (bytes(snapLabel).length > 0) {
             snapStart(snapLabel);
             poolManager.lock{value: value}(address(swapper_), data);
