@@ -786,7 +786,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         assertEq(afterTick, tick, "tick changed");
     }
 
-    function test_fuzz_swapNoArb(
+    function test_fuzz_swapNoArb_exactIn(
         uint256 swapAmount,
         bool zeroForOneFirstSwap,
         bool useVault0,
@@ -839,6 +839,98 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         });
         uint256 firstSwapInputAmount;
         uint256 firstSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            firstSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
+            firstSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        console2.log("firstSwapInputAmount", firstSwapInputAmount);
+        console2.log("firstSwapOutputAmount", firstSwapOutputAmount);
+
+        // wait for some time
+        skip(waitTime);
+
+        // execute second swap
+        params = IPoolManager.SwapParams({
+            zeroForOne: !zeroForOneFirstSwap,
+            amountSpecified: int256(firstSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        uint256 secondSwapInputAmount;
+        uint256 secondSwapOutputAmount;
+        {
+            uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
+            uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
+            _swap(key, params, 0, "");
+            secondSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
+            secondSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
+        }
+
+        console2.log("secondSwapInputAmount", secondSwapInputAmount);
+        console2.log("secondSwapOutputAmount", secondSwapOutputAmount);
+
+        // verify no profits
+        assertLeDecimal(secondSwapOutputAmount, firstSwapInputAmount, 18, "arb has profit");
+    }
+
+    function test_fuzz_swapNoArb_exactOut(
+        uint256 swapAmount,
+        bool zeroForOneFirstSwap,
+        bool useVault0,
+        bool useVault1,
+        uint256 waitTime,
+        uint32 alpha,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        swapAmount = bound(swapAmount, 1e6, 1e36);
+        waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 6);
+        feeMin = uint24(bound(feeMin, 2e5, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+
+        GeometricDistribution ldf_ = new GeometricDistribution();
+        bytes32 ldfParams = bytes32(abi.encodePacked(int16(-3), int16(6), alpha, uint8(0)));
+        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            bytes32(
+                abi.encodePacked(
+                    feeMin,
+                    feeMax,
+                    feeQuadraticMultiplier,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME,
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1
+                )
+            )
+        );
+
+        // execute first swap
+        (Currency firstSwapInputToken, Currency firstSwapOutputToken) =
+            zeroForOneFirstSwap ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOneFirstSwap,
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+        (,,, uint256 firstSwapInputAmount, uint256 firstSwapOutputAmount,,) = quoter.quoteSwap(key, params);
+        if (firstSwapOutputToken.balanceOf(address(poolManager)) >= swapAmount) {
+            assertApproxEqAbs(firstSwapOutputAmount, swapAmount, 10, "firstSwapOutputAmount incorrect");
+        }
+        _mint(firstSwapInputToken, address(this), firstSwapInputAmount);
         {
             uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
@@ -1065,15 +1157,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         });
 
         // quote swap
-        (
-            bool success,
-            uint160 updatedSqrtPriceX96,
-            int24 updatedTick,
-            uint256 inputAmount,
-            uint256 outputAmount,
-            uint24 swapFee,
-            uint256 totalLiquidity
-        ) = quoter.quoteSwap(key, params);
+        (bool success,,, uint256 inputAmount, uint256 outputAmount,,) = quoter.quoteSwap(key, params);
+        assertTrue(success, "quoteSwap failed");
 
         // execute swap
         uint256 actualInputAmount;
@@ -1095,7 +1180,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     function test_fuzz_quoter_quoteDeposit(
         uint256 depositAmount0,
         uint256 depositAmount1,
-        bool zeroForOne,
         bool useVault0,
         bool useVault1,
         uint32 alpha,

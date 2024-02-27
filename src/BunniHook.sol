@@ -202,9 +202,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint16 vaultSurgeThreshold1
         ) = _decodeParams(hookParams);
         unchecked {
-            return (feeMin <= feeMax) && (feeMax <= SWAP_FEE_BASE)
-                && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0)
-                && (surgeFee <= SWAP_FEE_BASE)
+            return (feeMin <= feeMax) && (feeMax < SWAP_FEE_BASE)
+                && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0) && (surgeFee < SWAP_FEE_BASE)
                 && (uint256(surgeFeeHalflife) * uint256(vaultSurgeThreshold0) * uint256(vaultSurgeThreshold1) != 0);
         }
     }
@@ -466,6 +465,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // we do this by reducing the output token amount
         uint24 swapFee;
         uint256 hookFeesAmount;
+        bool exactIn = params.amountSpecified >= 0;
         {
             swapFee = _getFee(
                 updatedSqrtPriceX96,
@@ -477,12 +477,22 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
                 surgeFee,
                 surgeFeeHalfLife
             );
-            uint256 swapFeeAmount = outputAmount.mulDiv(swapFee, SWAP_FEE_BASE);
-            uint96 hookFeesModifier = _hookFeesModifier;
-            hookFeesAmount = swapFeeAmount.mulDiv(hookFeesModifier, WAD);
+            uint256 swapFeeAmount;
 
-            // deduct swap fee from output
-            outputAmount -= swapFeeAmount;
+            if (exactIn) {
+                // deduct swap fee from output
+                swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+                outputAmount -= swapFeeAmount;
+            } else {
+                // increase input amount
+                // need to modify fee rate to maintain the same average price as exactIn case
+                // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
+                swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
+                inputAmount += swapFeeAmount;
+            }
+
+            uint96 hookFeesModifier = _hookFeesModifier;
+            hookFeesAmount = swapFeeAmount.mulDivUp(hookFeesModifier, WAD);
         }
 
         // take input by minting claim tokens to hook
@@ -492,8 +502,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // - pull input claim tokens from hook
         // - push output tokens to pool manager and mint claim tokens to hook
         // - update raw token balances
-        // need to add hookFeesAmount to output so that we can get the hook fees
-        hub.hookHandleSwap(key, params.zeroForOne, inputAmount, outputAmount + hookFeesAmount);
+        if (exactIn) {
+            // need to add hookFeesAmount to output so that we can get the hook fees
+            hub.hookHandleSwap(key, params.zeroForOne, inputAmount, outputAmount + hookFeesAmount);
+        } else {
+            // need to subtract hookFeesAmount from input so that we can keep the hook fees
+            hub.hookHandleSwap(key, params.zeroForOne, inputAmount - hookFeesAmount, outputAmount);
+        }
 
         // burn output claim tokens
         poolManager.burn(address(this), outputToken.toId(), outputAmount);

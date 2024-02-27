@@ -521,31 +521,39 @@ library LibGeometricDistribution {
         int24 length,
         uint256 alphaX96
     ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
-        // compute roundedTick by inverting the cumulative amount
-        (success, roundedTick) = ((exactIn == zeroForOne) ? inverseCumulativeAmount0 : inverseCumulativeAmount1)(
-            inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
-        );
-        if (!success) return (false, 0, 0, 0);
+        if (exactIn == zeroForOne) {
+            // compute roundedTick by inverting the cumulative amount
+            (success, roundedTick) = inverseCumulativeAmount0(
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
+            );
+            if (!success) return (false, 0, 0, 0);
 
-        // compute the cumulative amount up to roundedTick
-        if (exactIn) {
-            cumulativeAmount = zeroForOne
-                ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96)
-                : cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+            // compute the cumulative amount up to roundedTick
+            cumulativeAmount = cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+
+            // compute liquidity of the rounded tick that will handle the remainder of the swap
+            swapLiquidity = (
+                (
+                    liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96)
+                        * totalLiquidity
+                ) >> 96
+            ).toUint128();
         } else {
-            cumulativeAmount = !zeroForOne
-                ? cumulativeAmount0(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96)
-                : cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96);
-        }
+            // compute roundedTick by inverting the cumulative amount
+            (success, roundedTick) = inverseCumulativeAmount1(
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
+            );
+            if (!success) return (false, 0, 0, 0);
 
-        // compute liquidity of the rounded tick that will handle the remainder of the swap
-        swapLiquidity = (
-            (
-                liquidityDensityX96(
-                    zeroForOne ? roundedTick - tickSpacing : roundedTick, tickSpacing, minTick, length, alphaX96
-                ) * totalLiquidity
-            ) >> 96
-        ).toUint128();
+            // compute the cumulative amount up to roundedTick
+            cumulativeAmount =
+                cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+
+            // compute liquidity of the rounded tick that will handle the remainder of the swap
+            swapLiquidity = (
+                (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96
+            ).toUint128();
+        }
     }
 
     /// @return minTick The minimum rounded tick of the distribution

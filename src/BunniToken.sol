@@ -15,15 +15,15 @@ import {IBunniToken} from "./interfaces/IBunniToken.sol";
 contract BunniToken is IBunniToken, ERC20, Clone {
     error BunniToken__NotBunniHub();
 
-    function hub() public view override returns (IBunniHub) {
+    function hub() public pure override returns (IBunniHub) {
         return IBunniHub(_getArgAddress(0));
     }
 
-    function token0() public view override returns (IERC20) {
+    function token0() public pure override returns (IERC20) {
         return IERC20(_getArgAddress(20));
     }
 
-    function token1() public view override returns (IERC20) {
+    function token1() public pure override returns (IERC20) {
         return IERC20(_getArgAddress(40));
     }
 

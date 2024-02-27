@@ -195,8 +195,19 @@ library BunniSwapMath {
                         params.zeroForOne ? currentActiveBalance0 + inputAmount : currentActiveBalance1 + inputAmount;
                 } else {
                     // exact output swap
-                    inverseCumulativeAmountFnInput =
-                        params.zeroForOne ? currentActiveBalance1 - outputAmount : currentActiveBalance0 - outputAmount;
+                    if (params.zeroForOne) {
+                        if (outputAmount > currentActiveBalance1) {
+                            // output amount exceeds the virtual balance
+                            outputAmount = currentActiveBalance1;
+                        }
+                        inverseCumulativeAmountFnInput = currentActiveBalance1 - outputAmount;
+                    } else {
+                        if (outputAmount > currentActiveBalance0) {
+                            // output amount exceeds the virtual balance
+                            outputAmount = currentActiveBalance0;
+                        }
+                        inverseCumulativeAmountFnInput = currentActiveBalance0 - outputAmount;
+                    }
                 }
 
                 (bool success, int24 updatedRoundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) =
@@ -216,19 +227,13 @@ library BunniSwapMath {
                 if (success && swapLiquidity != 0) {
                     // use Uniswap math to compute updated sqrt price
                     uint160 startSqrtPriceX96 = TickMath.getSqrtRatioAtTick(updatedRoundedTick);
-                    updatedSqrtPriceX96 = exactIn
-                        ? SqrtPriceMath.getNextSqrtPriceFromInput(
-                            startSqrtPriceX96,
-                            swapLiquidity,
-                            inverseCumulativeAmountFnInput - cumulativeAmount,
-                            params.zeroForOne
-                        )
-                        : SqrtPriceMath.getNextSqrtPriceFromOutput(
-                            startSqrtPriceX96,
-                            swapLiquidity,
-                            cumulativeAmount - inverseCumulativeAmountFnInput,
-                            params.zeroForOne
-                        );
+                    updatedSqrtPriceX96 = SqrtPriceMath.getNextSqrtPriceFromInput(
+                        startSqrtPriceX96,
+                        swapLiquidity,
+                        inverseCumulativeAmountFnInput - cumulativeAmount,
+                        exactIn == params.zeroForOne
+                    );
+
                     updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
                     console2.log("updatedTick", updatedTick);
                     console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);

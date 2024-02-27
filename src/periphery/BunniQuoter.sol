@@ -93,6 +93,7 @@ contract BunniQuoter is IBunniQuoter {
         );
         (uint256 balance0, uint256 balance1) =
             (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
+
         bool shouldSurge;
 
         if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
@@ -215,7 +216,7 @@ contract BunniQuoter is IBunniQuoter {
 
         // charge LP fee and hook fee
         // we do this by reducing the output token amount
-        uint256 hookFeesAmount;
+        bool exactIn = params.amountSpecified >= 0;
         {
             swapFee = _getFee(
                 updatedSqrtPriceX96,
@@ -227,12 +228,19 @@ contract BunniQuoter is IBunniQuoter {
                 surgeFee,
                 surgeFeeHalfLife
             );
-            uint256 swapFeeAmount = outputAmount.mulDiv(swapFee, SWAP_FEE_BASE);
-            (uint96 hookFeesModifier,) = hook.getHookFeesParams();
-            hookFeesAmount = swapFeeAmount.mulDiv(hookFeesModifier, WAD);
+            uint256 swapFeeAmount;
 
-            // deduct swap fee from output
-            outputAmount -= swapFeeAmount;
+            if (exactIn) {
+                // deduct swap fee from output
+                swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+                outputAmount -= swapFeeAmount;
+            } else {
+                // increase input amount
+                // need to modify fee rate to maintain the same average price as exactIn case
+                // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
+                swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
+                inputAmount += swapFeeAmount;
+            }
         }
 
         // if we reached this point, the swap was successful
