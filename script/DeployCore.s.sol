@@ -10,8 +10,9 @@ import {CREATE3Script} from "./base/CREATE3Script.sol";
 
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniHook} from "../src/BunniHook.sol";
+import {BunniToken} from "../src/BunniToken.sol";
 
-contract DeployScript is CREATE3Script {
+contract DeployCoreScript is CREATE3Script {
     using LibString for uint256;
     using SafeCastLib for uint256;
 
@@ -35,7 +36,7 @@ contract DeployScript is CREATE3Script {
             payable(
                 create3.deploy(
                     getCreate3ContractSalt("BunniHub"),
-                    bytes.concat(type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2))
+                    bytes.concat(type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2, new BunniToken()))
                 )
             )
         );
