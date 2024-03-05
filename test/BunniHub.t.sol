@@ -731,7 +731,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         uint24 feeQuadraticMultiplier
     ) external {
         feeMin = uint24(bound(feeMin, 2e5, 1e6));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
@@ -800,7 +800,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         swapAmount = bound(swapAmount, 1e6, 1e36);
         waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 6);
         feeMin = uint24(bound(feeMin, 2e5, 1e6));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
@@ -890,7 +890,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         swapAmount = bound(swapAmount, 1e6, 1e36);
         waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 6);
         feeMin = uint24(bound(feeMin, 2e5, 1e6));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
@@ -982,7 +982,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         swapAmount = bound(swapAmount, 1e6, 1e36);
         waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 3);
         feeMin = uint24(bound(feeMin, 0, 1e6));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
@@ -1119,7 +1119,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     ) external {
         swapAmount = bound(swapAmount, 1e6, 1e36);
         feeMin = uint24(bound(feeMin, 2e5, 1e6));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
@@ -1190,7 +1190,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         depositAmount0 = bound(depositAmount0, 1e6, 1e36);
         depositAmount1 = bound(depositAmount1, 1e6, 1e36);
         feeMin = uint24(bound(feeMin, 2e5, 1e6));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();

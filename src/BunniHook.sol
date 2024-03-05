@@ -436,6 +436,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             params: params
         });
 
+        // ensure swap never moves price in the opposite direction
+        if (
+            (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
+                || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
+        ) {
+            revert BunniHook__InvalidSwap();
+        }
+
         // update slot0
         uint32 lastSurgeTimestamp = slot0.lastSurgeTimestamp;
         if (shouldSurge) {
