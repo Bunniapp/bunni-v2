@@ -37,11 +37,11 @@ contract Uniswapper is ILockCallback {
             poolManager.currencyDelta(address(this), key.currency1)
         );
         if (params.zeroForOne) {
-            require(uint256(-amount0) <= maxInput, "Required input too much");
-            require(uint256(amount1) >= minOutput, "Received output too little");
+            require(uint256(amount0) <= maxInput, "Required input too much");
+            require(uint256(-amount1) >= minOutput, "Received output too little");
         } else {
-            require(uint256(-amount1) <= maxInput, "Required input too much");
-            require(uint256(amount0) >= minOutput, "Received output too little");
+            require(uint256(amount1) <= maxInput, "Required input too much");
+            require(uint256(-amount0) >= minOutput, "Received output too little");
         }
 
         _settleCurrency(lockCaller, key.currency0, amount0);
