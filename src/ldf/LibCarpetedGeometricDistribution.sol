@@ -189,9 +189,8 @@ library LibCarpetedGeometricDistribution {
             int24 minUsableTick,
             int24 maxUsableTick
         ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightMain);
-        uint256 leftCarpetCumulativeAmount1 = LibUniformDistribution.cumulativeAmount1(
-            minTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
-        );
+        uint256 leftCarpetCumulativeAmount1 =
+            LibUniformDistribution.cumulativeAmount1(minTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick);
 
         if (cumulativeAmount1_ <= leftCarpetCumulativeAmount1 && leftCarpetLiquidity != 0) {
             // use left carpet
@@ -252,31 +251,15 @@ library LibCarpetedGeometricDistribution {
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        int24 minTick;
-        int24 length;
-        uint32 alpha;
-        uint256 weightMain;
-        bytes32 geometricLdfParams;
-        if (twapSecondsAgo != 0) {
-            // use rounded TWAP value + offset as minTick
-            // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
-            length = int24(int16(uint16(bytes2(ldfParams << 16))));
-            alpha = uint32(bytes4(ldfParams << 32));
-            weightMain = uint32(bytes4(ldfParams << 64));
-            geometricLdfParams = bytes32(abi.encodePacked(int16(0), int16(length), alpha));
-        } else {
-            // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
-            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            length = int24(int16(uint16(bytes2(ldfParams << 24))));
-            alpha = uint32(bytes4(ldfParams << 40));
-            weightMain = uint32(bytes4(ldfParams << 72));
-            geometricLdfParams = bytes32(abi.encodePacked(int24(minTick), int16(length), alpha));
-        }
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams)));
+        int24 length = int24(int16(uint16(bytes2(ldfParams << 24))));
+        uint32 alpha = uint32(bytes4(ldfParams << 40));
+        uint256 weightMain = uint32(bytes4(ldfParams << 72));
+        bytes32 geometricLdfParams = bytes32(abi.encodePacked(minTickOrOffset, int16(length), alpha));
 
         return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, geometricLdfParams)
             && weightMain != 0 && weightMain < WEIGHT_BASE
-            && checkMinLiquidityDensity(tickSpacing, minTick, length, alpha, weightMain);
+            && checkMinLiquidityDensity(tickSpacing, minTickOrOffset, length, alpha, weightMain);
     }
 
     function liquidityDensityX96(
@@ -365,25 +348,22 @@ library LibCarpetedGeometricDistribution {
         pure
         returns (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode)
     {
-        uint256 alpha;
         if (useTwap) {
             // use rounded TWAP value + offset as minTick
-            // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(int16(uint16(bytes2(ldfParams)))); // the offset applied to the twap tick to get the minTick
+            // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
+            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
             minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            length = int24(int16(uint16(bytes2(ldfParams << 16))));
-            alpha = uint32(bytes4(ldfParams << 32));
-            weightMain = uint32(bytes4(ldfParams << 64));
             shiftMode = ShiftMode(uint8(bytes1(ldfParams << 96)));
         } else {
             // static minTick set in params
             // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
             minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            length = int24(int16(uint16(bytes2(ldfParams << 24))));
-            alpha = uint32(bytes4(ldfParams << 40));
-            weightMain = uint32(bytes4(ldfParams << 72));
             shiftMode = ShiftMode.BOTH;
         }
+        length = int24(int16(uint16(bytes2(ldfParams << 24))));
+        uint256 alpha = uint32(bytes4(ldfParams << 40));
+        weightMain = uint32(bytes4(ldfParams << 72));
+
         alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
 
         // bound distribution to be within the range of usable ticks

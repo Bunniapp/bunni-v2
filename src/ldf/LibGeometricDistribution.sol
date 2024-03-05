@@ -431,19 +431,12 @@ library LibGeometricDistribution {
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
         int24 minTick;
-        int24 length;
-        uint256 alpha;
-        if (twapSecondsAgo != 0) {
-            // use rounded TWAP value + offset as minTick
-            // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes |
-            length = int24(int16(uint16(bytes2(ldfParams << 16))));
-            alpha = uint32(bytes4(ldfParams << 32));
-        } else {
+        int24 length = int24(int16(uint16(bytes2(ldfParams << 24))));
+        uint256 alpha = uint32(bytes4(ldfParams << 40));
+        if (twapSecondsAgo == 0) {
             // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | 0 - 2 bytes |
+            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes |
             minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            length = int24(int16(uint16(bytes2(ldfParams << 24))));
-            alpha = uint32(bytes4(ldfParams << 40));
 
             // ensure minTick is aligned to tickSpacing
             if (minTick % tickSpacing != 0) return false;
@@ -564,23 +557,21 @@ library LibGeometricDistribution {
         pure
         returns (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode)
     {
-        uint256 alpha;
         if (useTwap) {
             // use rounded TWAP value + offset as minTick
-            // | offset - 2 bytes | length - 2 bytes | alpha - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(int16(uint16(bytes2(ldfParams)))); // the offset applied to the twap tick to get the minTick
+            // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | shiftMode - 1 byte |
+            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
             minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            length = int24(int16(uint16(bytes2(ldfParams << 16))));
-            alpha = uint32(bytes4(ldfParams << 32));
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 64)));
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 72)));
         } else {
             // static minTick set in params
             // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes |
             minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            length = int24(int16(uint16(bytes2(ldfParams << 24))));
-            alpha = uint32(bytes4(ldfParams << 40));
             shiftMode = ShiftMode.BOTH;
         }
+        length = int24(int16(uint16(bytes2(ldfParams << 24))));
+        uint256 alpha = uint32(bytes4(ldfParams << 40));
+
         alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
 
         // bound distribution to be within the range of usable ticks
