@@ -70,7 +70,7 @@ library LibUniformDistribution {
         int24 tickLower,
         int24 tickUpper
     ) internal pure returns (uint256 amount0) {
-        if (roundedTick >= tickUpper) {
+        if (roundedTick >= tickUpper || tickLower >= tickUpper) {
             // cumulativeAmount0DensityX96 is just 0
             return 0;
         } else if (roundedTick < tickLower) {
@@ -91,7 +91,7 @@ library LibUniformDistribution {
         int24 tickLower,
         int24 tickUpper
     ) internal pure returns (uint256 amount1) {
-        if (roundedTick < tickLower) {
+        if (roundedTick < tickLower || tickLower >= tickUpper) {
             // cumulativeAmount1DensityX96 is just 0
             return 0;
         } else if (roundedTick > tickUpper - tickSpacing) {
