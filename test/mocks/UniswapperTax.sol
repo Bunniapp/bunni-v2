@@ -3,17 +3,20 @@
 pragma solidity ^0.8.15;
 
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
+import "../../src/lib/Constants.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 
-contract Uniswapper is ILockCallback {
+contract UniswapperTax is ILockCallback {
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
+    using FixedPointMathLib for uint256;
 
     IPoolManager internal immutable poolManager;
 
@@ -24,8 +27,13 @@ contract Uniswapper is ILockCallback {
     function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
         require(msg.sender == address(poolManager), "Not poolManager");
 
-        (PoolKey memory key, IPoolManager.SwapParams memory params, uint256 maxInput, uint256 minOutput) =
-            abi.decode(data, (PoolKey, IPoolManager.SwapParams, uint256, uint256));
+        (
+            PoolKey memory key,
+            IPoolManager.SwapParams memory params,
+            uint256 maxInput,
+            uint256 minOutput,
+            uint256 inputTaxWad
+        ) = abi.decode(data, (PoolKey, IPoolManager.SwapParams, uint256, uint256, uint256));
         if (key.currency0.isNative()) {
             poolManager.settle(key.currency0); // ensure we get the delta from ETH sent via lock()
         } else if (key.currency1.isNative()) {
@@ -44,8 +52,8 @@ contract Uniswapper is ILockCallback {
             require(uint256(-amount0) >= minOutput, "Received output too little");
         }
 
-        _settleCurrency(lockCaller, key.currency0, amount0);
-        _settleCurrency(lockCaller, key.currency1, amount1);
+        _settleCurrency(lockCaller, key.currency0, amount0, params.zeroForOne ? inputTaxWad : 0);
+        _settleCurrency(lockCaller, key.currency1, amount1, params.zeroForOne ? 0 : inputTaxWad);
         return bytes("");
     }
 
@@ -62,12 +70,14 @@ contract Uniswapper is ILockCallback {
         }
     }
 
-    function _settleCurrency(address user, Currency currency, int256 amount) internal {
+    function _settleCurrency(address user, Currency currency, int256 amount, uint256 taxWad) internal {
         if (amount > 0) {
             if (currency.isNative()) {
                 address(poolManager).safeTransferETH(uint256(amount));
             } else {
-                Currency.unwrap(currency).safeTransferFrom(user, address(poolManager), uint256(amount));
+                Currency.unwrap(currency).safeTransferFrom(
+                    user, address(poolManager), uint256(amount).mulDivUp(WAD, WAD - taxWad)
+                );
             }
             poolManager.settle(currency);
         } else if (amount < 0) {

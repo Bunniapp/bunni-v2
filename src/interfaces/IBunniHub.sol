@@ -33,8 +33,6 @@ error BunniHub__InvalidHookParams();
 error BunniHub__VaultAssetMismatch();
 error BunniHub__BunniTokenNotInitialized();
 error BunniHub__InvalidRawTokenRatioBounds();
-error BunniHub__VaultDepositedAmountIncorrect();
-error BunniHub__VaultWithdrawnAmountIncorrect();
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -80,7 +78,7 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
-    /// @param refundETHRecipient The recipient of the refunded ETH
+    /// @param refundRecipient The recipient of the refunded ETH
     /// @param amount0Desired The desired amount of token0 to be spent,
     /// @param amount1Desired The desired amount of token1 to be spent,
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
@@ -89,7 +87,7 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     struct DepositParams {
         PoolKey poolKey;
         address recipient;
-        address refundETHRecipient;
+        address refundRecipient;
         uint256 amount0Desired;
         uint256 amount1Desired;
         uint256 amount0Min;

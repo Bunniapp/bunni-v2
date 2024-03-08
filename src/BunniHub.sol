@@ -108,7 +108,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         checkDeadline(params.deadline)
         returns (uint256 amount0, uint256 amount1)
     {
-        return BunniHubLogic.withdraw(params, poolManager, weth, permit2, _poolState, _reserve0, _reserve1);
+        return BunniHubLogic.withdraw(params, poolManager, weth, _poolState, _reserve0, _reserve1);
     }
 
     /// @inheritdoc IBunniHub
@@ -173,7 +173,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         if (t == LockCallbackType.SWAP) {
             _hookHandleSwapLockCallback(abi.decode(callbackData, (HookHandleSwapCallbackInputData)));
         } else if (t == LockCallbackType.DEPOSIT) {
-            _depositLockCallback(abi.decode(callbackData, (DepositCallbackInputData)));
+            return _depositLockCallback(abi.decode(callbackData, (DepositCallbackInputData)));
         } else if (t == LockCallbackType.WITHDRAW) {
             _withdrawLockCallback(abi.decode(callbackData, (WithdrawCallbackInputData)));
         } else if (t == LockCallbackType.INITIALIZE_POOL) {
@@ -279,23 +279,26 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
     }
 
-    function _depositLockCallback(DepositCallbackInputData memory data) internal {
+    function _depositLockCallback(DepositCallbackInputData memory data) internal returns (bytes memory) {
         (address msgSender, PoolKey memory key, uint256 msgValue, uint256 rawAmount0, uint256 rawAmount1) =
             (data.user, data.poolKey, data.msgValue, data.rawAmount0, data.rawAmount1);
 
         PoolId poolId = key.toId();
+        uint256 paid0;
+        uint256 paid1;
         if (rawAmount0 != 0) {
             key.currency0.safeTransferFromPermit2(msgSender, address(poolManager), rawAmount0, permit2, msgValue);
-            poolManager.settle(key.currency0);
-            poolManager.mint(address(this), key.currency0.toId(), rawAmount0);
-            _poolState[poolId].rawBalance0 += rawAmount0;
+            paid0 = poolManager.settle(key.currency0);
+            poolManager.mint(address(this), key.currency0.toId(), paid0);
+            _poolState[poolId].rawBalance0 += paid0;
         }
         if (rawAmount1 != 0) {
             key.currency1.safeTransferFromPermit2(msgSender, address(poolManager), rawAmount1, permit2, msgValue);
-            poolManager.settle(key.currency1);
-            poolManager.mint(address(this), key.currency1.toId(), rawAmount1);
-            _poolState[poolId].rawBalance1 += rawAmount1;
+            paid1 = poolManager.settle(key.currency1);
+            poolManager.mint(address(this), key.currency1.toId(), paid1);
+            _poolState[poolId].rawBalance1 += paid1;
         }
+        return abi.encode(paid0, paid1);
     }
 
     function _withdrawLockCallback(WithdrawCallbackInputData memory data) internal {
@@ -331,7 +334,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     {
         uint256 absAmount = FixedPointMathLib.abs(rawBalanceChange);
         if (rawBalanceChange < 0) {
-            // take tokens from poolManager
             uint256 poolManagerReserve = poolManager.reservesOf(currency);
             if (absAmount > poolManagerReserve) {
                 // poolManager doesn't have enough tokens
@@ -339,10 +341,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 // we're only maintaining the raw balance ratio so it's fine to take less
                 absAmount = poolManagerReserve;
             }
-            poolManager.take(currency, address(this), absAmount);
 
             // burn claim tokens from this
             poolManager.burn(address(this), currency.toId(), absAmount);
+
+            // take tokens from poolManager
+            poolManager.take(currency, address(this), absAmount);
 
             // deposit tokens into vault
             IERC20 token;
@@ -351,14 +355,14 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 weth.deposit{value: absAmount}();
                 token = IERC20(address(weth));
             } else {
-                // normal ERC20
                 token = IERC20(Currency.unwrap(currency));
             }
+            // use actual balance change to prevent malicious vault
+            // from messing up our accounting
             uint256 beforeTokenBalance = token.balanceOf(address(this));
             address(token).safeApprove(address(vault), absAmount);
             reserveChange = vault.deposit(absAmount, address(this)).toInt256();
             uint256 depositedAmount = beforeTokenBalance - token.balanceOf(address(this));
-            if (depositedAmount != absAmount) revert BunniHub__VaultDepositedAmountIncorrect();
             actualRawBalanceChange = -depositedAmount.toInt256();
         } else if (rawBalanceChange > 0) {
             if (currency.isNative()) {
@@ -379,11 +383,10 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             // settle with poolManager
             // check actual settled amount to prevent malicious vaults from giving us less than we asked for
             uint256 settleAmount = poolManager.settle(currency);
-            if (settleAmount != absAmount) revert BunniHub__VaultWithdrawnAmountIncorrect();
             actualRawBalanceChange = settleAmount.toInt256();
 
             // mint claim tokens to this
-            poolManager.mint(address(this), currency.toId(), absAmount);
+            poolManager.mint(address(this), currency.toId(), settleAmount);
         }
     }
 

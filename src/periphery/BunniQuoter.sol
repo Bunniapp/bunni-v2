@@ -270,7 +270,36 @@ contract BunniQuoter is IBunniQuoter {
         );
         amount0 = depositReturnData.amount0;
         amount1 = depositReturnData.amount1;
-        shares = depositReturnData.shares;
+
+        (uint256 rawAmount0, uint256 depositAmount0) = address(state.vault0) != address(0)
+            ? (
+                amount0 - depositReturnData.depositAmount0,
+                state.vault0.previewRedeem(state.vault0.previewDeposit(depositReturnData.depositAmount0))
+            )
+            : (amount0, 0);
+        (uint256 rawAmount1, uint256 depositAmount1) = address(state.vault1) != address(0)
+            ? (
+                amount1 - depositReturnData.depositAmount1,
+                state.vault1.previewRedeem(state.vault1.previewDeposit(depositReturnData.depositAmount1))
+            )
+            : (amount1, 0);
+
+        // compute shares
+        uint256 existingShareSupply = state.bunniToken.totalSupply();
+        if (existingShareSupply == 0) {
+            // no existing shares, just give WAD - MIN_INITIAL_SHARES
+            shares = WAD - MIN_INITIAL_SHARES;
+        } else {
+            // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
+            shares = FixedPointMathLib.min(
+                depositReturnData.balance0 == 0
+                    ? type(uint256).max
+                    : existingShareSupply.mulDiv(rawAmount0 + depositAmount0, depositReturnData.balance0),
+                depositReturnData.balance1 == 0
+                    ? type(uint256).max
+                    : existingShareSupply.mulDiv(rawAmount1 + depositAmount1, depositReturnData.balance1)
+            );
+        }
     }
 
     function quoteWithdraw(IBunniHub.WithdrawParams calldata params)
@@ -309,9 +338,12 @@ contract BunniQuoter is IBunniQuoter {
     }
 
     struct DepositLogicReturnData {
+        uint256 depositAmount0;
+        uint256 depositAmount1;
         uint256 amount0;
         uint256 amount1;
-        uint256 shares;
+        uint256 balance0;
+        uint256 balance1;
     }
 
     struct DepositLogicVariables {
@@ -319,8 +351,6 @@ contract BunniQuoter is IBunniQuoter {
         uint160 nextRoundedTickSqrtRatio;
         uint256 reserveBalance0;
         uint256 reserveBalance1;
-        uint256 balance0;
-        uint256 balance1;
         int24 arithmeticMeanTick;
     }
 
@@ -338,11 +368,11 @@ contract BunniQuoter is IBunniQuoter {
             getReservesInUnderlying(inputData.state.reserve0, inputData.state.vault0),
             getReservesInUnderlying(inputData.state.reserve1, inputData.state.vault1)
         );
-        (vars.balance0, vars.balance1) =
+        (returnData.balance0, returnData.balance1) =
             (inputData.state.rawBalance0 + vars.reserveBalance0, inputData.state.rawBalance1 + vars.reserveBalance1);
 
         // update TWAP oracle and optionally observe
-        bool requiresLDF = vars.balance0 == 0 && vars.balance1 == 0;
+        bool requiresLDF = returnData.balance0 == 0 && returnData.balance1 == 0;
 
         if (requiresLDF) {
             // use LDF to initialize token proportions
@@ -445,35 +475,37 @@ contract BunniQuoter is IBunniQuoter {
                     );
                 }
             }
+
+            // update token amounts to deposit into vaults
+            (returnData.depositAmount0, returnData.depositAmount1) = (
+                returnData.amount0
+                    - returnData.amount0.mulDiv(inputData.state.targetRawTokenRatio0, RAW_TOKEN_RATIO_BASE),
+                returnData.amount1
+                    - returnData.amount1.mulDiv(inputData.state.targetRawTokenRatio1, RAW_TOKEN_RATIO_BASE)
+            );
         } else {
             // already initialized liquidity shape
             // simply add tokens at the current ratio
             // need to update: depositAmount0, depositAmount1, amount0, amount1
 
             // compute amount0 and amount1 such that the ratio is the same as the current ratio
-            returnData.amount0 = vars.balance1 == 0
+            returnData.amount0 = returnData.balance1 == 0
                 ? inputData.params.amount0Desired
                 : FixedPointMathLib.min(
-                    inputData.params.amount0Desired, inputData.params.amount1Desired.mulDiv(vars.balance0, vars.balance1)
+                    inputData.params.amount0Desired,
+                    inputData.params.amount1Desired.mulDiv(returnData.balance0, returnData.balance1)
                 );
-            returnData.amount1 = vars.balance0 == 0
+            returnData.amount1 = returnData.balance0 == 0
                 ? inputData.params.amount1Desired
                 : FixedPointMathLib.min(
-                    inputData.params.amount1Desired, inputData.params.amount0Desired.mulDiv(vars.balance1, vars.balance0)
+                    inputData.params.amount1Desired,
+                    inputData.params.amount0Desired.mulDiv(returnData.balance1, returnData.balance0)
                 );
-        }
 
-        // compute shares
-        uint256 existingShareSupply = inputData.state.bunniToken.totalSupply();
-        if (existingShareSupply == 0) {
-            // no existing shares, just give WAD - MIN_INITIAL_SHARES
-            returnData.shares = WAD - MIN_INITIAL_SHARES;
-        } else {
-            // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
-            returnData.shares = FixedPointMathLib.min(
-                vars.balance0 == 0 ? type(uint256).max : existingShareSupply.mulDiv(returnData.amount0, vars.balance0),
-                vars.balance1 == 0 ? type(uint256).max : existingShareSupply.mulDiv(returnData.amount1, vars.balance1)
-            );
+            returnData.depositAmount0 =
+                returnData.balance0 == 0 ? 0 : returnData.amount0.mulDiv(vars.reserveBalance0, returnData.balance0);
+            returnData.depositAmount1 =
+                returnData.balance1 == 0 ? 0 : returnData.amount1.mulDiv(vars.reserveBalance1, returnData.balance1);
         }
     }
 

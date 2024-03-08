@@ -80,45 +80,61 @@ library BunniHubLogic {
         uint256 depositAmount1 = depositReturnData.depositAmount1;
         amount0 = depositReturnData.amount0;
         amount1 = depositReturnData.amount1;
-        shares = depositReturnData.shares;
 
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
-
-        // update reserves
-        if (address(state.vault0) != address(0) && depositAmount0 != 0) {
-            int256 reserveChange = _updateVaultReserve(
-                depositAmount0.toInt256(), params.poolKey.currency0, state.vault0, msgSender, true, weth, permit2
-            );
-            _reserve0[poolId] = (state.reserve0.toInt256() + reserveChange).toUint256();
-        }
-        if (address(state.vault1) != address(0) && depositAmount1 != 0) {
-            int256 reserveChange = _updateVaultReserve(
-                depositAmount1.toInt256(), params.poolKey.currency1, state.vault1, msgSender, true, weth, permit2
-            );
-            _reserve1[poolId] = (state.reserve1.toInt256() + reserveChange).toUint256();
-        }
 
         // update raw balances
         (uint256 rawAmount0, uint256 rawAmount1) = (
             address(state.vault0) != address(0) ? amount0 - depositAmount0 : amount0,
             address(state.vault1) != address(0) ? amount1 - depositAmount1 : amount1
         );
-        poolManager.lock(
-            address(this),
-            abi.encode(
-                LockCallbackType.DEPOSIT,
+        (rawAmount0, rawAmount1) = abi.decode(
+            poolManager.lock(
+                address(this),
                 abi.encode(
-                    DepositCallbackInputData({
-                        user: msgSender,
-                        poolKey: params.poolKey,
-                        msgValue: msg.value,
-                        rawAmount0: rawAmount0,
-                        rawAmount1: rawAmount1
-                    })
+                    LockCallbackType.DEPOSIT,
+                    abi.encode(
+                        DepositCallbackInputData({
+                            user: msgSender,
+                            poolKey: params.poolKey,
+                            msgValue: msg.value,
+                            rawAmount0: rawAmount0,
+                            rawAmount1: rawAmount1
+                        })
+                    )
                 )
-            )
+            ),
+            (uint256, uint256)
+        );
+
+        // update reserves
+        if (address(state.vault0) != address(0) && depositAmount0 != 0) {
+            uint256 reserveChange =
+                _depositVaultReserve(depositAmount0, params.poolKey.currency0, state.vault0, msgSender, weth, permit2);
+            _reserve0[poolId] = state.reserve0 + reserveChange;
+
+            // use actual withdrawable value to handle tokens with transfer tax & vaults with withdrawal fees
+            depositAmount0 = state.vault0.previewRedeem(reserveChange);
+        }
+        if (address(state.vault1) != address(0) && depositAmount1 != 0) {
+            uint256 reserveChange =
+                _depositVaultReserve(depositAmount1, params.poolKey.currency1, state.vault1, msgSender, weth, permit2);
+            _reserve1[poolId] = state.reserve1 + reserveChange;
+
+            // use actual withdrawable value to handle tokens with transfer tax & vaults with withdrawal fees
+            depositAmount1 = state.vault1.previewRedeem(reserveChange);
+        }
+
+        // mint shares using actual token amounts
+        shares = _mintShares(
+            state.bunniToken,
+            params.recipient,
+            address(state.vault0) != address(0) ? rawAmount0 + depositAmount0 : rawAmount0,
+            depositReturnData.balance0,
+            address(state.vault1) != address(0) ? rawAmount1 + depositAmount1 : rawAmount1,
+            depositReturnData.balance1
         );
 
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
@@ -128,11 +144,11 @@ library BunniHubLogic {
         // refund excess ETH
         if (params.poolKey.currency0.isNative()) {
             if (msg.value > amount0) {
-                params.refundETHRecipient.safeTransferETH(msg.value - amount0);
+                params.refundRecipient.safeTransferETH(msg.value - amount0);
             }
         } else if (params.poolKey.currency1.isNative()) {
             if (msg.value > amount1) {
-                params.refundETHRecipient.safeTransferETH(msg.value - amount1);
+                params.refundRecipient.safeTransferETH(msg.value - amount1);
             }
         }
 
@@ -153,7 +169,8 @@ library BunniHubLogic {
         uint256 depositAmount1;
         uint256 amount0;
         uint256 amount1;
-        uint256 shares;
+        uint256 balance0;
+        uint256 balance1;
     }
 
     struct DepositLogicVariables {
@@ -161,8 +178,6 @@ library BunniHubLogic {
         uint160 nextRoundedTickSqrtRatio;
         uint256 reserveBalance0;
         uint256 reserveBalance1;
-        uint256 balance0;
-        uint256 balance1;
         int24 arithmeticMeanTick;
     }
 
@@ -179,11 +194,11 @@ library BunniHubLogic {
             getReservesInUnderlying(inputData.state.reserve0, inputData.state.vault0),
             getReservesInUnderlying(inputData.state.reserve1, inputData.state.vault1)
         );
-        (vars.balance0, vars.balance1) =
+        (returnData.balance0, returnData.balance1) =
             (inputData.state.rawBalance0 + vars.reserveBalance0, inputData.state.rawBalance1 + vars.reserveBalance1);
 
         // update TWAP oracle and optionally observe
-        bool requiresLDF = vars.balance0 == 0 && vars.balance1 == 0;
+        bool requiresLDF = returnData.balance0 == 0 && returnData.balance1 == 0;
 
         if (requiresLDF) {
             // use LDF to initialize token proportions
@@ -301,36 +316,24 @@ library BunniHubLogic {
             // need to update: depositAmount0, depositAmount1, amount0, amount1
 
             // compute amount0 and amount1 such that the ratio is the same as the current ratio
-            returnData.amount0 = vars.balance1 == 0
+            returnData.amount0 = returnData.balance1 == 0
                 ? inputData.params.amount0Desired
                 : FixedPointMathLib.min(
-                    inputData.params.amount0Desired, inputData.params.amount1Desired.mulDiv(vars.balance0, vars.balance1)
+                    inputData.params.amount0Desired,
+                    inputData.params.amount1Desired.mulDiv(returnData.balance0, returnData.balance1)
                 );
-            returnData.amount1 = vars.balance0 == 0
+            returnData.amount1 = returnData.balance0 == 0
                 ? inputData.params.amount1Desired
                 : FixedPointMathLib.min(
-                    inputData.params.amount1Desired, inputData.params.amount0Desired.mulDiv(vars.balance1, vars.balance0)
+                    inputData.params.amount1Desired,
+                    inputData.params.amount0Desired.mulDiv(returnData.balance1, returnData.balance0)
                 );
 
             returnData.depositAmount0 =
-                vars.balance0 == 0 ? 0 : returnData.amount0.mulDiv(vars.reserveBalance0, vars.balance0);
+                returnData.balance0 == 0 ? 0 : returnData.amount0.mulDiv(vars.reserveBalance0, returnData.balance0);
             returnData.depositAmount1 =
-                vars.balance1 == 0 ? 0 : returnData.amount1.mulDiv(vars.reserveBalance1, vars.balance1);
+                returnData.balance1 == 0 ? 0 : returnData.amount1.mulDiv(vars.reserveBalance1, returnData.balance1);
         }
-
-        /// -----------------------------------------------------------------------
-        /// State updates
-        /// -----------------------------------------------------------------------
-
-        // mint shares
-        returnData.shares = _mintShares(
-            inputData.state.bunniToken,
-            inputData.params.recipient,
-            returnData.amount0,
-            vars.balance0,
-            returnData.amount1,
-            vars.balance1
-        );
     }
 
     /// -----------------------------------------------------------------------
@@ -341,7 +344,6 @@ library BunniHubLogic {
         IBunniHub.WithdrawParams calldata params,
         IPoolManager poolManager,
         WETH weth,
-        IPermit2 permit2,
         mapping(PoolId => RawPoolState) storage _poolState,
         mapping(PoolId => uint256) storage _reserve0,
         mapping(PoolId => uint256) storage _reserve1
@@ -389,30 +391,16 @@ library BunniHubLogic {
         if (address(state.vault0) != address(0) && reserveAmount0 != 0) {
             // vault used
             // withdraw reserves
-            int256 reserveChange = _updateVaultReserve(
-                -reserveAmount0.toInt256(),
-                params.poolKey.currency0,
-                state.vault0,
-                params.recipient,
-                false,
-                weth,
-                permit2
-            );
-            _reserve0[poolId] = (state.reserve0.toInt256() + reserveChange).toUint256();
+            uint256 reserveChange =
+                _withdrawVaultReserve(reserveAmount0, params.poolKey.currency0, state.vault0, params.recipient, weth);
+            _reserve0[poolId] = state.reserve0 - reserveChange;
         }
         if (address(state.vault1) != address(0) && reserveAmount1 != 0) {
             // vault used
             // withdraw from reserves
-            int256 reserveChange = _updateVaultReserve(
-                -reserveAmount1.toInt256(),
-                params.poolKey.currency1,
-                state.vault1,
-                params.recipient,
-                false,
-                weth,
-                permit2
-            );
-            _reserve1[poolId] = (state.reserve1.toInt256() + reserveChange).toUint256();
+            uint256 reserveChange =
+                _withdrawVaultReserve(reserveAmount1, params.poolKey.currency1, state.vault1, params.recipient, weth);
+            _reserve1[poolId] = state.reserve1 - reserveChange;
         }
 
         // withdraw raw tokens
@@ -576,6 +564,7 @@ library BunniHubLogic {
             shareToken.mint(address(0), MIN_INITIAL_SHARES);
         } else {
             // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
+            if (existingAmount0 == 0 && existingAmount1 == 0) revert BunniHub__ZeroSharesMinted();
             shares = FixedPointMathLib.min(
                 existingAmount0 == 0 ? type(uint256).max : existingShareSupply.mulDiv(addedAmount0, existingAmount0),
                 existingAmount1 == 0 ? type(uint256).max : existingShareSupply.mulDiv(addedAmount1, existingAmount1)
@@ -587,54 +576,68 @@ library BunniHubLogic {
         shareToken.mint(recipient, shares);
     }
 
-    /// @dev Deposits/withdraws tokens from a vault.
-    /// @param amount The amount to deposit/withdraw. Positive for deposit, negative for withdraw.
-    /// @param currency The currency to deposit/withdraw.
-    /// @param vault The vault to deposit/withdraw from.
-    /// @param user The user to pull tokens from / withdraw tokens to
-    /// @param pullTokensFromUser Whether to pull tokens from the user or not in case of deposit.
-    /// @return reserveChange The change in reserves. Positive for deposit, negative for withdraw.
-    function _updateVaultReserve(
-        int256 amount,
+    /// @dev Deposits tokens into a vault.
+    /// @param amount The amount to deposit.
+    /// @param currency The currency to deposit.
+    /// @param vault The vault to deposit into.
+    /// @param user The user to deposit tokens from.
+    /// @param weth The WETH contract.
+    /// @param permit2 The permit contract.
+    /// @return reserveChange The change in reserve balance.
+    function _depositVaultReserve(
+        uint256 amount,
         Currency currency,
         ERC4626 vault,
         address user,
-        bool pullTokensFromUser,
         WETH weth,
         IPermit2 permit2
-    ) internal returns (int256 reserveChange) {
-        uint256 absAmount = FixedPointMathLib.abs(amount);
-        if (amount > 0) {
-            IERC20 token;
-            if (currency.isNative()) {
-                // wrap ETH
-                // no need to pull tokens from user since WETH is already in the contract
-                weth.deposit{value: absAmount}();
-                token = IERC20(address(weth));
-            } else {
-                // normal ERC20
-                token = IERC20(Currency.unwrap(currency));
-                if (pullTokensFromUser) {
-                    permit2.transferFrom(user, address(this), absAmount.toUint160(), address(token));
-                }
+    ) internal returns (uint256 reserveChange) {
+        IERC20 token;
+        if (currency.isNative()) {
+            // wrap ETH
+            // no need to pull tokens from user since WETH is already in the contract
+            weth.deposit{value: amount}();
+            token = IERC20(address(weth));
+        } else {
+            // normal ERC20
+            token = IERC20(Currency.unwrap(currency));
+            uint256 beforeTokenBalance = token.balanceOf(address(this));
+            permit2.transferFrom(user, address(this), amount.toUint160(), address(token));
+            uint256 actualTransferAmount = token.balanceOf(address(this)) - beforeTokenBalance;
+            if (actualTransferAmount < amount) {
+                // token with transfer tax
+                // use the reduced amount
+                amount = actualTransferAmount;
             }
+        }
 
-            address(token).safeApprove(address(vault), absAmount);
-            reserveChange = vault.deposit(absAmount, address(this)).toInt256();
-        } else if (amount < 0) {
-            if (currency.isNative()) {
-                // withdraw WETH from vault to address(this)
-                reserveChange = -vault.withdraw(absAmount, address(this), address(this)).toInt256();
+        address(token).safeApprove(address(vault), amount);
+        reserveChange = vault.deposit(amount, address(this));
+    }
 
-                // burn WETH for ETH
-                weth.withdraw(absAmount);
+    /// @dev Withdraws tokens from a vault.
+    /// @param amount The amount to withdraw.
+    /// @param currency The currency to withdraw.
+    /// @param vault The vault to withdraw from.
+    /// @param user The user to withdraw tokens to.
+    /// @param weth The WETH contract.
+    /// @return reserveChange The change in reserve balance.
+    function _withdrawVaultReserve(uint256 amount, Currency currency, ERC4626 vault, address user, WETH weth)
+        internal
+        returns (uint256 reserveChange)
+    {
+        if (currency.isNative()) {
+            // withdraw WETH from vault to address(this)
+            reserveChange = vault.withdraw(amount, address(this), address(this));
 
-                // transfer ETH to user
-                user.safeTransferETH(absAmount);
-            } else {
-                // normal ERC20
-                reserveChange = -vault.withdraw(absAmount, user, address(this)).toInt256();
-            }
+            // burn WETH for ETH
+            weth.withdraw(amount);
+
+            // transfer ETH to user
+            user.safeTransferETH(amount);
+        } else {
+            // normal ERC20
+            reserveChange = vault.withdraw(amount, user, address(this));
         }
     }
 
