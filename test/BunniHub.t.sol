@@ -40,6 +40,7 @@ import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
 import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
+import {ERC4626WithFeeMock} from "./mocks/ERC4626WithFeeMock.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
@@ -71,6 +72,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     ERC4626Mock internal vault0;
     ERC4626Mock internal vault1;
     ERC4626Mock internal vaultWeth;
+    ERC4626WithFeeMock internal vault0WithFee;
+    ERC4626WithFeeMock internal vault1WithFee;
+    ERC4626WithFeeMock internal vaultWethWithFee;
     IBunniHub internal hub;
     BunniHook internal constant bunniHook = BunniHook(
         payable(
@@ -111,11 +115,14 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         vault0 = new ERC4626Mock(token0);
         vault1 = new ERC4626Mock(token1);
         vaultWeth = new ERC4626Mock(IERC20(address(weth)));
+        vault0WithFee = new ERC4626WithFeeMock(token0);
+        vault1WithFee = new ERC4626WithFeeMock(token1);
+        vaultWethWithFee = new ERC4626WithFeeMock(IERC20(address(weth)));
 
         // mint some initial tokens to the vaults to change the share price
-        _mint(Currency.wrap(address(token0)), address(this), 1 ether);
-        _mint(Currency.wrap(address(token1)), address(this), 1 ether);
-        _mint(Currency.wrap(address(weth)), address(this), 1 ether);
+        _mint(Currency.wrap(address(token0)), address(this), 2 ether);
+        _mint(Currency.wrap(address(token1)), address(this), 2 ether);
+        _mint(Currency.wrap(address(weth)), address(this), 2 ether);
 
         token0.approve(address(vault0), type(uint256).max);
         vault0.deposit(1 ether, address(this));
@@ -128,6 +135,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         weth.approve(address(vaultWeth), type(uint256).max);
         vaultWeth.deposit(1 ether, address(this));
         _mint(Currency.wrap(address(weth)), address(vaultWeth), 1 ether);
+
+        token0.approve(address(vault0WithFee), type(uint256).max);
+        vault0WithFee.deposit(1 ether, address(this));
+        _mint(Currency.wrap(address(token0)), address(vault0WithFee), 1 ether);
+
+        token1.approve(address(vault1WithFee), type(uint256).max);
+        vault1WithFee.deposit(1 ether, address(this));
+        _mint(Currency.wrap(address(token1)), address(vault1WithFee), 1 ether);
+
+        weth.approve(address(vaultWethWithFee), type(uint256).max);
+        vaultWethWithFee.deposit(1 ether, address(this));
+        _mint(Currency.wrap(address(weth)), address(vaultWethWithFee), 1 ether);
 
         // deploy swapper
         swapper = new Uniswapper(poolManager);
@@ -260,8 +279,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
 
         // check return values
         // withdraw amount less than original due to rounding
-        assertApproxEqAbs(withdrawAmount0, amount0, 10, "withdrawAmount0 incorrect");
-        assertApproxEqAbs(withdrawAmount1, amount1, 10, "withdrawAmount1 incorrect");
+        if (address(vault0_) != address(vault0WithFee) && address(vault0_) != address(vaultWethWithFee)) {
+            assertApproxEqAbs(withdrawAmount0, amount0, 10, "withdrawAmount0 incorrect");
+        }
+        if (address(vault1_) != address(vault1WithFee) && address(vault1_) != address(vaultWethWithFee)) {
+            assertApproxEqAbs(withdrawAmount1, amount1, 10, "withdrawAmount1 incorrect");
+        }
 
         // check token balances
         assertApproxEqAbs(
@@ -1739,6 +1762,50 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vaultWeth,
             vault1,
             string.concat(label, ", token0 yes native yes vault, token1 no native yes vault")
+        );
+        vm.revertTo(snapshotId);
+
+        fn(
+            depositAmount0,
+            depositAmount1,
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            vault0WithFee,
+            vault1WithFee,
+            ""
+        );
+        vm.revertTo(snapshotId);
+
+        fn(
+            depositAmount0,
+            depositAmount1,
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            ERC4626(address(0)),
+            vault1WithFee,
+            ""
+        );
+        vm.revertTo(snapshotId);
+
+        fn(
+            depositAmount0,
+            depositAmount1,
+            CurrencyLibrary.NATIVE,
+            Currency.wrap(address(token1)),
+            vaultWethWithFee,
+            ERC4626(address(0)),
+            ""
+        );
+        vm.revertTo(snapshotId);
+
+        fn(
+            depositAmount0,
+            depositAmount1,
+            CurrencyLibrary.NATIVE,
+            Currency.wrap(address(token1)),
+            vaultWethWithFee,
+            vault1WithFee,
+            ""
         );
         vm.revertTo(snapshotId);
     }
