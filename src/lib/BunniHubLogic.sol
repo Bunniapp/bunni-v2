@@ -101,7 +101,9 @@ library BunniHubLogic {
                             poolKey: params.poolKey,
                             msgValue: msg.value,
                             rawAmount0: rawAmount0,
-                            rawAmount1: rawAmount1
+                            rawAmount1: rawAmount1,
+                            tax0: params.tax0,
+                            tax1: params.tax1
                         })
                     )
                 )
@@ -111,20 +113,36 @@ library BunniHubLogic {
 
         // update reserves
         if (address(state.vault0) != address(0) && depositAmount0 != 0) {
-            uint256 reserveChange =
-                _depositVaultReserve(depositAmount0, params.poolKey.currency0, state.vault0, msgSender, weth, permit2);
+            (uint256 reserveChange, uint256 reserveChangeInUnderlying) = _depositVaultReserve(
+                depositAmount0,
+                params.poolKey.currency0,
+                state.vault0,
+                msgSender,
+                weth,
+                permit2,
+                params.tax0,
+                params.vaultFee0
+            );
             _reserve0[poolId] = state.reserve0 + reserveChange;
 
             // use actual withdrawable value to handle tokens with transfer tax & vaults with withdrawal fees
-            depositAmount0 = state.vault0.previewRedeem(reserveChange);
+            depositAmount0 = reserveChangeInUnderlying;
         }
         if (address(state.vault1) != address(0) && depositAmount1 != 0) {
-            uint256 reserveChange =
-                _depositVaultReserve(depositAmount1, params.poolKey.currency1, state.vault1, msgSender, weth, permit2);
+            (uint256 reserveChange, uint256 reserveChangeInUnderlying) = _depositVaultReserve(
+                depositAmount1,
+                params.poolKey.currency1,
+                state.vault1,
+                msgSender,
+                weth,
+                permit2,
+                params.tax1,
+                params.vaultFee1
+            );
             _reserve1[poolId] = state.reserve1 + reserveChange;
 
             // use actual withdrawable value to handle tokens with transfer tax & vaults with withdrawal fees
-            depositAmount1 = state.vault1.previewRedeem(reserveChange);
+            depositAmount1 = reserveChangeInUnderlying;
         }
 
         // mint shares using actual token amounts
@@ -143,12 +161,16 @@ library BunniHubLogic {
 
         // refund excess ETH
         if (params.poolKey.currency0.isNative()) {
-            if (msg.value > amount0) {
-                params.refundRecipient.safeTransferETH(msg.value - amount0);
+            if (address(this).balance != 0) {
+                params.refundRecipient.safeTransferETH(
+                    FixedPointMathLib.min(address(this).balance, msg.value - amount0)
+                );
             }
         } else if (params.poolKey.currency1.isNative()) {
-            if (msg.value > amount1) {
-                params.refundRecipient.safeTransferETH(msg.value - amount1);
+            if (address(this).balance != 0) {
+                params.refundRecipient.safeTransferETH(
+                    FixedPointMathLib.min(address(this).balance, msg.value - amount1)
+                );
             }
         }
 
@@ -584,14 +606,22 @@ library BunniHubLogic {
     /// @param weth The WETH contract.
     /// @param permit2 The permit contract.
     /// @return reserveChange The change in reserve balance.
+    /// @return reserveChangeInUnderlying The change in reserve balance in underlying tokens.
     function _depositVaultReserve(
         uint256 amount,
         Currency currency,
         ERC4626 vault,
         address user,
         WETH weth,
-        IPermit2 permit2
-    ) internal returns (uint256 reserveChange) {
+        IPermit2 permit2,
+        uint256 tax,
+        uint256 vaultFee
+    ) internal returns (uint256 reserveChange, uint256 reserveChangeInUnderlying) {
+        // use the pre-fee amount to ensure `amount` is the amount of tokens
+        // that we'll be able to withdraw from the vault
+        uint256 postFeeAmount = amount; // cache amount to use for validation later
+        amount = amount.divWadUp(WAD - vaultFee);
+
         IERC20 token;
         if (currency.isNative()) {
             // wrap ETH
@@ -602,17 +632,33 @@ library BunniHubLogic {
             // normal ERC20
             token = IERC20(Currency.unwrap(currency));
             uint256 beforeTokenBalance = token.balanceOf(address(this));
-            permit2.transferFrom(user, address(this), amount.toUint160(), address(token));
+            uint256 pretaxAmount = amount.divWadUp(WAD - tax);
+            permit2.transferFrom(user, address(this), pretaxAmount.toUint160(), address(token));
             uint256 actualTransferAmount = token.balanceOf(address(this)) - beforeTokenBalance;
+
+            // validate token tax value
+            if (percentDelta(actualTransferAmount, amount) > MAX_TAX_ERROR) {
+                revert BunniHub__TokenTaxIncorrect();
+            }
+
+            // modify amount if we got less than requested
             if (actualTransferAmount < amount) {
-                // token with transfer tax
-                // use the reduced amount
-                amount = actualTransferAmount;
+                actualTransferAmount = amount;
             }
         }
 
+        // do vault deposit
         address(token).safeApprove(address(vault), amount);
         reserveChange = vault.deposit(amount, address(this));
+        reserveChangeInUnderlying = vault.previewRedeem(reserveChange);
+
+        // validate vault fee value
+        if (
+            vaultFee != 0 && dist(reserveChangeInUnderlying, postFeeAmount) > 1 // avoid reverting from normal rounding error
+                && percentDelta(reserveChangeInUnderlying, postFeeAmount) > MAX_TAX_ERROR
+        ) {
+            revert BunniHub__VaultFeeIncorrect();
+        }
     }
 
     /// @dev Withdraws tokens from a vault.

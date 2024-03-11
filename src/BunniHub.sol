@@ -287,14 +287,30 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         uint256 paid0;
         uint256 paid1;
         if (rawAmount0 != 0) {
-            key.currency0.safeTransferFromPermit2(msgSender, address(poolManager), rawAmount0, permit2, msgValue);
+            key.currency0.safeTransferFromPermit2(
+                msgSender, address(poolManager), rawAmount0.divWadUp(WAD - data.tax0), permit2, msgValue
+            );
             paid0 = poolManager.settle(key.currency0);
+
+            // ensure tax value was correct
+            if (percentDelta(paid0, rawAmount0) > MAX_TAX_ERROR) {
+                revert BunniHub__TokenTaxIncorrect();
+            }
+
             poolManager.mint(address(this), key.currency0.toId(), paid0);
             _poolState[poolId].rawBalance0 += paid0;
         }
         if (rawAmount1 != 0) {
-            key.currency1.safeTransferFromPermit2(msgSender, address(poolManager), rawAmount1, permit2, msgValue);
+            key.currency1.safeTransferFromPermit2(
+                msgSender, address(poolManager), rawAmount1.divWadUp(WAD - data.tax1), permit2, msgValue
+            );
             paid1 = poolManager.settle(key.currency1);
+
+            // ensure tax value was correct
+            if (percentDelta(paid1, rawAmount1) > MAX_TAX_ERROR) {
+                revert BunniHub__TokenTaxIncorrect();
+            }
+
             poolManager.mint(address(this), key.currency1.toId(), paid1);
             _poolState[poolId].rawBalance1 += paid1;
         }
@@ -346,7 +362,10 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             poolManager.burn(address(this), currency.toId(), absAmount);
 
             // take tokens from poolManager
+            // use actual balance change to handle tokens with transfer taxes
+            uint256 beforeTokenBalance = currency.balanceOfSelf();
             poolManager.take(currency, address(this), absAmount);
+            absAmount = currency.balanceOfSelf() - beforeTokenBalance;
 
             // deposit tokens into vault
             IERC20 token;
@@ -359,7 +378,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             }
             // use actual balance change to prevent malicious vault
             // from messing up our accounting
-            uint256 beforeTokenBalance = token.balanceOf(address(this));
+            beforeTokenBalance = beforeTokenBalance + absAmount;
             address(token).safeApprove(address(vault), absAmount);
             reserveChange = vault.deposit(absAmount, address(this)).toInt256();
             uint256 depositedAmount = beforeTokenBalance - token.balanceOf(address(this));

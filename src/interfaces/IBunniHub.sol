@@ -30,6 +30,8 @@ error BunniHub__HookCannotBeZero();
 error BunniHub__ZeroSharesMinted();
 error BunniHub__InvalidLDFParams();
 error BunniHub__InvalidHookParams();
+error BunniHub__TokenTaxIncorrect();
+error BunniHub__VaultFeeIncorrect();
 error BunniHub__VaultAssetMismatch();
 error BunniHub__BunniTokenNotInitialized();
 error BunniHub__InvalidRawTokenRatioBounds();
@@ -83,6 +85,10 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @param amount1Desired The desired amount of token1 to be spent,
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// @param amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
+    /// @param tax0 When token0 is transferred the amount is multiplied by WAD / (WAD - tax0),
+    /// @param tax1 When token1 is transferred the amount is multiplied by WAD / (WAD - tax1),
+    /// @param vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
+    /// @param vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// @param deadline The time by which the transaction must be included to effect the change
     struct DepositParams {
         PoolKey poolKey;
@@ -92,6 +98,10 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         uint256 amount1Desired;
         uint256 amount0Min;
         uint256 amount1Min;
+        uint256 tax0;
+        uint256 tax1;
+        uint256 vaultFee0;
+        uint256 vaultFee1;
         uint256 deadline;
     }
 
@@ -100,12 +110,16 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @param params The input parameters
     /// poolKey The PoolKey of the Uniswap V4 pool
     /// recipient The recipient of the minted share tokens
+    /// refundRecipient The recipient of the refunded ETH
     /// amount0Desired The desired amount of token0 to be spent,
     /// amount1Desired The desired amount of token1 to be spent,
     /// amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
+    /// tax0 When token0 is transferred the amount is multiplied by WAD / (WAD - tax0),
+    /// tax1 When token1 is transferred the amount is multiplied by WAD / (WAD - tax1),
+    /// vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
+    /// vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// deadline The time by which the transaction must be included to effect the change
-    /// refundETH Whether to refund excess ETH to the sender. Should be false when part of a multicall.
     /// @return shares The new share tokens minted to the sender
     /// @return amount0 The amount of token0 to acheive resulting liquidity
     /// @return amount1 The amount of token1 to acheive resulting liquidity

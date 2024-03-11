@@ -50,6 +50,8 @@ struct DepositCallbackInputData {
     uint256 msgValue;
     uint256 rawAmount0;
     uint256 rawAmount1;
+    uint256 tax0;
+    uint256 tax1;
 }
 
 struct WithdrawCallbackInputData {

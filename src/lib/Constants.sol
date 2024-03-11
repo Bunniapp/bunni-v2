@@ -12,3 +12,4 @@ uint256 constant SWAP_FEE_BASE = 1e6;
 uint256 constant SWAP_FEE_BASE_SQUARED = 1e12;
 uint256 constant RAW_TOKEN_RATIO_BASE = 1e6;
 uint256 constant LN2_WAD = 693147180559945309;
+uint256 constant MAX_TAX_ERROR = 1e6;

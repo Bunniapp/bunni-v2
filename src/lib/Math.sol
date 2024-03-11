@@ -56,3 +56,8 @@ function xWadToRoundedTick(int256 xWad, int24 mu, int24 tickSpacing, bool roundU
     }
     return x * tickSpacing + mu;
 }
+
+function percentDelta(uint256 a, uint256 b) pure returns (uint256) {
+    uint256 absDelta = dist(a, b);
+    return FixedPointMathLib.divWad(absDelta, b);
+}
