@@ -654,7 +654,7 @@ library BunniHubLogic {
 
                 // modify amount if we got less than requested
                 if (actualTransferAmount < amount) {
-                    actualTransferAmount = amount;
+                    amount = actualTransferAmount;
                 }
             } else {
                 // token has no tax
