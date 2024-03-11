@@ -362,10 +362,9 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             poolManager.burn(address(this), currency.toId(), absAmount);
 
             // take tokens from poolManager
-            // use actual balance change to handle tokens with transfer taxes
-            uint256 beforeTokenBalance = currency.balanceOfSelf();
+            // Note: if the token has a transfer tax then the subsequent vault.deposit() will fail
+            // since we have less token than needed
             poolManager.take(currency, address(this), absAmount);
-            absAmount = currency.balanceOfSelf() - beforeTokenBalance;
 
             // deposit tokens into vault
             IERC20 token;
@@ -376,13 +375,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             } else {
                 token = IERC20(Currency.unwrap(currency));
             }
-            // use actual balance change to prevent malicious vault
-            // from messing up our accounting
-            beforeTokenBalance = beforeTokenBalance + absAmount;
             address(token).safeApprove(address(vault), absAmount);
             reserveChange = vault.deposit(absAmount, address(this)).toInt256();
-            uint256 depositedAmount = beforeTokenBalance - token.balanceOf(address(this));
-            actualRawBalanceChange = -depositedAmount.toInt256();
+
+            // it's safe to use absAmount here since at worst the vault.deposit() call pulled less token
+            // than requested
+            actualRawBalanceChange = -absAmount.toInt256();
         } else if (rawBalanceChange > 0) {
             if (currency.isNative()) {
                 // withdraw WETH from vault to address(this)

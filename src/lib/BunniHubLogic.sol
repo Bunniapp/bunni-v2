@@ -619,6 +619,9 @@ library BunniHubLogic {
     ) internal returns (uint256 reserveChange, uint256 reserveChangeInUnderlying) {
         // use the pre-fee amount to ensure `amount` is the amount of tokens
         // that we'll be able to withdraw from the vault
+        // it's safe to rely on the user provided fee value here
+        // since if user provides fee=0 when it's actually not the amount of bunni shares minted goes down
+        // and if user provide fee!=0 when the fee is some other value (0 or non-zero) the validation will revert
         uint256 postFeeAmount = amount; // cache amount to use for validation later
         amount = amount.divWadUp(WAD - vaultFee);
 
@@ -631,19 +634,31 @@ library BunniHubLogic {
         } else {
             // normal ERC20
             token = IERC20(Currency.unwrap(currency));
-            uint256 beforeTokenBalance = token.balanceOf(address(this));
-            uint256 pretaxAmount = amount.divWadUp(WAD - tax);
-            permit2.transferFrom(user, address(this), pretaxAmount.toUint160(), address(token));
-            uint256 actualTransferAmount = token.balanceOf(address(this)) - beforeTokenBalance;
 
-            // validate token tax value
-            if (percentDelta(actualTransferAmount, amount) > MAX_TAX_ERROR) {
-                revert BunniHub__TokenTaxIncorrect();
-            }
+            // it's safe to rely on the user provided tax value here
+            // since if user provides tax=0 when it's actually not vault.deposit() will revert,
+            // and if user provide tax!=0 when the tax is some other value (0 or non-zero) the validation will revert
+            if (tax != 0) {
+                // token has transfer tax
+                // need to transfer more tokens to account for tax
 
-            // modify amount if we got less than requested
-            if (actualTransferAmount < amount) {
-                actualTransferAmount = amount;
+                uint256 beforeTokenBalance = token.balanceOf(address(this));
+                uint256 pretaxAmount = amount.divWadUp(WAD - tax);
+                permit2.transferFrom(user, address(this), pretaxAmount.toUint160(), address(token));
+                uint256 actualTransferAmount = token.balanceOf(address(this)) - beforeTokenBalance;
+
+                // validate token tax value
+                if (percentDelta(actualTransferAmount, amount) > MAX_TAX_ERROR) {
+                    revert BunniHub__TokenTaxIncorrect();
+                }
+
+                // modify amount if we got less than requested
+                if (actualTransferAmount < amount) {
+                    actualTransferAmount = amount;
+                }
+            } else {
+                // token has no tax
+                permit2.transferFrom(user, address(this), amount.toUint160(), address(token));
             }
         }
 
