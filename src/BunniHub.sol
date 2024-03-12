@@ -351,12 +351,11 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         uint256 absAmount = FixedPointMathLib.abs(rawBalanceChange);
         if (rawBalanceChange < 0) {
             uint256 poolManagerReserve = poolManager.reservesOf(currency);
-            if (absAmount > poolManagerReserve) {
-                // poolManager doesn't have enough tokens
-                // only take what we can
-                // we're only maintaining the raw balance ratio so it's fine to take less
-                absAmount = poolManagerReserve;
-            }
+            uint256 maxDepositAmount = vault.maxDeposit(address(this));
+            // if poolManager doesn't have enough tokens or we're trying to deposit more than the vault accepts
+            // then we only deposit what we can
+            // we're only maintaining the raw balance ratio so it's fine to deposit less than requested
+            absAmount = FixedPointMathLib.min(FixedPointMathLib.min(absAmount, maxDepositAmount), poolManagerReserve);
 
             // burn claim tokens from this
             poolManager.burn(address(this), currency.toId(), absAmount);
