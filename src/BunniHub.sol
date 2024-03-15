@@ -35,12 +35,11 @@ import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 /// back into the LP position.
 contract BunniHub is IBunniHub, Permit2Enabled {
     using SSTORE2 for address;
-    using SafeCastLib for int256;
-    using SafeCastLib for uint256;
+    using SafeCastLib for *;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
-    using FixedPointMathLib for uint256;
+    using FixedPointMathLib for *;
     using AdditionalCurrencyLibrary for Currency;
 
     WETH internal immutable weth;

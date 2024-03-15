@@ -16,11 +16,8 @@ import "../lib/Constants.sol";
 library LibGeometricDistribution {
     using TickMath for int24;
     using ExpMath for int256;
-    using SafeCastLib for int256;
-    using SafeCastLib for uint256;
-    using FixedPointMathLib for int256;
-    using FixedPointMathLib for uint160;
-    using FixedPointMathLib for uint256;
+    using SafeCastLib for *;
+    using FixedPointMathLib for *;
 
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
     uint256 internal constant MIN_ALPHA = 1e3;

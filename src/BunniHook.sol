@@ -33,12 +33,11 @@ import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 
 /// @notice Bunni Hook
 contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
-    using SafeCastLib for uint256;
+    using SafeCastLib for *;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
-    using FixedPointMathLib for int256;
-    using FixedPointMathLib for uint256;
+    using FixedPointMathLib for *;
     using Oracle for Oracle.Observation[65535];
     using AdditionalCurrencyLibrary for Currency;
 
