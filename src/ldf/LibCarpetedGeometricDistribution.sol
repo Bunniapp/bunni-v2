@@ -353,7 +353,7 @@ library LibCarpetedGeometricDistribution {
             // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
             int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
             minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 96)));
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 104)));
         } else {
             // static minTick set in params
             // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
