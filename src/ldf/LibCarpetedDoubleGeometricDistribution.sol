@@ -392,7 +392,7 @@ library LibCarpetedDoubleGeometricDistribution {
             // | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
             int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
             params.minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            params.shiftMode = ShiftMode(uint8(bytes1(ldfParams << 208)));
+            params.shiftMode = ShiftMode(uint8(bytes1(ldfParams << 216)));
         } else {
             // static minTick set in params
             // | minTick - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
