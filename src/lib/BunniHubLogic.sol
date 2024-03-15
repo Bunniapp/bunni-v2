@@ -232,19 +232,11 @@ library BunniHubLogic {
 
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
 
-            // update TWAP oracle and optionally observe
-            // need to update oracle before using it in the LDF
-            {
-                uint24 twapSecondsAgo = inputData.state.twapSecondsAgo;
-                // we only need to observe the TWAP if currentTotalSupply is zero
-                assembly ("memory-safe") {
-                    twapSecondsAgo := mul(twapSecondsAgo, requiresLDF)
-                }
-                vars.arithmeticMeanTick = _getTwap(inputData.params.poolKey, twapSecondsAgo);
-            }
-
             // compute density
             bool useTwap = inputData.state.twapSecondsAgo != 0;
+            if (useTwap) {
+                vars.arithmeticMeanTick = _getTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo);
+            }
             bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
             (
                 uint256 liquidityDensityOfRoundedTickX96,

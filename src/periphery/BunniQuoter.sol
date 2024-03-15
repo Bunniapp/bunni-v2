@@ -272,16 +272,10 @@ contract BunniQuoter is IBunniQuoter {
         amount1 = depositReturnData.amount1;
 
         (uint256 rawAmount0, uint256 depositAmount0) = address(state.vault0) != address(0)
-            ? (
-                amount0 - depositReturnData.depositAmount0,
-                state.vault0.previewRedeem(state.vault0.previewDeposit(depositReturnData.depositAmount0))
-            )
+            ? (amount0 - depositReturnData.depositAmount0, depositReturnData.depositAmount0.mulWad(WAD - params.vaultFee0))
             : (amount0, 0);
         (uint256 rawAmount1, uint256 depositAmount1) = address(state.vault1) != address(0)
-            ? (
-                amount1 - depositReturnData.depositAmount1,
-                state.vault1.previewRedeem(state.vault1.previewDeposit(depositReturnData.depositAmount1))
-            )
+            ? (amount1 - depositReturnData.depositAmount1, depositReturnData.depositAmount1.mulWad(WAD - params.vaultFee1))
             : (amount1, 0);
 
         // compute shares
@@ -384,19 +378,11 @@ contract BunniQuoter is IBunniQuoter {
 
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
 
-            // update TWAP oracle and optionally observe
-            // need to update oracle before using it in the LDF
-            {
-                uint24 twapSecondsAgo = inputData.state.twapSecondsAgo;
-                // we only need to observe the TWAP if currentTotalSupply is zero
-                assembly ("memory-safe") {
-                    twapSecondsAgo := mul(twapSecondsAgo, requiresLDF)
-                }
-                vars.arithmeticMeanTick = _getTwap(inputData.poolKey, twapSecondsAgo);
-            }
-
             // compute density
             bool useTwap = inputData.state.twapSecondsAgo != 0;
+            if (useTwap) {
+                vars.arithmeticMeanTick = _getTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo);
+            }
             bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
             (
                 uint256 liquidityDensityOfRoundedTickX96,

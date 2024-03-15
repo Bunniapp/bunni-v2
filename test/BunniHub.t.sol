@@ -223,49 +223,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS, "shares incorrect");
     }
 
-    function test_debug_deposit() external {
-        uint256 depositAmount0 = 1461501637330902918203684832716283019655932542975;
-        uint256 depositAmount1 = 1000000;
-        (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
-        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            currency0,
-            currency1,
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            new DoubleGeometricDistribution(),
-            bytes32(
-                abi.encodePacked(
-                    int24(0), int16(3), uint32(1e7), uint32(5e5), int16(3), uint32(1e9), uint32(5e5), ShiftMode.BOTH
-                )
-            ),
-            bytes32(
-                abi.encodePacked(
-                    FEE_MIN,
-                    FEE_MAX,
-                    FEE_QUADRATIC_MULTIPLIER,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
-            )
-        );
-
-        // make deposit
-        (uint256 beforeBalance0, uint256 beforeBalance1) =
-            (currency0.balanceOf(address(this)), currency1.balanceOf(address(this)));
-        (uint256 shares, uint256 amount0, uint256 amount1) = _makeDeposit(key, depositAmount0, depositAmount1);
-        uint256 actualDepositedAmount0 = beforeBalance0 + depositAmount0 - currency0.balanceOf(address(this));
-        uint256 actualDepositedAmount1 = beforeBalance1 + depositAmount1 - currency1.balanceOf(address(this));
-
-        // check return values
-        assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS, "amount0 incorrect");
-        assertEqDecimal(amount1, actualDepositedAmount1, DECIMALS, "amount1 incorrect");
-        assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS, "shares incorrect");
-    }
-
     function test_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
         _execTestAcrossScenarios(_test_withdraw, depositAmount0, depositAmount1, "withdraw");
     }
@@ -1618,7 +1575,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
             vaultFee0: vaultFee0,
             vaultFee1: vaultFee1
         });
-        quoter.quoteDeposit(depositParams);
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
         if (bytes(snapLabel).length > 0) {
@@ -1750,7 +1706,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 minRawTokenRatio1: 0.08e6,
                 targetRawTokenRatio1: 0.1e6,
                 maxRawTokenRatio1: 0.12e6,
-                sqrtPriceX96: TickMath.getSqrtRatioAtTick(0),
+                sqrtPriceX96: TickMath.getSqrtRatioAtTick(4),
                 cardinalityNext: 100
             })
         );
