@@ -10,10 +10,7 @@ interface IBaseHook is IHooks {
     error NotPoolManager();
     error NotSelf();
     error InvalidPool();
-    error LockFailure();
     error HookNotImplemented();
 
     function poolManager() external view returns (IPoolManager);
-
-    function getHooksCalls() external view returns (Hooks.Permissions memory);
 }

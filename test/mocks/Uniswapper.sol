@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.15;
 
-import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -24,8 +24,8 @@ contract Uniswapper is ILockCallback {
     function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
         require(msg.sender == address(poolManager), "Not poolManager");
 
-        (PoolKey memory key, IPoolManager.SwapParams memory params) =
-            abi.decode(data, (PoolKey, IPoolManager.SwapParams));
+        (PoolKey memory key, IPoolManager.SwapParams memory params, uint256 maxInput, uint256 minOutput) =
+            abi.decode(data, (PoolKey, IPoolManager.SwapParams, uint256, uint256));
         if (key.currency0.isNative()) {
             poolManager.settle(key.currency0); // ensure we get the delta from ETH sent via lock()
         } else if (key.currency1.isNative()) {
@@ -36,9 +36,17 @@ contract Uniswapper is ILockCallback {
             poolManager.currencyDelta(address(this), key.currency0),
             poolManager.currencyDelta(address(this), key.currency1)
         );
+        if (params.zeroForOne) {
+            require(uint256(amount0) <= maxInput, "Required input too much");
+            require(uint256(-amount1) >= minOutput, "Received output too little");
+        } else {
+            require(uint256(amount1) <= maxInput, "Required input too much");
+            require(uint256(-amount0) >= minOutput, "Received output too little");
+        }
 
         _settleCurrency(lockCaller, key.currency0, amount0);
         _settleCurrency(lockCaller, key.currency1, amount1);
+        return bytes("");
     }
 
     /// @param token The token to pay

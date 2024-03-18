@@ -20,12 +20,35 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// Errors
     /// -----------------------------------------------------------------------
 
+    error BunniHook__InvalidSwap();
     error BunniHook__Unauthorized();
+    error BunniHook__NoAddLiquidity();
 
     /// -----------------------------------------------------------------------
     /// Events
     /// -----------------------------------------------------------------------
 
+    /// @notice Emitted for swaps between currency0 and currency1
+    /// @param id The abi encoded hash of the pool key struct for the pool that was modified
+    /// @param sender The address that initiated the swap call, and that received the callback
+    /// @param zeroForOne True if swapping token0 for token1, false otherwise
+    /// @param inputAmount The input token amount
+    /// @param outputAmount The output token amount
+    /// @param sqrtPriceX96 The sqrt(price) of the pool after the swap, as a Q64.96
+    /// @param tick The log base 1.0001 of the price of the pool after the swap
+    /// @param fee The swap fee rate charged, 6 decimals
+    /// @param totalLiquidity The total virtual liquidity of the pool during and after the swap
+    event Swap(
+        PoolId indexed id,
+        address indexed sender,
+        bool zeroForOne,
+        uint256 inputAmount,
+        uint256 outputAmount,
+        uint160 sqrtPriceX96,
+        int24 tick,
+        uint24 fee,
+        uint256 totalLiquidity
+    );
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
 
     /// -----------------------------------------------------------------------
@@ -39,6 +62,19 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         uint16 index;
         uint16 cardinality;
         uint16 cardinalityNext;
+    }
+
+    struct Slot0 {
+        uint160 sqrtPriceX96;
+        int24 tick;
+        uint32 lastSwapTimestamp;
+        uint32 lastSurgeTimestamp;
+    }
+
+    struct VaultSharePrices {
+        bool initialized;
+        uint120 sharePrice0;
+        uint120 sharePrice1;
     }
 
     /// -----------------------------------------------------------------------
@@ -78,6 +114,16 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
 
     function ldfStates(PoolId id) external view returns (bytes32);
 
+    function slot0s(PoolId id)
+        external
+        view
+        returns (uint160 sqrtPriceX96, int24 tick, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp);
+
+    function vaultSharePricesAtLastSwap(PoolId id)
+        external
+        view
+        returns (bool initialized, uint120 sharePrice0, uint120 sharePrice1);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------
@@ -95,15 +141,9 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// BunniHub functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Update the TWAP oracle for the given pool. Only callable by BunniHub.
+    /// @notice Update the LDF state of the given pool. Only callable by BunniHub.
     /// @param id The pool id
-    /// @param tick The current tick
-    /// @param twapSecondsAgo The time window for the TWAP observed
-    /// @return arithmeticMeanTick The TWAP tick. 0 if `twapSecondsAgo` is 0.
-    function updateOracleAndObserve(PoolId id, int24 tick, uint24 twapSecondsAgo)
-        external
-        returns (int24 arithmeticMeanTick);
-
+    /// @param newState The new LDF state
     function updateLdfState(PoolId id, bytes32 newState) external;
 
     /// -----------------------------------------------------------------------

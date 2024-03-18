@@ -7,11 +7,11 @@ import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "../../src/ldf/ShiftMode.sol";
 import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityFunction.sol";
-import {LibDiscreteLaplaceDistribution} from "../../src/ldf/LibDiscreteLaplaceDistribution.sol";
+import {LibGeometricDistribution} from "../../src/ldf/LibGeometricDistribution.sol";
 
 /// @dev DiscreteLaplaceDistribution with a modifiable mu for testing
 contract MockLDF is ILiquidityDensityFunction {
-    int24 internal _mu;
+    int24 internal _minTick;
 
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
 
@@ -31,41 +31,59 @@ contract MockLDF is ILiquidityDensityFunction {
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
-            bytes32 newLdfState
+            bytes32 newLdfState,
+            bool shouldSurge
         )
     {
-        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
-            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
-        mu = _mu;
-        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        minTick = _minTick;
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
-            mu = enforceShiftMode(mu, lastMu, shiftMode);
+            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
+            shouldSurge = minTick != lastMinTick;
         }
-        console.logInt(mu);
 
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
-            LibDiscreteLaplaceDistribution.query(roundedTick, key.tickSpacing, mu, alphaX96);
-        newLdfState = _encodeState(mu);
+            LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
+        newLdfState = _encodeState(minTick);
     }
 
-    function liquidityDensityX96(
+    function computeSwap(
         PoolKey calldata key,
-        int24 roundedTick,
+        uint256 inverseCumulativeAmountInput,
+        uint256 totalLiquidity,
+        bool zeroForOne,
+        bool exactIn,
         int24 twapTick,
         int24, /* spotPriceTick */
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external view override returns (uint256) {
-        (int24 mu, uint256 alphaX96, ShiftMode shiftMode) =
-            LibDiscreteLaplaceDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
-        mu = _mu;
-        (bool initialized, int24 lastMu) = _decodeState(ldfState);
+    )
+        external
+        view
+        override
+        returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity)
+    {
+        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        minTick = _minTick;
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
-            mu = enforceShiftMode(mu, lastMu, shiftMode);
+            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
         }
 
-        return LibDiscreteLaplaceDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, mu, alphaX96);
+        return LibGeometricDistribution.computeSwap(
+            inverseCumulativeAmountInput,
+            totalLiquidity,
+            zeroForOne,
+            exactIn,
+            key.tickSpacing,
+            minTick,
+            length,
+            alphaX96
+        );
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
@@ -74,21 +92,21 @@ contract MockLDF is ILiquidityDensityFunction {
         override
         returns (bool)
     {
-        return LibDiscreteLaplaceDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
+        return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
     }
 
-    function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMu) {
-        // | initialized - 1 byte | lastMu - 3 bytes |
+    function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMinTick) {
+        // | initialized - 1 byte | lastMinTick - 3 bytes |
         initialized = uint8(bytes1(ldfState)) == 1;
-        lastMu = int24(uint24(bytes3(ldfState << 8)));
+        lastMinTick = int24(uint24(bytes3(ldfState << 8)));
     }
 
-    function _encodeState(int24 lastMu) internal pure returns (bytes32 ldfState) {
-        // | initialized - 1 byte | lastMu - 3 bytes |
-        ldfState = bytes32(bytes4(INITIALIZED_STATE + uint32(uint24(lastMu))));
+    function _encodeState(int24 lastMinTick) internal pure returns (bytes32 ldfState) {
+        // | initialized - 1 byte | lastMinTick - 3 bytes |
+        ldfState = bytes32(bytes4(INITIALIZED_STATE + uint32(uint24(lastMinTick))));
     }
 
-    function setMu(int24 mu) external {
-        _mu = mu;
+    function setMinTick(int24 minTick) external {
+        _minTick = minTick;
     }
 }

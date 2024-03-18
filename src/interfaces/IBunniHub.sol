@@ -10,8 +10,8 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
-import {WETH} from "solady/src/tokens/WETH.sol";
-import {ERC4626} from "solady/src/tokens/ERC4626.sol";
+import {WETH} from "solady/tokens/WETH.sol";
+import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import "../lib/Structs.sol";
 import {IERC20} from "./IERC20.sol";
@@ -30,8 +30,11 @@ error BunniHub__HookCannotBeZero();
 error BunniHub__ZeroSharesMinted();
 error BunniHub__InvalidLDFParams();
 error BunniHub__InvalidHookParams();
+error BunniHub__TokenTaxIncorrect();
+error BunniHub__VaultFeeIncorrect();
 error BunniHub__VaultAssetMismatch();
 error BunniHub__BunniTokenNotInitialized();
+error BunniHub__InvalidRawTokenRatioBounds();
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -70,10 +73,6 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         uint256 amount1,
         uint256 shares
     );
-    /// @notice Emitted when fees are compounded back into liquidity
-    /// @param poolId The Uniswap V4 pool's ID
-    /// @param feeDelta The amount of token0 and token1 added to the reserves
-    event Compound(PoolId indexed poolId, BalanceDelta feeDelta);
     /// @notice Emitted when a new IBunniToken is created
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
@@ -81,20 +80,28 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
-    /// @param refundETHRecipient The recipient of the refunded ETH
+    /// @param refundRecipient The recipient of the refunded ETH
     /// @param amount0Desired The desired amount of token0 to be spent,
     /// @param amount1Desired The desired amount of token1 to be spent,
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// @param amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
+    /// @param tax0 When token0 is transferred the amount is multiplied by WAD / (WAD - tax0),
+    /// @param tax1 When token1 is transferred the amount is multiplied by WAD / (WAD - tax1),
+    /// @param vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
+    /// @param vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// @param deadline The time by which the transaction must be included to effect the change
     struct DepositParams {
         PoolKey poolKey;
         address recipient;
-        address refundETHRecipient;
+        address refundRecipient;
         uint256 amount0Desired;
         uint256 amount1Desired;
         uint256 amount0Min;
         uint256 amount1Min;
+        uint256 tax0;
+        uint256 tax1;
+        uint256 vaultFee0;
+        uint256 vaultFee1;
         uint256 deadline;
     }
 
@@ -103,20 +110,23 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @param params The input parameters
     /// poolKey The PoolKey of the Uniswap V4 pool
     /// recipient The recipient of the minted share tokens
+    /// refundRecipient The recipient of the refunded ETH
     /// amount0Desired The desired amount of token0 to be spent,
     /// amount1Desired The desired amount of token1 to be spent,
     /// amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
+    /// tax0 When token0 is transferred the amount is multiplied by WAD / (WAD - tax0),
+    /// tax1 When token1 is transferred the amount is multiplied by WAD / (WAD - tax1),
+    /// vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
+    /// vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// deadline The time by which the transaction must be included to effect the change
-    /// refundETH Whether to refund excess ETH to the sender. Should be false when part of a multicall.
     /// @return shares The new share tokens minted to the sender
-    /// @return addedLiquidity The new liquidity amount as a result of the increase
     /// @return amount0 The amount of token0 to acheive resulting liquidity
     /// @return amount1 The amount of token1 to acheive resulting liquidity
     function deposit(DepositParams calldata params)
         external
         payable
-        returns (uint256 shares, uint128 addedLiquidity, uint256 amount0, uint256 amount1);
+        returns (uint256 shares, uint256 amount0, uint256 amount1);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the withdrawn tokens
@@ -143,12 +153,9 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// amount0Min The minimum amount of token0 that should be accounted for the burned liquidity,
     /// amount1Min The minimum amount of token1 that should be accounted for the burned liquidity,
     /// deadline The time by which the transaction must be included to effect the change
-    /// @return removedLiquidity The amount of liquidity decrease
     /// @return amount0 The amount of token0 withdrawn to the recipient
     /// @return amount1 The amount of token1 withdrawn to the recipient
-    function withdraw(WithdrawParams calldata params)
-        external
-        returns (uint128 removedLiquidity, uint256 amount0, uint256 amount1);
+    function withdraw(WithdrawParams calldata params) external returns (uint256 amount0, uint256 amount1);
 
     /// @param currency0 The token0 of the Uniswap V4 pool
     /// @param currency1 The token1 of the Uniswap V4 pool
@@ -160,6 +167,12 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @param hookParams The parameters for the hooks
     /// @param vault0 The vault for token0. If address(0), then a vault is not used.
     /// @param vault1 The vault for token1. If address(0), then a vault is not used.
+    /// @param minRawTokenRatio0 The minimum (rawBalance / balance) ratio for token0
+    /// @param targetRawTokenRatio0 The target (rawBalance / balance) ratio for token0
+    /// @param maxRawTokenRatio0 The maximum (rawBalance / balance) ratio for token0
+    /// @param minRawTokenRatio1 The minimum (rawBalance / balance) ratio for token1
+    /// @param targetRawTokenRatio1 The target (rawBalance / balance) ratio for token1
+    /// @param maxRawTokenRatio1 The maximum (rawBalance / balance) ratio for token1
     /// @param sqrtPriceX96 The initial sqrt price of the Uniswap V4 pool
     /// @param cardinalityNext The cardinality target for the Uniswap V4 pool
     struct DeployBunniTokenParams {
@@ -174,6 +187,12 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         bytes32 hookParams;
         ERC4626 vault0;
         ERC4626 vault1;
+        uint24 minRawTokenRatio0;
+        uint24 targetRawTokenRatio0;
+        uint24 maxRawTokenRatio0;
+        uint24 minRawTokenRatio1;
+        uint24 targetRawTokenRatio1;
+        uint24 maxRawTokenRatio1;
         uint160 sqrtPriceX96;
         uint16 cardinalityNext;
     }
@@ -198,14 +217,8 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         external
         returns (IBunniToken token, PoolKey memory key);
 
-    /// @notice Enables the hooks for a Uniswap V4 pool to modify the liquidity of that pool.
-    /// @param poolKey The PoolKey of the Uniswap V4 pool
-    /// @param liquidityDeltas The liquidity deltas to apply to the pool
-    function hookModifyLiquidity(PoolKey calldata poolKey, LiquidityDelta[] calldata liquidityDeltas) external;
-
-    /// @notice Clears the credits of a pool and deposit the assets into the vaults.
-    /// @param keys The PoolKeys of the Uniswap V4 pools
-    function clearPoolCredits(PoolKey[] calldata keys) external;
+    function hookHandleSwap(PoolKey calldata key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount)
+        external;
 
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
@@ -215,20 +228,4 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
 
     /// @notice The PoolId of a given BunniToken.
     function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
-
-    /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
-    /// the edge case where 1) a vault is used 2) a swap occurs that crosses a rounded tick boundary
-    /// 3) PoolManager doesn't have enough balance for paying out the tokens of the withdrawn liquidity
-    /// before the swapper settles the swap so that the tokens can be deposited into the vault as reserve.
-    /// In this case, we mint PoolManager claim tokens to the pool's reserves so that later the tokens can be deposited
-    /// into the vault.
-    function poolCredit0(PoolId poolId) external view returns (uint256);
-
-    /// @notice The amount of extra PoolManager claim tokens a pool has. The claim tokens come from
-    /// the edge case where 1) a vault is used 2) a swap occurs that crosses a rounded tick boundary
-    /// 3) PoolManager doesn't have enough balance for paying out the tokens of the withdrawn liquidity
-    /// before the swapper settles the swap so that the tokens can be deposited into the vault as reserve.
-    /// In this case, we mint PoolManager claim tokens to the pool's reserves so that later the tokens can be deposited
-    /// into the vault.
-    function poolCredit1(PoolId poolId) external view returns (uint256);
 }

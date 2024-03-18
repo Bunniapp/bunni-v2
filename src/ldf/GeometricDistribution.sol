@@ -26,8 +26,39 @@ contract GeometricDistribution is ILiquidityDensityFunction {
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
-            bytes32 newLdfState
+            bytes32 newLdfState,
+            bool shouldSurge
         )
+    {
+        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
+        if (initialized) {
+            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
+            shouldSurge = minTick != lastMinTick;
+        }
+
+        (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
+            LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
+        newLdfState = _encodeState(minTick);
+    }
+
+    function computeSwap(
+        PoolKey calldata key,
+        uint256 inverseCumulativeAmountInput,
+        uint256 totalLiquidity,
+        bool zeroForOne,
+        bool exactIn,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    )
+        external
+        pure
+        override
+        returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity)
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
             LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
@@ -36,28 +67,16 @@ contract GeometricDistribution is ILiquidityDensityFunction {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
         }
 
-        (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
-            LibGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96);
-        newLdfState = _encodeState(minTick);
-    }
-
-    function liquidityDensityX96(
-        PoolKey calldata key,
-        int24 roundedTick,
-        int24 twapTick,
-        int24, /* spotPriceTick */
-        bool useTwap,
-        bytes32 ldfParams,
-        bytes32 ldfState
-    ) external pure override returns (uint256) {
-        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
-        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
-        if (initialized) {
-            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
-        }
-
-        return LibGeometricDistribution.liquidityDensityX96(roundedTick, key.tickSpacing, minTick, length, alphaX96);
+        return LibGeometricDistribution.computeSwap(
+            inverseCumulativeAmountInput,
+            totalLiquidity,
+            zeroForOne,
+            exactIn,
+            key.tickSpacing,
+            minTick,
+            length,
+            alphaX96
+        );
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)

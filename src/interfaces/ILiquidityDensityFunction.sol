@@ -21,18 +21,22 @@ interface ILiquidityDensityFunction {
             uint256 liquidityDensityX96,
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
-            bytes32 newLdfState
+            bytes32 newLdfState,
+            bool shouldSurge
         );
 
-    function liquidityDensityX96(
+    function computeSwap(
         PoolKey calldata key,
-        int24 roundedTick,
+        uint256 inverseCumulativeAmountInput,
+        uint256 totalLiquidity,
+        bool zeroForOne,
+        bool exactIn,
         int24 twapTick,
-        int24 spotPriceTick,
+        int24, /* spotPriceTick */
         bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external view returns (uint256);
+    ) external view returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity);
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) external view returns (bool);
 }

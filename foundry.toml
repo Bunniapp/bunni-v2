@@ -1,12 +1,12 @@
 [profile.default]
 cancun = true
+evm_version = "cancun"
 ffi = true
 fs_permissions = [{access = "read-write", path = ".forge-snapshots/"}, {access = "read", path = "./out"}]
-optimizer_runs = 30000
+optimizer_runs = 15000
 remappings = [
   "@uniswap/v4-core/=lib/v4-core/",
 ]
-solc = "./lib/v4-core/bin/solc-mac"
 verbosity = 1
 via_ir = true
 
@@ -19,16 +19,16 @@ verbosity = 4
 arbitrum = "${RPC_URL_ARBITRUM}"
 bsc = "${RPC_URL_BSC}"
 gnosis = "${RPC_URL_GNOSIS}"
-goerli = "${RPC_URL_GOERLI}"
 mainnet = "${RPC_URL_MAINNET}"
 optimism = "${RPC_URL_OPTIMISM}"
 polygon = "${RPC_URL_POLYGON}"
+sepolia = "${RPC_URL_SEPOLIA}"
 
 [etherscan]
 arbitrum = {key = "${ARBISCAN_KEY}", url = "https://api.arbiscan.io/api"}
 bsc = {key = "${BSCSCAN_KEY}", url = "https://api.bscscan.com/api"}
 gnosis = {key = "${GNOSISSCAN_KEY}", url = "https://api.gnosisscan.io/api"}
-goerli = {key = "${ETHERSCAN_KEY}", url = "https://api-goerli.etherscan.io/api"}
 mainnet = {key = "${ETHERSCAN_KEY}"}
 optimism = {key = "${OPTIMISM_ETHERSCAN_KEY}", url = "https://api-optimistic.etherscan.io/api"}
 polygon = {key = "${POLYGONSCAN_KEY}", url = "https://api.polygonscan.com/api"}
+sepolia = {key = "${ETHERSCAN_KEY}", url = "https://api-sepolia.etherscan.io/api"}

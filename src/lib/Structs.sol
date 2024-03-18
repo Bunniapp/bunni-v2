@@ -3,9 +3,9 @@
 pragma solidity >=0.6.0;
 pragma abicoder v2;
 
-import {PoolId, PoolKey, BalanceDelta} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {PoolId, PoolKey, BalanceDelta, Currency} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
-import {ERC4626} from "solady/src/tokens/ERC4626.sol";
+import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
@@ -19,56 +19,46 @@ struct PoolState {
     ERC4626 vault0;
     ERC4626 vault1;
     bool statefulLdf;
-    bool poolCredit0Set;
-    bool poolCredit1Set;
+    uint24 minRawTokenRatio0;
+    uint24 targetRawTokenRatio0;
+    uint24 maxRawTokenRatio0;
+    uint24 minRawTokenRatio1;
+    uint24 targetRawTokenRatio1;
+    uint24 maxRawTokenRatio1;
+    uint256 rawBalance0;
+    uint256 rawBalance1;
     uint256 reserve0;
     uint256 reserve1;
 }
 
 struct RawPoolState {
     address immutableParamsPointer;
-    bool poolCredit0Set;
-    bool poolCredit1Set;
-    uint256 reserve0;
-    uint256 reserve1;
+    uint256 rawBalance0;
+    uint256 rawBalance1;
 }
 
-struct LiquidityDelta {
-    int24 tickLower;
-    int256 delta;
+struct HookHandleSwapCallbackInputData {
+    PoolKey key;
+    bool zeroForOne;
+    uint256 inputAmount;
+    uint256 outputAmount;
 }
 
-struct ModifyLiquidityInputData {
-    PoolKey poolKey;
-    int24 tickLower;
-    int24 tickUpper;
-    int256 liquidityDelta;
-    BalanceDelta reserveDeltaInUnderlying;
-    uint128 currentLiquidity;
+struct DepositCallbackInputData {
     address user;
-    ERC4626 vault0;
-    ERC4626 vault1;
-}
-
-struct ModifyLiquidityReturnData {
-    uint256 amount0;
-    uint256 amount1;
-    int256 reserveChange0;
-    int256 reserveChange1;
-}
-
-struct HookCallbackInputData {
     PoolKey poolKey;
-    ERC4626 vault0;
-    ERC4626 vault1;
-    bool poolCredit0Set;
-    bool poolCredit1Set;
-    LiquidityDelta[] liquidityDeltas;
+    uint256 msgValue;
+    uint256 rawAmount0;
+    uint256 rawAmount1;
+    uint256 tax0;
+    uint256 tax1;
 }
 
-struct HookCallbackReturnData {
-    int256 reserveChange0;
-    int256 reserveChange1;
+struct WithdrawCallbackInputData {
+    address user;
+    PoolKey poolKey;
+    uint256 rawAmount0;
+    uint256 rawAmount1;
 }
 
 struct InitializePoolCallbackInputData {
@@ -76,4 +66,11 @@ struct InitializePoolCallbackInputData {
     uint160 sqrtPriceX96;
     uint24 twapSecondsAgo;
     bytes32 hookParams;
+}
+
+enum LockCallbackType {
+    SWAP,
+    DEPOSIT,
+    WITHDRAW,
+    INITIALIZE_POOL
 }

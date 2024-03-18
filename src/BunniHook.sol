@@ -3,8 +3,6 @@ pragma solidity ^0.8.19;
 
 import {console2} from "forge-std/console2.sol";
 
-import {stdMath} from "forge-std/StdMath.sol";
-
 import "@uniswap/v4-core/src/types/Currency.sol";
 import {Fees} from "@uniswap/v4-core/src/Fees.sol";
 import "@uniswap/v4-core/src/types/BalanceDelta.sol";
@@ -12,33 +10,36 @@ import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
-import {SafeCastLib} from "solady/src/utils/SafeCastLib.sol";
-import {FixedPointMathLib} from "solady/src/utils/FixedPointMathLib.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./lib/Structs.sol";
 import "./lib/VaultMath.sol";
+import "./lib/Constants.sol";
 import "./interfaces/IBunniHook.sol";
 import {Oracle} from "./lib/Oracle.sol";
 import {Ownable} from "./lib/Ownable.sol";
 import {BaseHook} from "./lib/BaseHook.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
+import {BunniSwapMath} from "./lib/BunniSwapMath.sol";
+import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
+import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 
 /// @notice Bunni Hook
-contract BunniHook is BaseHook, Ownable, IBunniHook {
-    using SafeCastLib for uint256;
+contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
+    using SafeCastLib for *;
     using PoolIdLibrary for PoolKey;
+    using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
-    using FixedPointMathLib for uint256;
+    using FixedPointMathLib for *;
     using Oracle for Oracle.Observation[65535];
-
-    uint256 internal constant Q96 = 0x1000000000000000000000000;
-    uint256 internal constant SWAP_FEE_BASE = 1e6;
-    uint256 internal constant SWAP_FEE_BASE_SQUARED = 1e12;
+    using AdditionalCurrencyLibrary for Currency;
 
     IBunniHub internal immutable hub;
 
@@ -48,18 +49,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
 
+    mapping(PoolId => VaultSharePrices) public vaultSharePricesAtLastSwap;
     mapping(PoolId => bytes32) public ldfStates;
+    mapping(PoolId => Slot0) public slot0s;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
     uint96 internal _hookFeesModifier;
 
     /// @notice The recipient of collected hook fees
     address internal _hookFeesRecipient;
-
-    /* int24 private firstTickToRemove;
-    uint24 private numTicksToRemove;
-    uint24 private swapFee; */
-    uint256 private constant SWAP_VALS_SLOT = uint256(keccak256("SwapVals")) - 1;
 
     constructor(
         IPoolManager _poolManager,
@@ -72,6 +70,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         _hookFeesModifier = hookFeesModifier_;
         _hookFeesRecipient = hookFeesRecipient_;
         _initializeOwner(owner_);
+        _poolManager.setOperator(address(hub_), true);
 
         emit SetHookFeesParams(hookFeesModifier_, hookFeesRecipient_);
     }
@@ -95,17 +94,22 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         state.cardinalityNext = cardinalityNextNew;
     }
 
+    receive() external payable {}
+
     /// -----------------------------------------------------------------------
     /// Uniswap lock callback
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc ILockCallback
-    function lockAcquired(address, /* lockCaller */ bytes calldata data)
+    function lockAcquired(address lockCaller, bytes calldata data)
         external
         override
         poolManagerOnly
+        nonReentrant
         returns (bytes memory)
     {
+        if (lockCaller != owner()) revert BunniHook__Unauthorized();
+
         // decode data
         Currency[] memory currencyList = abi.decode(data, (Currency[]));
 
@@ -119,6 +123,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                 poolManager.take(currency, recipient, balance);
             }
         }
+        return bytes("");
     }
 
     /// -----------------------------------------------------------------------
@@ -126,23 +131,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHook
-    function updateOracleAndObserve(PoolId id, int24 tick, uint24 twapSecondsAgo)
-        external
-        override
-        returns (int24 arithmeticMeanTick)
-    {
-        if (msg.sender != address(hub)) revert BunniHook__Unauthorized();
-
-        // update TWAP oracle
-        (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, tick);
-
-        // observe if needed
-        if (twapSecondsAgo != 0) {
-            return _getTwap(id, tick, twapSecondsAgo, updatedIndex, updatedCardinality);
-        }
-        return 0;
-    }
-
     function updateLdfState(PoolId id, bytes32 newState) external override {
         if (msg.sender != address(hub)) revert BunniHook__Unauthorized();
 
@@ -194,116 +182,94 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     {
         PoolId id = key.toId();
         ObservationState memory state = _states[id];
-        (, int24 tick,) = poolManager.getSlot0(id);
+        Slot0 memory slot0 = slot0s[id];
 
-        return _observations[id].observe(uint32(block.timestamp), secondsAgos, tick, state.index, state.cardinality);
+        return
+            _observations[id].observe(uint32(block.timestamp), secondsAgos, slot0.tick, state.index, state.cardinality);
     }
 
     /// @inheritdoc IBunniHook
     function isValidParams(bytes32 hookParams) external pure override returns (bool) {
-        (, uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo) =
-            _decodeParams(hookParams);
-        return (feeMin <= feeMax) && (feeMax <= SWAP_FEE_BASE)
-            && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0);
+        (
+            uint24 feeMin,
+            uint24 feeMax,
+            uint24 feeQuadraticMultiplier,
+            uint24 feeTwapSecondsAgo,
+            uint24 surgeFee,
+            uint16 surgeFeeHalflife,
+            ,
+            uint16 vaultSurgeThreshold0,
+            uint16 vaultSurgeThreshold1
+        ) = _decodeParams(hookParams);
+        unchecked {
+            return (feeMin <= feeMax) && (feeMax < SWAP_FEE_BASE)
+                && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0) && (surgeFee < SWAP_FEE_BASE)
+                && (uint256(surgeFeeHalflife) * uint256(vaultSurgeThreshold0) * uint256(vaultSurgeThreshold1) != 0);
+        }
     }
 
     /// -----------------------------------------------------------------------
     /// Hooks
     /// -----------------------------------------------------------------------
 
-    /// @inheritdoc IBaseHook
-    function getHooksCalls() public pure override(BaseHook, IBaseHook) returns (Hooks.Permissions memory) {
-        return Hooks.Permissions({
-            beforeInitialize: false,
-            afterInitialize: true,
-            beforeAddLiquidity: true,
-            afterAddLiquidity: false,
-            beforeRemoveLiquidity: true,
-            afterRemoveLiquidity: false,
-            beforeSwap: true,
-            afterSwap: true,
-            beforeDonate: false,
-            afterDonate: false,
-            noOp: false,
-            accessLock: true
-        });
-    }
-
     /// @inheritdoc IDynamicFeeManager
-    function getFee(address, /* sender */ PoolKey calldata /* key */ )
-        external
-        view
-        override
-        returns (uint24 swapFee)
-    {
-        uint256 swapVals;
-        uint256 swapValsSlot = SWAP_VALS_SLOT;
-        assembly ("memory-safe") {
-            swapVals := tload(swapValsSlot)
-            swapFee := shr(232, shl(48, swapVals))
-        }
+    function getFee(address, /* sender */ PoolKey calldata /* key */ ) external pure override returns (uint24) {
+        // always return 0 since the swap fee is taken in the beforeSwap hook
+        return 0;
     }
 
     /// @inheritdoc IHooks
-    function afterInitialize(address caller, PoolKey calldata key, uint160, int24 tick, bytes calldata hookData)
-        external
-        override(BaseHook, IHooks)
-        poolManagerOnly
-        returns (bytes4)
-    {
+    function afterInitialize(
+        address caller,
+        PoolKey calldata key,
+        uint160 sqrtPriceX96,
+        int24 tick,
+        bytes calldata hookData
+    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
         if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from initializing a pool using this hook
         PoolId id = key.toId();
+
+        // initialize slot0
+        slot0s[id] = Slot0({
+            sqrtPriceX96: sqrtPriceX96,
+            tick: tick,
+            lastSwapTimestamp: uint32(block.timestamp),
+            lastSurgeTimestamp: 0
+        });
 
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-        (,,,, uint24 feeTwapSecondsAgo) = _decodeParams(hookParams);
-        (_states[id].cardinality, _states[id].cardinalityNext) =
-            _observations[id].initialize(uint32(block.timestamp - max(twapSecondsAgo, feeTwapSecondsAgo)), tick);
+        (,,, uint24 feeTwapSecondsAgo,,,,,) = _decodeParams(hookParams);
+        (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
+            uint32(block.timestamp - FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo)), tick
+        );
 
         return BunniHook.afterInitialize.selector;
     }
 
     /// @inheritdoc IHooks
-    function beforeAddLiquidity(
-        address caller,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata hookData
-    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
-        _beforeModifyPosition(caller, key, hookData);
-
-        return BunniHook.beforeAddLiquidity.selector;
-    }
-
-    /// @inheritdoc IHooks
-    function beforeRemoveLiquidity(
-        address caller,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata hookData
-    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
-        _beforeModifyPosition(caller, key, hookData);
-
-        return BunniHook.beforeRemoveLiquidity.selector;
-    }
-
-    /// @inheritdoc IHooks
-    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
         external
+        view
         override(BaseHook, IHooks)
         poolManagerOnly
         returns (bytes4)
     {
-        uint256 swapValsSlot = SWAP_VALS_SLOT;
-        uint256 swapVals;
-        assembly ("memory-safe") {
-            swapVals := tload(swapValsSlot)
-        }
-        if (swapVals != 0) return bytes4(0); // swap already in progress, tell PoolManager to revert
+        revert BunniHook__NoAddLiquidity();
+    }
 
+    /// @inheritdoc IHooks
+    function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+        external
+        override(BaseHook, IHooks)
+        poolManagerOnly
+        nonReentrant
+        returns (bytes4)
+    {
         PoolId id = key.toId();
-        (uint160 sqrtPriceX96, int24 currentTick,) = poolManager.getSlot0(id);
+        Slot0 memory slot0 = slot0s[id];
+        (uint160 sqrtPriceX96, int24 currentTick) = (slot0.sqrtPriceX96, slot0.tick);
         if (
             sqrtPriceX96 == 0
                 || (
@@ -315,47 +281,91 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
                         && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_RATIO)
                 )
         ) {
-            // if the swap is invalid, do nothing and let PoolManager handle the revert
-            return BunniHook.beforeSwap.selector;
+            revert BunniHook__InvalidSwap();
         }
 
-        // update TWAP oracle
-        // do it before we fetch the arithmeticMeanTick
-        (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
-
         // get current tick token balances
+        PoolState memory bunniState = hub.poolState(id);
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
         (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
             (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
-        uint128 liquidity = poolManager.getLiquidity(id);
-        (uint256 balance0, uint256 balance1) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, liquidity, false
-        );
 
-        // get reserves and add to balance
-        PoolState memory bunniState = hub.poolState(id);
-        (uint256 reserve0InUnderlying, uint256 reserve1InUnderlying) = (
+        // decode hook params
+        (
+            uint24 feeMin,
+            uint24 feeMax,
+            uint24 feeQuadraticMultiplier,
+            uint24 feeTwapSecondsAgo,
+            uint24 surgeFee,
+            uint16 surgeFeeHalfLife,
+            uint16 surgeFeeAutostartThreshold,
+            uint16 vaultSurgeThreshold0,
+            uint16 vaultSurgeThreshold1
+        ) = _decodeParams(bunniState.hookParams);
+
+        // get pool token balances
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
             getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
             getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
-        if (bunniState.poolCredit0Set) reserve0InUnderlying += hub.poolCredit0(id);
-        if (bunniState.poolCredit1Set) reserve1InUnderlying += hub.poolCredit1(id);
-        (balance0, balance1) = (balance0 + reserve0InUnderlying, balance1 + reserve1InUnderlying);
+        (uint256 balance0, uint256 balance1) =
+            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
+        bool shouldSurge;
 
-        // (optional) get TWAP value
-        int24 arithmeticMeanTick;
-        bool useTwap = bunniState.twapSecondsAgo != 0;
-        if (useTwap) {
-            // need to use TWAP
-            // compute TWAP value
-            arithmeticMeanTick = _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
+        if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
+            // compute share prices
+            VaultSharePrices memory sharePrices = VaultSharePrices({
+                initialized: true,
+                sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
+                sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
+            });
+
+            // compare with share prices at last swap to see if we need to apply the surge fee
+            VaultSharePrices memory prevSharePrices = vaultSharePricesAtLastSwap[id];
+            if (
+                prevSharePrices.initialized
+                    && (
+                        dist(sharePrices.sharePrice0, prevSharePrices.sharePrice0)
+                            >= prevSharePrices.sharePrice0 / vaultSurgeThreshold0
+                            || dist(sharePrices.sharePrice1, prevSharePrices.sharePrice1)
+                                >= prevSharePrices.sharePrice1 / vaultSurgeThreshold1
+                    )
+            ) {
+                // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
+                shouldSurge = true;
+            }
+
+            // update share prices at last swap
+            if (
+                !prevSharePrices.initialized || sharePrices.sharePrice0 != prevSharePrices.sharePrice0
+                    || sharePrices.sharePrice1 != prevSharePrices.sharePrice1
+            ) {
+                vaultSharePricesAtLastSwap[id] = sharePrices;
+            }
         }
-        (uint8 compoundThreshold, uint24 feeMin, uint24 feeMax, uint24 feeQuadraticMultiplier, uint24 feeTwapSecondsAgo)
-        = _decodeParams(bunniState.hookParams);
+
+        bool useTwap = bunniState.twapSecondsAgo != 0;
+
+        int24 arithmeticMeanTick;
         int24 feeMeanTick;
-        if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
-            // fee calculation needs TWAP
-            feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
+
+        // update TWAP oracle
+        // do it before we fetch the arithmeticMeanTick
+        {
+            (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
+
+            // (optional) get TWAP value
+            if (useTwap) {
+                // need to use TWAP
+                // compute TWAP value
+                arithmeticMeanTick =
+                    _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
+            }
+
+            if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
+                // fee calculation needs TWAP
+                feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
+            }
         }
 
         // get densities
@@ -364,390 +374,169 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             uint256 liquidityDensityOfRoundedTickX96,
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96,
-            bytes32 newLdfState
+            bytes32 newLdfState,
+            bool shouldSurgeLDF
         ) = bunniState.liquidityDensityFunction.query(
             key, roundedTick, arithmeticMeanTick, currentTick, useTwap, bunniState.ldfParams, ldfState
         );
+        shouldSurge = shouldSurge || shouldSurgeLDF;
         if (bunniState.statefulLdf) ldfStates[id] = newLdfState;
-        (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96,
-            roundedTickSqrtRatio,
-            nextRoundedTickSqrtRatio,
-            uint128(liquidityDensityOfRoundedTickX96),
-            false
-        );
 
         // compute total liquidity
         uint256 totalLiquidity;
         {
+            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
+                .getAmountsForLiquidity(
+                sqrtPriceX96,
+                roundedTickSqrtRatio,
+                nextRoundedTickSqrtRatio,
+                uint128(liquidityDensityOfRoundedTickX96),
+                false
+            );
             uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
             uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
             uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
             uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
 
             // Strategy: If one of the two liquidity estimates is 0, use the other one;
-            // if both are non-zero, use the average of the two.
-            // This is because if we simply used max(), shifting the LDF does not change the
-            // current tick liquidity (at least for exponential LDFs) making the shifting kind of
-            // useless, while using min() can lead to underutilization of the reserves we have.
-            // Taking the average gives us a middle ground.
+            // if both are non-zero, use the minimum of the two.
+            // We must take the minimum because if the total liquidity we use is higher than
+            // the min of the two estimates, then it's possible to extract a profit by
+            // buying and immediately selling assuming the swap fee is non-zero. This happens
+            // because the swap fee is added to the pool's balance, which can increase the total
+            // liquidity estimate.
             if (totalLiquidityEstimate0 == 0) {
                 totalLiquidity = totalLiquidityEstimate1;
             } else if (totalLiquidityEstimate1 == 0) {
                 totalLiquidity = totalLiquidityEstimate0;
             } else {
-                totalLiquidity = (totalLiquidityEstimate0 + totalLiquidityEstimate1) / 2;
+                totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
             }
         }
 
-        // compute updated current tick liquidity
-        // totalLiquidity could exceed uint128 so .toUint128() is used
-        uint128 updatedRoundedTickLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
+        // compute swap result
+        (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount) = BunniSwapMath
+            .computeSwap({
+            key: key,
+            totalLiquidity: totalLiquidity,
+            liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
+            density0RightOfRoundedTickX96: density0RightOfRoundedTickX96,
+            density1LeftOfRoundedTickX96: density1LeftOfRoundedTickX96,
+            sqrtPriceX96: sqrtPriceX96,
+            currentTick: currentTick,
+            roundedTickSqrtRatio: roundedTickSqrtRatio,
+            nextRoundedTickSqrtRatio: nextRoundedTickSqrtRatio,
+            balance0: balance0,
+            balance1: balance1,
+            liquidityDensityFunction: bunniState.liquidityDensityFunction,
+            arithmeticMeanTick: arithmeticMeanTick,
+            useTwap: useTwap,
+            ldfParams: bunniState.ldfParams,
+            ldfState: ldfState,
+            params: params
+        });
 
-        bytes memory buffer; // buffer for storing dynamic length array of LiquidityDelta structs
-        uint256 bufferLength;
-        bool updatedCurrentTick;
-
-        // update current tick liquidity if necessary
+        // ensure swap never moves price in the opposite direction
         if (
-            (compoundThreshold == 0 && updatedRoundedTickLiquidity != liquidity) // always compound if threshold is 0 and there's a liquidity difference
-                || _percentDelta(updatedRoundedTickLiquidity, liquidity) * uint256(compoundThreshold) >= 0.1e18 // compound if delta >= 1 / (compoundThreshold * 10)
+            (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
+                || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
         ) {
-            // ensure we have enough reserves to satisfy the delta
-            // round up updated balances to ensure that we can satisfy the delta
-            (uint256 updatedCurrentTickBalance0, uint256 updatedCurrentTickBalance1) = LiquidityAmounts
-                .getAmountsForLiquidity(
-                sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, true
-            );
-            if (updatedCurrentTickBalance0 <= balance0 && updatedCurrentTickBalance1 <= balance1) {
-                int256 delta = int256(uint256(updatedRoundedTickLiquidity)) - int256(uint256(liquidity)); // both values are uint128 so cast is safe
-                buffer = _appendLiquidityDeltaToBuffer(buffer, roundedTick, delta);
-                unchecked {
-                    ++bufferLength;
-                }
-                liquidity = updatedRoundedTickLiquidity;
-                updatedCurrentTick = true;
-
-                unchecked {
-                    reserve0InUnderlying = balance0 - updatedCurrentTickBalance0;
-                    reserve1InUnderlying = balance1 - updatedCurrentTickBalance1;
-                }
-            }
+            revert BunniHook__InvalidSwap();
         }
 
-        // simulate swap to see if current tick liquidity is sufficient
-        uint256 amountIn;
-        uint256 amountOut;
-        int24 tick = currentTick;
-        int24 tickNext = boundTick(params.zeroForOne ? roundedTick : nextRoundedTick, key.tickSpacing);
-        int256 amountSpecifiedRemaining = params.amountSpecified;
-        bool exactInput = amountSpecifiedRemaining > 0;
-        uint160 sqrtPriceStartX96;
-        uint160 sqrtPriceNextX96;
-        uint256 feeAmount;
-        while (true) {
-            // compute sqrtPriceX96 and amountSpecifiedRemaining
-            sqrtPriceStartX96 = sqrtPriceX96;
-            sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
-            (sqrtPriceX96, amountIn, amountOut, feeAmount) = SwapMath.computeSwapStep(
-                sqrtPriceX96,
-                (
-                    params.zeroForOne
-                        ? sqrtPriceNextX96 < params.sqrtPriceLimitX96
-                        : sqrtPriceNextX96 > params.sqrtPriceLimitX96
-                ) ? params.sqrtPriceLimitX96 : sqrtPriceNextX96,
-                liquidity,
-                params.amountSpecified,
-                feeMin // use min possible fee to overestimate the number of ticks we need to add liquidity to
-            );
+        // update slot0
+        uint32 lastSurgeTimestamp = slot0.lastSurgeTimestamp;
+        if (shouldSurge) {
+            // use unchecked so that if uint32 overflows we wrap around
+            // overflows are ok since we only look at differences
             unchecked {
-                if (exactInput) {
-                    amountSpecifiedRemaining -= (amountIn + feeAmount).toInt256();
-                } else {
-                    amountSpecifiedRemaining += amountOut.toInt256();
-                }
-            }
-            if (params.zeroForOne) {
-                // only need to keep track of the tick if we're swapping token0 to token1
-                // since otherwise there's no edge case to handle
-                if (sqrtPriceX96 == sqrtPriceNextX96) {
-                    unchecked {
-                        tick = params.zeroForOne ? tickNext - 1 : tickNext;
-                    }
-                } else if (sqrtPriceX96 != sqrtPriceStartX96) {
-                    tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
-                }
-            }
-
-            // break if the input has been exhausted or the price limit has been reached
-            // or if we have no reserves left to add to the next tick
-            if (
-                amountSpecifiedRemaining == 0 || sqrtPriceX96 == params.sqrtPriceLimitX96
-                    || (params.zeroForOne && reserve1InUnderlying == 0) || (!params.zeroForOne && reserve0InUnderlying == 0)
-            ) break;
-
-            // current tick liquidity insufficient, add liquidity to the next tick and repeat
-            // update tickNext, liquidity, and buffer
-            // we will add `liquidity` to the range zeroForOne ? [tickNext, tickNext + tickSpacing) : [tickNext - tickSpacing, tickNext)
-            // (tickNext here refers to the updated tickNext value)
-            int24 tickLowerToAddLiquidityTo;
-            // unchecked is safe since ticks are bounded by TickMath.MIN_TICK and TickMath.MAX_TICK
-            unchecked {
-                if (params.zeroForOne) {
-                    tickNext = boundTick(tickNext - key.tickSpacing, key.tickSpacing);
-                    tickLowerToAddLiquidityTo = tickNext;
-                } else {
-                    tickNext = boundTick(tickNext + key.tickSpacing, key.tickSpacing);
-                    // if swapping token1 to token0, updatedTickNext is the tickUpper of the range to add liquidity to
-                    // therefore we need to shift left by tickSpacing to get tickLower
-                    tickLowerToAddLiquidityTo = tickNext - key.tickSpacing;
-                }
-            }
-
-            // compute `tickNext` liquidity and store in `liquidity`
-            // `totalLiquidity` could exceed uint128 so .toUint128() is used
-            liquidity = (
-                (
-                    bunniState.liquidityDensityFunction.liquidityDensityX96(
-                        key,
-                        tickLowerToAddLiquidityTo,
-                        arithmeticMeanTick,
-                        currentTick,
-                        useTwap,
-                        bunniState.ldfParams,
-                        ldfState
-                    ) * totalLiquidity
-                ) >> 96
-            ).toUint128();
-
-            // ensure we have sufficient reserves
-            unchecked {
-                (uint160 sqrtPriceLowerX96, uint160 sqrtPriceUpperX96) = (
-                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo),
-                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo + key.tickSpacing)
-                );
-                if (params.zeroForOne) {
-                    // ensure token1 reserves are sufficient
-                    uint256 amount1ToAddToLiquidity =
-                        SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, true);
-                    if (reserve1InUnderlying < amount1ToAddToLiquidity) {
-                        // insufficient reserves
-                        // add as much as possible liquidity
-                        liquidity = LiquidityAmounts.getLiquidityForAmount1(
-                            sqrtPriceLowerX96, sqrtPriceUpperX96, reserve1InUnderlying
-                        );
-                        reserve1InUnderlying = 0;
-                    } else {
-                        // sufficient reserves
-                        // deduct amount1ToAddToLiquidity from reserve1InUnderlying
-                        reserve1InUnderlying -= amount1ToAddToLiquidity;
-                    }
-                } else {
-                    // ensure token0 reserves are sufficient
-                    uint256 amount0ToAddToLiquidity =
-                        SqrtPriceMath.getAmount0Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, true);
-                    if (reserve0InUnderlying < amount0ToAddToLiquidity) {
-                        // insufficient reserves
-                        // add as much as possible liquidity
-                        liquidity = LiquidityAmounts.getLiquidityForAmount0(
-                            sqrtPriceLowerX96, sqrtPriceUpperX96, reserve0InUnderlying
-                        );
-                        reserve0InUnderlying = 0;
-                    } else {
-                        // sufficient reserves
-                        // deduct amount0ToAddToLiquidity from reserve0InUnderlying
-                        reserve0InUnderlying -= amount0ToAddToLiquidity;
-                    }
-                }
-            }
-
-            if (liquidity != 0) {
-                // buffer add liquidity to tickLowerToAddLiquidityTo
-                buffer = _appendLiquidityDeltaToBuffer(
-                    buffer,
-                    tickLowerToAddLiquidityTo,
-                    int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
-                );
-
-                unchecked {
-                    ++bufferLength;
-                }
+                uint32 timeSinceLastSwap = uint32(block.timestamp) - slot0.lastSwapTimestamp;
+                // if more than `surgeFeeAutostartThreshold` seconds has passed since the last swap,
+                // we pretend that the surge started at `slot0.lastSwapTimestamp + surgeFeeAutostartThreshold`
+                // so that the pool never gets stuck with a high fee
+                lastSurgeTimestamp = timeSinceLastSwap >= surgeFeeAutostartThreshold
+                    ? slot0.lastSwapTimestamp + surgeFeeAutostartThreshold
+                    : uint32(block.timestamp);
             }
         }
+        slot0s[id] = Slot0({
+            sqrtPriceX96: updatedSqrtPriceX96,
+            tick: updatedTick,
+            lastSwapTimestamp: uint32(block.timestamp),
+            lastSurgeTimestamp: lastSurgeTimestamp
+        });
 
-        uint24 numTicksToRemove_ = uint24(updatedCurrentTick ? bufferLength - 1 : bufferLength);
+        (Currency inputToken, Currency outputToken) =
+            params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
 
-        // handle zeroForOne edge case where we end up at a tick belonging to the next roundedTick
-        // this is caused by tick = params.zeroForOne ? tickNext - 1 : tickNext;
-        if (
-            params.zeroForOne
-                && roundTickSingle(tick, key.tickSpacing) == roundedTick - int24(numTicksToRemove_ + 1) * key.tickSpacing
-        ) {
-            // unchecked is safe since ticks are bounded by TickMath.MIN_TICK and TickMath.MAX_TICK
-            unchecked {
-                tickNext = boundTick(tickNext - key.tickSpacing, key.tickSpacing);
-            }
-
-            // if swapping token1 to token0, updatedTickNext is the tickUpper of the range to add liquidity to
-            // therefore we need to shift left by tickSpacing to get tickLower
-            int24 tickLowerToAddLiquidityTo = tickNext;
-            // totalLiquidity could exceed uint128 so .toUint128() is used
-            liquidity = (
-                (
-                    bunniState.liquidityDensityFunction.liquidityDensityX96(
-                        key,
-                        tickLowerToAddLiquidityTo,
-                        arithmeticMeanTick,
-                        currentTick,
-                        useTwap,
-                        bunniState.ldfParams,
-                        ldfState
-                    ) * totalLiquidity
-                ) >> 96
-            ).toUint128();
-
-            // ensure we have sufficient reserves
-            unchecked {
-                (uint160 sqrtPriceLowerX96, uint160 sqrtPriceUpperX96) = (
-                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo),
-                    TickMath.getSqrtRatioAtTick(tickLowerToAddLiquidityTo + key.tickSpacing)
-                );
-                // ensure token1 reserves are sufficient
-                uint256 amount1ToAddToLiquidity =
-                    SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, true);
-                if (reserve1InUnderlying < amount1ToAddToLiquidity) {
-                    // insufficient reserves
-                    // add as much as possible liquidity
-                    liquidity = LiquidityAmounts.getLiquidityForAmount1(
-                        sqrtPriceLowerX96, sqrtPriceUpperX96, reserve1InUnderlying
-                    );
-                }
-            }
-
-            if (liquidity != 0) {
-                // buffer add liquidity to tickLowerToAddLiquidityTo
-                buffer = _appendLiquidityDeltaToBuffer(
-                    buffer,
-                    tickLowerToAddLiquidityTo,
-                    int256(uint256(liquidity)) // updatedLiquidity is uint128 so cast is safe
-                );
-
-                unchecked {
-                    ++bufferLength;
-                    ++numTicksToRemove_;
-                }
-            }
-        }
-
-        uint256 swapFee = _getFee(sqrtPriceX96, feeMeanTick, feeMin, feeMax, feeQuadraticMultiplier);
-        /// @solidity memory-safe-assembly
-        assembly {
-            swapVals := or(swapVals, shl(232, roundedTick))
-            swapVals := or(swapVals, shl(208, numTicksToRemove_))
-            swapVals := or(swapVals, shl(184, swapFee))
-            tstore(swapValsSlot, swapVals)
-        }
-
-        // update dynamic fee
-        poolManager.updateDynamicSwapFee(key);
-
-        if (bufferLength != 0) {
-            // call BunniHub to update liquidity
-            hub.hookModifyLiquidity({
-                poolKey: key,
-                liquidityDeltas: abi.decode(abi.encodePacked(uint256(0x20), bufferLength, buffer), (LiquidityDelta[])) // uint256(0x20) denotes the location of the start of the array in the calldata
-            });
-        }
-        return BunniHook.beforeSwap.selector;
-    }
-
-    /// @inheritdoc IHooks
-    function afterSwap(
-        address,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        BalanceDelta delta,
-        bytes calldata
-    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
-        // withdraw liquidity from inactive ticks
-        uint256 swapValsSlot = SWAP_VALS_SLOT;
-        int24 roundedTick;
-        uint24 numTicksToRemove_;
+        // charge LP fee and hook fee
+        // we do this by reducing the output token amount
         uint24 swapFee;
+        uint256 hookFeesAmount;
+        bool exactIn = params.amountSpecified >= 0;
+        {
+            swapFee = _getFee(
+                updatedSqrtPriceX96,
+                arithmeticMeanTick,
+                lastSurgeTimestamp,
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                surgeFee,
+                surgeFeeHalfLife
+            );
+            uint256 swapFeeAmount;
 
-        /// @solidity memory-safe-assembly
-        assembly {
-            let swapVals := tload(swapValsSlot)
-            roundedTick := shr(232, swapVals)
-            numTicksToRemove_ := shr(232, shl(24, swapVals))
-            swapFee := shr(232, shl(48, swapVals))
-            tstore(swapValsSlot, 0)
-        }
-
-        // no clue why but this is needed to make the compiler happy about the tload/tstore opcodes
-        // replacing tstore/tload with sstore/sload works so it's probably a compiler issue
-        console2.log(swapFee);
-
-        if (numTicksToRemove_ != 0) {
-            PoolId id = key.toId();
-            LiquidityDelta[] memory liquidityDeltas = new LiquidityDelta[](numTicksToRemove_);
-            for (uint256 i; i < numTicksToRemove_; i++) {
-                // buffer remove liquidity
-                liquidityDeltas[i] = LiquidityDelta({
-                    tickLower: roundedTick,
-                    delta: -uint256(poolManager.getLiquidity(id, address(hub), roundedTick, roundedTick + key.tickSpacing)).toInt256(
-                    )
-                });
-
-                unchecked {
-                    roundedTick = boundTick(
-                        params.zeroForOne ? roundedTick - key.tickSpacing : roundedTick + key.tickSpacing,
-                        key.tickSpacing
-                    );
-                }
-            }
-
-            // call BunniHub to remove liquidity
-            hub.hookModifyLiquidity({poolKey: key, liquidityDeltas: liquidityDeltas});
-        }
-
-        // charge hook fees by minting claim tokens to the hook
-        uint256 hookFeesModifier_ = _hookFeesModifier;
-        if (hookFeesModifier_ != 0) {
-            // fee is taken in output token for exact input swaps and input token for exact output swaps
-            Currency currency;
-            int256 amount;
-            bool exactInput = params.amountSpecified > 0;
-            if (exactInput) {
-                // exact input swap
-                // take fee by minting output currency claim tokens
-                if (params.zeroForOne) {
-                    currency = key.currency1;
-                    amount = -delta.amount1();
-                } else {
-                    currency = key.currency0;
-                    amount = -delta.amount0();
-                }
+            if (exactIn) {
+                // deduct swap fee from output
+                swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+                outputAmount -= swapFeeAmount;
             } else {
-                // exact output swap
-                // take fee by minting input currency claim tokens
-                if (params.zeroForOne) {
-                    currency = key.currency0;
-                    amount = delta.amount0();
-                } else {
-                    currency = key.currency1;
-                    amount = delta.amount1();
-                }
+                // increase input amount
+                // need to modify fee rate to maintain the same average price as exactIn case
+                // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
+                swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
+                inputAmount += swapFeeAmount;
             }
-            if (amount > 0) {
-                uint256 hookFeeAmount = uint256(amount).mulDiv(swapFee, SWAP_FEE_BASE).mulWad(hookFeesModifier_);
-                if (hookFeeAmount != 0) {
-                    poolManager.mint(address(this), currency.toId(), hookFeeAmount);
-                }
-            }
+
+            uint96 hookFeesModifier = _hookFeesModifier;
+            hookFeesAmount = swapFeeAmount.mulDivUp(hookFeesModifier, WAD);
         }
 
-        return BunniHook.afterSwap.selector;
+        // take input by minting claim tokens to hook
+        poolManager.mint(address(this), inputToken.toId(), inputAmount);
+
+        // call hub to handle swap
+        // - pull input claim tokens from hook
+        // - push output tokens to pool manager and mint claim tokens to hook
+        // - update raw token balances
+        if (exactIn) {
+            // need to add hookFeesAmount to output so that we can get the hook fees
+            hub.hookHandleSwap(key, params.zeroForOne, inputAmount, outputAmount + hookFeesAmount);
+        } else {
+            // need to subtract hookFeesAmount from input so that we can keep the hook fees
+            hub.hookHandleSwap(key, params.zeroForOne, inputAmount - hookFeesAmount, outputAmount);
+        }
+
+        // burn output claim tokens
+        poolManager.burn(address(this), outputToken.toId(), outputAmount);
+
+        // emit swap event
+        unchecked {
+            emit Swap(
+                id,
+                sender,
+                params.zeroForOne,
+                inputAmount,
+                outputAmount,
+                updatedSqrtPriceX96,
+                updatedTick,
+                swapFee,
+                totalLiquidity
+            );
+        }
+
+        return Hooks.NO_OP_SELECTOR;
     }
 
     /// -----------------------------------------------------------------------
@@ -757,21 +546,36 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
     function _getFee(
         uint160 postSwapSqrtPriceX96,
         int24 arithmeticMeanTick,
+        uint32 lastSurgeTimestamp,
         uint24 feeMin,
         uint24 feeMax,
-        uint24 feeQuadraticMultiplier
-    ) internal pure returns (uint24) {
+        uint24 feeQuadraticMultiplier,
+        uint24 surgeFee,
+        uint16 surgeFeeHalfLife
+    ) internal view returns (uint24 fee) {
+        // compute surge fee
+        // surge fee gets applied after the LDF shifts (if it's dynamic)
+        unchecked {
+            uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
+            fee = uint24(
+                uint256(surgeFee).mulWadUp(
+                    uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
+                )
+            );
+        }
+
         // special case for fixed fee pools
-        if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return feeMin;
+        if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));
 
         uint256 ratio =
             uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
+        if (ratio > MAX_SWAP_FEE_RATIO) ratio = MAX_SWAP_FEE_RATIO;
         ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
-        uint256 delta = stdMath.delta(ratio, SWAP_FEE_BASE);
+        uint256 delta = dist(ratio, SWAP_FEE_BASE);
         // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
         unchecked {
             uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);
-            return uint24(min(feeMin + quadraticTerm, feeMax));
+            return uint24(FixedPointMathLib.max(fee, FixedPointMathLib.min(feeMin + quadraticTerm, feeMax)));
         }
     }
 
@@ -789,23 +593,44 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
         arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 
+    /// @dev Decodes hookParams into params used by this hook
+    /// @param hookParams The hook params raw bytes32
+    /// @return feeMin The minimum swap fee, 6 decimals
+    /// @return feeMax The maximum swap fee (may be exceeded if surge fee is active), 6 decimals
+    /// @return feeQuadraticMultiplier The quadratic multiplier for the dynamic swap fee formula, 6 decimals
+    /// @return feeTwapSecondsAgo The time window for the TWAP used by the dynamic swap fee formula
+    /// @return surgeFee The max surge swap fee, 6 decimals
+    /// @return surgeFeeHalfLife The half-life of the surge fee in seconds. The surge fee decays exponentially, and the half-life is the time it takes for the surge fee to decay to half its value.
+    /// @return surgeFeeAutostartThreshold Time after a swap when the surge fee exponential decay autostarts, in seconds. The autostart avoids the pool being stuck on a high fee.
+    /// @return vaultSurgeThreshold0 The threshold for the vault0 share price change to trigger the surge fee. Only used if both vaults are set.
+    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
+    /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
+    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
     function _decodeParams(bytes32 hookParams)
         internal
         pure
         returns (
-            uint8 compoundThreshold,
             uint24 feeMin,
             uint24 feeMax,
             uint24 feeQuadraticMultiplier,
-            uint24 feeTwapSecondsAgo
+            uint24 feeTwapSecondsAgo,
+            uint24 surgeFee,
+            uint16 surgeFeeHalfLife,
+            uint16 surgeFeeAutostartThreshold,
+            uint16 vaultSurgeThreshold0,
+            uint16 vaultSurgeThreshold1
         )
     {
-        // | compoundThreshold - 1 byte | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes |
-        compoundThreshold = uint8(bytes1(hookParams));
-        feeMin = uint24(bytes3(hookParams << 8));
-        feeMax = uint24(bytes3(hookParams << 32));
-        feeQuadraticMultiplier = uint24(bytes3(hookParams << 56));
-        feeTwapSecondsAgo = uint24(bytes3(hookParams << 80));
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes |
+        feeMin = uint24(bytes3(hookParams));
+        feeMax = uint24(bytes3(hookParams << 24));
+        feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
+        feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
+        surgeFee = uint24(bytes3(hookParams << 96));
+        surgeFeeHalfLife = uint16(bytes2(hookParams << 120));
+        surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
+        vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
+        vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
     }
 
     function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {
@@ -814,30 +639,5 @@ contract BunniHook is BaseHook, Ownable, IBunniHook {
             state.index, uint32(block.timestamp), tick, state.cardinality, state.cardinalityNext
         );
         (_states[id].index, _states[id].cardinality) = (updatedIndex, updatedCardinality);
-    }
-
-    function _appendLiquidityDeltaToBuffer(bytes memory buffer, int24 tickLower, int256 liquidityDelta)
-        internal
-        pure
-        returns (bytes memory)
-    {
-        return bytes.concat(buffer, abi.encode(LiquidityDelta({tickLower: tickLower, delta: liquidityDelta})));
-    }
-
-    function _percentDelta(uint256 a, uint256 b) internal pure returns (uint256 delta) {
-        if (b == 0) return a != 0 ? 1e18 : 0;
-        return stdMath.percentDelta(a, b);
-    }
-
-    function _beforeModifyPosition(address caller, PoolKey calldata key, bytes calldata hookData) internal {
-        if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from modifying a position using this hook
-
-        // update TWAP oracle
-        bool shouldUpdateOracle = abi.decode(hookData, (bool));
-        if (shouldUpdateOracle) {
-            PoolId id = key.toId();
-            (, int24 tick,) = poolManager.getSlot0(id);
-            _updateOracle(id, tick);
-        }
     }
 }
