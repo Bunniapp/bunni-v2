@@ -277,6 +277,38 @@ abstract contract AmAmm {
         _transferBidToken(id, address(this), manager, refund);
     }
 
+    /// @notice Claims the accrued fees of a manager. Only callable by the manager.
+    /// @param manager The address of the manager
+    /// @param currency The currency of the fees
+    /// @param recipient The address of the recipient
+    /// @return fees The amount of fees claimed
+    function claimFees(address manager, Currency currency, address recipient) external virtual returns (uint256 fees) {
+        /// -----------------------------------------------------------------------
+        /// Validation
+        /// -----------------------------------------------------------------------
+
+        if (msg.sender != manager) {
+            revert AmAmm__Unauthorized();
+        }
+
+        /// -----------------------------------------------------------------------
+        /// State updates
+        /// -----------------------------------------------------------------------
+
+        fees = _fees[manager][currency];
+        if (fees == 0) {
+            return 0;
+        }
+        delete _fees[manager][currency];
+
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        // transfer fees to manager
+        _transferFeeToken(currency, recipient, fees);
+    }
+
     /// -----------------------------------------------------------------------
     /// Virtual functions
     /// -----------------------------------------------------------------------
@@ -294,6 +326,8 @@ abstract contract AmAmm {
     function _accrueFees(address manager, Currency currency, uint256 amount) internal virtual {
         _fees[manager][currency] += amount;
     }
+
+    function _transferFeeToken(Currency currency, address to, uint256 amount) internal virtual;
 
     /// -----------------------------------------------------------------------
     /// Internal helpers
