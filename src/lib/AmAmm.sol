@@ -9,6 +9,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
+import "./Constants.sol";
 import {IAmAmm} from "../interfaces/IAmAmm.sol";
 
 /// @title AmAmm
@@ -26,20 +27,9 @@ abstract contract AmAmm is IAmAmm {
     /// Constants
     /// -----------------------------------------------------------------------
 
-    uint96 internal constant K = 24; // 24 windows (hours)
+    uint72 internal constant K = 24; // 24 windows (hours)
     uint256 internal constant EPOCH_SIZE = 1 hours;
     uint256 internal constant MIN_BID_MULTIPLIER = 1.1e18; // 10%
-
-    /// -----------------------------------------------------------------------
-    /// Structs
-    /// -----------------------------------------------------------------------
-
-    struct Bid {
-        address manager;
-        uint96 epoch; // epoch when the bid was created / last charged rent
-        uint128 rent; // rent per hour
-        uint128 deposit; // rent deposit amount
-    }
 
     /// -----------------------------------------------------------------------
     /// Storage variables
@@ -47,6 +37,8 @@ abstract contract AmAmm is IAmAmm {
 
     mapping(PoolId id => Bid) internal _topBids;
     mapping(PoolId id => Bid) internal _nextBids;
+    mapping(PoolId id => uint72) internal _lastUpdatedEpoch;
+    mapping(Currency currency => uint256) internal _totalFees;
     mapping(address manager => mapping(PoolId id => uint256)) internal _refunds;
     mapping(address manager => mapping(Currency currency => uint256)) internal _fees;
 
@@ -55,7 +47,7 @@ abstract contract AmAmm is IAmAmm {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IAmAmm
-    function bid(PoolId id, address manager, uint128 rent, uint128 deposit) external virtual override {
+    function bid(PoolId id, address manager, uint24 swapFee, uint128 rent, uint128 deposit) external virtual override {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
@@ -78,9 +70,11 @@ abstract contract AmAmm is IAmAmm {
         // - bid needs to be greater than top bid and next bid
         // - deposit needs to cover the rent for K hours
         // - deposit needs to be a multiple of rent
+        // - swap fee needs to be <= _maxSwapFee(id)
         if (
             manager == address(0) || rent <= _topBids[id].rent.mulWad(MIN_BID_MULTIPLIER)
                 || rent <= _nextBids[id].rent.mulWad(MIN_BID_MULTIPLIER) || deposit < rent * K || deposit % rent != 0
+                || swapFee > _maxSwapFee(id)
         ) {
             revert AmAmm__InvalidBid();
         }
@@ -89,14 +83,14 @@ abstract contract AmAmm is IAmAmm {
         _refunds[_nextBids[id].manager][id] += _nextBids[id].deposit;
 
         // update next bid
-        _nextBids[id] = Bid(manager, _getEpoch(block.timestamp), rent, deposit);
+        _nextBids[id] = Bid(manager, _getEpoch(block.timestamp), swapFee, rent, deposit);
 
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
 
         // transfer deposit from msg.sender to this contract
-        _transferBidToken(id, msgSender, address(this), deposit);
+        _pullBidToken(id, msgSender, deposit);
     }
 
     /// @inheritdoc IAmAmm
@@ -143,7 +137,7 @@ abstract contract AmAmm is IAmAmm {
         /// -----------------------------------------------------------------------
 
         // transfer amount to recipient
-        _transferBidToken(id, address(this), recipient, amount);
+        _pushBidToken(id, recipient, amount);
     }
 
     /// @inheritdoc IAmAmm
@@ -190,7 +184,7 @@ abstract contract AmAmm is IAmAmm {
         /// -----------------------------------------------------------------------
 
         // transfer amount to recipient
-        _transferBidToken(id, address(this), recipient, amount);
+        _pushBidToken(id, recipient, amount);
     }
 
     /// @inheritdoc IAmAmm
@@ -234,16 +228,18 @@ abstract contract AmAmm is IAmAmm {
         /// -----------------------------------------------------------------------
 
         // transfer nextBid.deposit to recipient
-        _transferBidToken(id, address(this), recipient, nextBid.deposit);
+        _pushBidToken(id, recipient, nextBid.deposit);
 
         return nextBid.deposit;
     }
 
     /// @inheritdoc IAmAmm
-    function claimRefund(PoolId id, address manager) external virtual override returns (uint256 refund) {
+    function claimRefund(PoolId id, address recipient) external virtual override returns (uint256 refund) {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
+
+        address msgSender = LibMulticaller.senderOrSigner();
 
         if (!_amAmmEnabled(id)) {
             revert AmAmm__NotEnabled();
@@ -256,53 +252,104 @@ abstract contract AmAmm is IAmAmm {
         // update state machine
         _updateAmAmm(id);
 
-        refund = _refunds[manager][id];
+        refund = _refunds[msgSender][id];
         if (refund == 0) {
             return 0;
         }
-        delete _refunds[manager][id];
+        delete _refunds[msgSender][id];
 
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
 
-        // transfer refund to manager
-        _transferBidToken(id, address(this), manager, refund);
+        // transfer refund to recipient
+        _pushBidToken(id, recipient, refund);
     }
 
     /// @inheritdoc IAmAmm
-    function claimFees(address manager, Currency currency, address recipient)
-        external
-        virtual
-        override
-        returns (uint256 fees)
-    {
-        /// -----------------------------------------------------------------------
-        /// Validation
-        /// -----------------------------------------------------------------------
-
+    function claimFees(Currency currency, address recipient) external virtual override returns (uint256 fees) {
         address msgSender = LibMulticaller.senderOrSigner();
-
-        if (msgSender != manager) {
-            revert AmAmm__Unauthorized();
-        }
 
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
 
-        fees = _fees[manager][currency];
+        // update manager fees
+        fees = _fees[msgSender][currency];
         if (fees == 0) {
             return 0;
         }
-        delete _fees[manager][currency];
+        delete _fees[msgSender][currency];
+
+        // update total fees
+        unchecked {
+            // safe because _totalFees[currency] is the sum of all managers' fees
+            _totalFees[currency] -= fees;
+        }
 
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
 
-        // transfer fees to manager
+        // transfer fees to recipient
         _transferFeeToken(currency, recipient, fees);
+    }
+
+    /// @inheritdoc IAmAmm
+    function setBidSwapFee(PoolId id, uint24 swapFee, bool topBid) external virtual override {
+        address msgSender = LibMulticaller.senderOrSigner();
+
+        if (!_amAmmEnabled(id)) {
+            revert AmAmm__NotEnabled();
+        }
+
+        Bid storage relevantBid = topBid ? _topBids[id] : _nextBids[id];
+
+        if (msgSender != relevantBid.manager) {
+            revert AmAmm__Unauthorized();
+        }
+
+        if (swapFee > _maxSwapFee(id)) {
+            revert AmAmm__InvalidBid();
+        }
+
+        relevantBid.swapFee = swapFee;
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Getters
+    /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IAmAmm
+    function getTopBid(PoolId id) external view override returns (Bid memory) {
+        return _topBids[id];
+    }
+
+    /// @inheritdoc IAmAmm
+    function getTopBidWrite(PoolId id) external override returns (Bid memory) {
+        _updateAmAmm(id);
+        return _topBids[id];
+    }
+
+    /// @inheritdoc IAmAmm
+    function getNextBid(PoolId id) external view override returns (Bid memory) {
+        return _nextBids[id];
+    }
+
+    /// @inheritdoc IAmAmm
+    function getNextBidWrite(PoolId id) external override returns (Bid memory) {
+        _updateAmAmm(id);
+        return _nextBids[id];
+    }
+
+    /// @inheritdoc IAmAmm
+    function getRefund(address manager, PoolId id) external view override returns (uint256) {
+        return _refunds[manager][id];
+    }
+
+    /// @inheritdoc IAmAmm
+    function getFees(address manager, Currency currency) external view override returns (uint256) {
+        return _fees[manager][currency];
     }
 
     /// -----------------------------------------------------------------------
@@ -312,25 +359,40 @@ abstract contract AmAmm is IAmAmm {
     /// @dev Returns whether the am-AMM is enabled for a given pool
     function _amAmmEnabled(PoolId id) internal virtual returns (bool);
 
-    /// @dev Burns bid tokens
+    /// @dev Returns the maximum swap fee for a given pool
+    function _maxSwapFee(PoolId id) internal view virtual returns (uint24);
+
+    /// @dev Burns bid tokens from address(this)
     function _burnBidToken(PoolId id, uint256 amount) internal virtual;
 
-    /// @dev Transfers bid tokens
-    function _transferBidToken(PoolId id, address from, address to, uint256 amount) internal virtual;
+    /// @dev Transfers bid tokens from an address that's not address(this) to address(this)
+    function _pullBidToken(PoolId id, address from, uint256 amount) internal virtual;
+
+    /// @dev Transfers bid tokens from address(this) to an address that's not address(this)
+    function _pushBidToken(PoolId id, address to, uint256 amount) internal virtual;
+
+    /// @dev Transfers accrued fees from address(this)
+    function _transferFeeToken(Currency currency, address to, uint256 amount) internal virtual;
 
     /// @dev Accrues swap fees to the manager
     function _accrueFees(address manager, Currency currency, uint256 amount) internal virtual {
         _fees[manager][currency] += amount;
+        _totalFees[currency] += amount;
     }
-
-    function _transferFeeToken(Currency currency, address to, uint256 amount) internal virtual;
 
     /// -----------------------------------------------------------------------
     /// Internal helpers
     /// -----------------------------------------------------------------------
 
     /// @dev Charges rent and updates the top and next bids for a given pool
-    function _updateAmAmm(PoolId id) internal virtual returns (address manager) {
+    function _updateAmAmm(PoolId id) internal virtual returns (address manager, uint24 swapFee) {
+        uint72 currentEpoch = _getEpoch(block.timestamp);
+
+        // early return if the pool has already been updated in this epoch
+        if (_lastUpdatedEpoch[id] == currentEpoch) {
+            return (_topBids[id].manager, _topBids[id].swapFee);
+        }
+
         Bid memory topBid = _topBids[id];
         Bid memory nextBid = _nextBids[id];
         bool updatedTopBid;
@@ -338,7 +400,6 @@ abstract contract AmAmm is IAmAmm {
         uint256 rentCharged;
 
         // run state machine
-        uint96 currentEpoch = _getEpoch(block.timestamp);
         {
             bool stepHasUpdatedTopBid;
             bool stepHasUpdatedNextBid;
@@ -365,12 +426,15 @@ abstract contract AmAmm is IAmAmm {
             _nextBids[id] = nextBid;
         }
 
+        // update last updated epoch
+        _lastUpdatedEpoch[id] = currentEpoch;
+
         // burn rent charged
         if (rentCharged != 0) {
             _burnBidToken(id, rentCharged);
         }
 
-        return topBid.manager;
+        return (topBid.manager, topBid.swapFee);
     }
 
     /// @dev Returns the updated top and next bids after a single state transition
@@ -408,7 +472,7 @@ abstract contract AmAmm is IAmAmm {
     /// │               │                                  │               │
     /// │               │                                  │               │
     /// └─────bid(r)────┘                                  └─────bid(r)────┘
-    function _stateTransition(uint96 currentEpoch, PoolId id, Bid memory topBid, Bid memory nextBid)
+    function _stateTransition(uint72 currentEpoch, PoolId id, Bid memory topBid, Bid memory nextBid)
         internal
         virtual
         returns (Bid memory, Bid memory, bool updatedTopBid, bool updatedNextBid, uint256 rentCharged)
@@ -417,7 +481,7 @@ abstract contract AmAmm is IAmAmm {
             if (topBid.manager != address(0)) {
                 // State B
                 // charge rent from top bid
-                uint96 epochsPassed;
+                uint72 epochsPassed;
                 unchecked {
                     // unchecked so that if epoch ever overflows, we simply wrap around
                     epochsPassed = currentEpoch - topBid.epoch;
@@ -428,7 +492,7 @@ abstract contract AmAmm is IAmAmm {
                     // the top bid's deposit has been depleted
                     rentCharged = topBid.deposit;
 
-                    topBid = Bid(address(0), 0, 0, 0);
+                    topBid = Bid(address(0), 0, 0, 0, 0);
 
                     updatedTopBid = true;
                 } else if (rentOwed != 0) {
@@ -437,7 +501,7 @@ abstract contract AmAmm is IAmAmm {
                     rentCharged = rentOwed;
 
                     topBid.deposit -= rentOwed.toUint128();
-                    topBid.epoch = uint96(currentEpoch);
+                    topBid.epoch = uint72(currentEpoch);
 
                     updatedTopBid = true;
                 }
@@ -447,7 +511,7 @@ abstract contract AmAmm is IAmAmm {
                 // State C
                 // check if K epochs have passed since the next bid was submitted
                 // if so, promote next bid to top bid
-                uint96 nextBidStartEpoch;
+                uint72 nextBidStartEpoch;
                 unchecked {
                     // unchecked so that if epoch ever overflows, we simply wrap around
                     nextBidStartEpoch = nextBid.epoch + K;
@@ -457,7 +521,7 @@ abstract contract AmAmm is IAmAmm {
                     // promote next bid to top bid
                     topBid = nextBid;
                     topBid.epoch = nextBidStartEpoch;
-                    nextBid = Bid(address(0), 0, 0, 0);
+                    nextBid = Bid(address(0), 0, 0, 0, 0);
 
                     updatedTopBid = true;
                     updatedNextBid = true;
@@ -465,11 +529,11 @@ abstract contract AmAmm is IAmAmm {
             } else {
                 // State D
                 // we charge rent from the top bid only until K epochs after the next bid was submitted
-                uint96 epochsPassed;
+                uint72 epochsPassed;
                 unchecked {
                     // unchecked so that if epoch ever overflows, we simply wrap around
                     epochsPassed =
-                        uint96(FixedPointMathLib.min(currentEpoch - topBid.epoch, nextBid.epoch + K - topBid.epoch));
+                        uint72(FixedPointMathLib.min(currentEpoch - topBid.epoch, nextBid.epoch + K - topBid.epoch));
                 }
                 uint256 rentOwed = epochsPassed * topBid.rent;
                 if (rentOwed >= topBid.deposit) {
@@ -481,9 +545,9 @@ abstract contract AmAmm is IAmAmm {
                     topBid = nextBid;
                     unchecked {
                         // unchecked so that if epoch ever overflows, we simply wrap around
-                        topBid.epoch = uint96(topBid.deposit / topBid.rent) + topBid.epoch;
+                        topBid.epoch = uint72(topBid.deposit / topBid.rent) + topBid.epoch;
                     }
-                    nextBid = Bid(address(0), 0, 0, 0);
+                    nextBid = Bid(address(0), 0, 0, 0, 0);
 
                     updatedTopBid = true;
                     updatedNextBid = true;
@@ -502,7 +566,7 @@ abstract contract AmAmm is IAmAmm {
 
                     // check if K epochs have passed since the next bid was submitted
                     // if so, promote next bid to top bid
-                    uint96 nextBidStartEpoch;
+                    uint72 nextBidStartEpoch;
                     unchecked {
                         // unchecked so that if epoch ever overflows, we simply wrap around
                         nextBidStartEpoch = nextBid.epoch + K;
@@ -515,7 +579,7 @@ abstract contract AmAmm is IAmAmm {
                         // promote next bid to top bid
                         topBid = nextBid;
                         topBid.epoch = nextBidStartEpoch;
-                        nextBid = Bid(address(0), 0, 0, 0);
+                        nextBid = Bid(address(0), 0, 0, 0, 0);
 
                         updatedTopBid = true;
                         updatedNextBid = true;
@@ -527,7 +591,7 @@ abstract contract AmAmm is IAmAmm {
         return (topBid, nextBid, updatedTopBid, updatedNextBid, rentCharged);
     }
 
-    function _getEpoch(uint256 timestamp) internal pure returns (uint96) {
-        return uint96(timestamp / EPOCH_SIZE);
+    function _getEpoch(uint256 timestamp) internal pure returns (uint72) {
+        return uint72(timestamp / EPOCH_SIZE);
     }
 }

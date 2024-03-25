@@ -223,6 +223,15 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
 
+    /// @notice The PoolState struct of a given pool with only the immutable params filled out.
+    function poolParams(PoolId poolId) external view returns (PoolState memory);
+
+    /// @notice The BunniToken of a given pool. address(0) if the pool is not a Bunni pool.
+    function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken);
+
+    /// @notice The params of the given Bunni pool's hook. bytes32(0) if the pool is not a Bunni pool.
+    function hookParams(PoolId poolId) external view returns (bytes32);
+
     /// @notice The nonce of the given Bunni subspace.
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
 

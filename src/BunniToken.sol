@@ -39,6 +39,10 @@ contract BunniToken is IBunniToken, ERC20, Clone {
         _burn(from, amount);
     }
 
+    function burn(uint256 amount) external override {
+        _burn(msg.sender, amount);
+    }
+
     function name() public view override(ERC20, IERC20) returns (string memory) {
         return string(abi.encodePacked("Bunni ", _symbol(token0()), "/", _symbol(token1()), " LP"));
     }

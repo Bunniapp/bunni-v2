@@ -12,12 +12,20 @@ interface IAmAmm {
     error AmAmm__Unauthorized();
     error AmAmm__InvalidDepositAmount();
 
+    struct Bid {
+        address manager;
+        uint72 epoch; // epoch when the bid was created / last charged rent
+        uint24 swapFee; // the swap fee of the pool set by this manager
+        uint128 rent; // rent per hour
+        uint128 deposit; // rent deposit amount
+    }
+
     /// @notice Places a bid to become the manager of a pool
     /// @param id The pool id
     /// @param manager The address of the manager
     /// @param rent The rent per epoch
     /// @param deposit The deposit amount, must be a multiple of rent and cover rent for >=K epochs
-    function bid(PoolId id, address manager, uint128 rent, uint128 deposit) external;
+    function bid(PoolId id, address manager, uint24 swapFee, uint128 rent, uint128 deposit) external;
 
     /// @notice Withdraws from the deposit of the top bid. Only callable by topBids[id].manager. Reverts if D_top / R_top < K.
     /// @param id The pool id
@@ -37,16 +45,43 @@ interface IAmAmm {
     /// @return refund The amount of refund claimed
     function cancelNextBid(PoolId id, address recipient) external returns (uint256 refund);
 
-    /// @notice Claims the refundable deposit of a manager
+    /// @notice Claims the refundable deposit of a pool owed to msg.sender.
     /// @param id The pool id
-    /// @param manager The address of the manager
+    /// @param recipient The address of the manager
     /// @return refund The amount of refund claimed
-    function claimRefund(PoolId id, address manager) external returns (uint256 refund);
+    function claimRefund(PoolId id, address recipient) external returns (uint256 refund);
 
-    /// @notice Claims the accrued fees of a manager. Only callable by the manager.
-    /// @param manager The address of the manager
+    /// @notice Claims the accrued fees of msg.sender.
     /// @param currency The currency of the fees
     /// @param recipient The address of the recipient
     /// @return fees The amount of fees claimed
-    function claimFees(address manager, Currency currency, address recipient) external returns (uint256 fees);
+    function claimFees(Currency currency, address recipient) external returns (uint256 fees);
+
+    /// @notice Sets the swap fee of a pool. Only callable by the manager of either the top bid or the next bid.
+    /// @param id The pool id
+    /// @param swapFee The new swap fee
+    /// @param topBid True if the top bid manager is setting the fee, false if the next bid manager is setting the fee
+    function setBidSwapFee(PoolId id, uint24 swapFee, bool topBid) external;
+
+    /// @notice Gets the top bid of a pool
+    function getTopBid(PoolId id) external view returns (Bid memory);
+
+    /// @notice Updates the am-AMM state of a pool and then gets the top bid
+    function getTopBidWrite(PoolId id) external returns (Bid memory);
+
+    /// @notice Gets the next bid of a pool
+    function getNextBid(PoolId id) external view returns (Bid memory);
+
+    /// @notice Updates the am-AMM state of a pool and then gets the next bid
+    function getNextBidWrite(PoolId id) external returns (Bid memory);
+
+    /// @notice Gets the refundable deposit of a pool
+    /// @param manager The address of the manager
+    /// @param id The pool id
+    function getRefund(address manager, PoolId id) external view returns (uint256);
+
+    /// @notice Gets the fees accrued by a manager
+    /// @param manager The address of the manager
+    /// @param currency The currency of the fees
+    function getFees(address manager, Currency currency) external view returns (uint256);
 }
