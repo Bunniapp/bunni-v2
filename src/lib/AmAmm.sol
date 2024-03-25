@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
+
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
@@ -70,6 +72,8 @@ abstract contract AmAmm {
         /// Validation
         /// -----------------------------------------------------------------------
 
+        address msgSender = LibMulticaller.senderOrSigner();
+
         if (!_amAmmEnabled(id)) {
             revert AmAmm__NotEnabled();
         }
@@ -104,16 +108,19 @@ abstract contract AmAmm {
         /// -----------------------------------------------------------------------
 
         // transfer deposit from msg.sender to this contract
-        _transferBidToken(id, msg.sender, address(this), deposit);
+        _transferBidToken(id, msgSender, address(this), deposit);
     }
 
     /// @notice Withdraws from the deposit of the top bid. Only callable by topBids[id].manager. Reverts if D_top / R_top < K.
     /// @param id The pool id
     /// @param amount The amount to withdraw, must be a multiple of rent and leave D_top / R_top >= K
-    function withdrawTopBid(PoolId id, uint128 amount) external virtual {
+    /// @param recipient The address of the recipient
+    function withdrawFromTopBid(PoolId id, uint128 amount, address recipient) external virtual {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
+
+        address msgSender = LibMulticaller.senderOrSigner();
 
         if (!_amAmmEnabled(id)) {
             revert AmAmm__NotEnabled();
@@ -129,7 +136,7 @@ abstract contract AmAmm {
         Bid memory topBid = _topBids[id];
 
         // only the top bid manager can withdraw from the top bid
-        if (msg.sender != topBid.manager) {
+        if (msgSender != topBid.manager) {
             revert AmAmm__Unauthorized();
         }
 
@@ -150,17 +157,20 @@ abstract contract AmAmm {
         /// External calls
         /// -----------------------------------------------------------------------
 
-        // transfer amount to msg.sender
-        _transferBidToken(id, address(this), msg.sender, amount);
+        // transfer amount to recipient
+        _transferBidToken(id, address(this), recipient, amount);
     }
 
     /// @notice Withdraws from the deposit of the next bid. Only callable by nextBids[id].manager. Reverts if D_next / R_top < K.
     /// @param id The pool id
     /// @param amount The amount to withdraw, must be a multiple of rent and leave D_next / R_next >= K
-    function withdrawNextBid(PoolId id, uint128 amount) external virtual {
+    /// @param recipient The address of the recipient
+    function withdrawFromNextBid(PoolId id, uint128 amount, address recipient) external virtual {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
+
+        address msgSender = LibMulticaller.senderOrSigner();
 
         if (!_amAmmEnabled(id)) {
             revert AmAmm__NotEnabled();
@@ -176,7 +186,7 @@ abstract contract AmAmm {
         Bid memory nextBid = _nextBids[id];
 
         // only the next bid manager can withdraw from the next bid
-        if (msg.sender != nextBid.manager) {
+        if (msgSender != nextBid.manager) {
             revert AmAmm__Unauthorized();
         }
 
@@ -197,16 +207,20 @@ abstract contract AmAmm {
         /// External calls
         /// -----------------------------------------------------------------------
 
-        // transfer amount to msg.sender
-        _transferBidToken(id, address(this), msg.sender, amount);
+        // transfer amount to recipient
+        _transferBidToken(id, address(this), recipient, amount);
     }
 
     /// @notice Cancels the next bid. Only callable by nextBids[id].manager. Reverts if D_top / R_top < K.
     /// @param id The pool id
-    function cancelNextBid(PoolId id) external virtual {
+    /// @param recipient The address of the recipient
+    /// @return refund The amount of refund claimed
+    function cancelNextBid(PoolId id, address recipient) external virtual returns (uint256 refund) {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
+
+        address msgSender = LibMulticaller.senderOrSigner();
 
         if (!_amAmmEnabled(id)) {
             revert AmAmm__NotEnabled();
@@ -222,7 +236,7 @@ abstract contract AmAmm {
         Bid memory nextBid = _nextBids[id];
 
         // only the next bid manager can withdraw from the next bid
-        if (msg.sender != nextBid.manager) {
+        if (msgSender != nextBid.manager) {
             revert AmAmm__Unauthorized();
         }
 
@@ -240,14 +254,17 @@ abstract contract AmAmm {
         /// External calls
         /// -----------------------------------------------------------------------
 
-        // transfer nextBid.deposit to msg.sender
-        _transferBidToken(id, address(this), msg.sender, nextBid.deposit);
+        // transfer nextBid.deposit to recipient
+        _transferBidToken(id, address(this), recipient, nextBid.deposit);
+
+        return nextBid.deposit;
     }
 
     /// @notice Claims the refundable deposit of a manager
     /// @param id The pool id
     /// @param manager The address of the manager
-    function claimRefund(PoolId id, address manager) external virtual {
+    /// @return refund The amount of refund claimed
+    function claimRefund(PoolId id, address manager) external virtual returns (uint256 refund) {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
@@ -263,9 +280,9 @@ abstract contract AmAmm {
         // update state machine
         _updateAmAmm(id);
 
-        uint256 refund = _refunds[manager][id];
+        refund = _refunds[manager][id];
         if (refund == 0) {
-            return;
+            return 0;
         }
         delete _refunds[manager][id];
 
@@ -287,7 +304,9 @@ abstract contract AmAmm {
         /// Validation
         /// -----------------------------------------------------------------------
 
-        if (msg.sender != manager) {
+        address msgSender = LibMulticaller.senderOrSigner();
+
+        if (msgSender != manager) {
             revert AmAmm__Unauthorized();
         }
 
