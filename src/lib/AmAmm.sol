@@ -357,7 +357,7 @@ abstract contract AmAmm is IAmAmm {
     /// -----------------------------------------------------------------------
 
     /// @dev Returns whether the am-AMM is enabled for a given pool
-    function _amAmmEnabled(PoolId id) internal virtual returns (bool);
+    function _amAmmEnabled(PoolId id) internal view virtual returns (bool);
 
     /// @dev Returns the maximum swap fee for a given pool
     function _maxSwapFee(PoolId id) internal view virtual returns (uint24);
@@ -454,8 +454,8 @@ abstract contract AmAmm is IAmAmm {
     ///                 │                        │                         │              │
     ///                 │                        │                         │              │
     ///                 │                        │                         │           after K
-    ///              bid(r)                  after K                    bid(r)        blocks or
-    ///                 │                     blocks                       │            after
+    ///              bid(r)                  after K                    bid(r)        epochs or
+    ///                 │                     epochs                       │            after
     ///                 │                        │                         │           deposit
     ///                 │                        │                         │          depletes
     ///                 │                        │                         │              │
@@ -542,11 +542,13 @@ abstract contract AmAmm is IAmAmm {
                     // next bid becomes active after top bid depletes its deposit
                     rentCharged = topBid.deposit;
 
-                    topBid = nextBid;
+                    uint72 nextBidStartEpoch;
                     unchecked {
                         // unchecked so that if epoch ever overflows, we simply wrap around
-                        topBid.epoch = uint72(topBid.deposit / topBid.rent) + topBid.epoch;
+                        nextBidStartEpoch = uint72(topBid.deposit / topBid.rent) + topBid.epoch;
                     }
+                    topBid = nextBid;
+                    topBid.epoch = nextBidStartEpoch;
                     nextBid = Bid(address(0), 0, 0, 0, 0);
 
                     updatedTopBid = true;

@@ -577,7 +577,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// AmAmm support
     /// -----------------------------------------------------------------------
 
-    function _amAmmEnabled(PoolId id) internal virtual override returns (bool) {
+    function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
         bytes32 hookParams = hub.hookParams(id);
         return uint8(bytes1(hookParams << 184)) != 0;
     }
