@@ -623,6 +623,30 @@ contract AmAmmTest is Test {
         amAmm.claimRefund(POOL_0, address(this));
     }
 
+    function test_claimFees() external {
+        // start in state D
+        amAmm.bidToken().mint(address(this), K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: K * 1e18});
+        skip(K * EPOCH_SIZE);
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(0x69), swapFee: 0.01e6, rent: 2e18, deposit: 2 * K * 1e18});
+
+        // give fees
+        amAmm.giveFeeToken0(POOL_0, 1 ether);
+        amAmm.giveFeeToken1(POOL_0, 2 ether);
+
+        // claim fees
+        address recipient = address(0x42);
+        uint256 feeAmount0 = amAmm.claimFees(Currency.wrap(address(amAmm.feeToken0())), recipient);
+        uint256 feeAmount1 = amAmm.claimFees(Currency.wrap(address(amAmm.feeToken1())), recipient);
+
+        // check results
+        assertEq(feeAmount0, 1 ether, "feeAmount0 incorrect");
+        assertEq(feeAmount1, 2 ether, "feeAmount1 incorrect");
+        assertEq(amAmm.feeToken0().balanceOf(recipient), 1 ether, "recipient balance0 incorrect");
+        assertEq(amAmm.feeToken1().balanceOf(recipient), 2 ether, "recipient balance1 incorrect");
+    }
+
     function test_setBidSwapFee_topBid() external {
         // start in state B
         amAmm.bidToken().mint(address(this), 2 * K * 1e18);

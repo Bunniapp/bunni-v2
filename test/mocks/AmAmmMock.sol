@@ -31,6 +31,20 @@ contract AmAmmMock is AmAmm {
         maxSwapFee[id] = value;
     }
 
+    function giveFeeToken0(PoolId id, uint256 amount) external {
+        _updateAmAmm(id);
+        address manager = _topBids[id].manager;
+        feeToken0.mint(address(this), amount);
+        _accrueFees(manager, Currency.wrap(address(feeToken0)), amount);
+    }
+
+    function giveFeeToken1(PoolId id, uint256 amount) external {
+        _updateAmAmm(id);
+        address manager = _topBids[id].manager;
+        feeToken1.mint(address(this), amount);
+        _accrueFees(manager, Currency.wrap(address(feeToken1)), amount);
+    }
+
     /// @dev Returns whether the am-AMM is enabled for a given pool
     function _amAmmEnabled(PoolId id) internal view override returns (bool) {
         return enabled[id];
