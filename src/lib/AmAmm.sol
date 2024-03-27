@@ -9,7 +9,6 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
-import "./Constants.sol";
 import {IAmAmm} from "../interfaces/IAmAmm.sol";
 
 /// @title AmAmm
