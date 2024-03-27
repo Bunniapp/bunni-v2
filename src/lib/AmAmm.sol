@@ -67,7 +67,7 @@ abstract contract AmAmm is IAmAmm {
 
         // ensure bid is valid
         // - manager can't be zero address
-        // - bid needs to be greater than top bid and next bid
+        // - bid needs to be greater than top bid and next bid by >10%
         // - deposit needs to cover the rent for K hours
         // - deposit needs to be a multiple of rent
         // - swap fee needs to be <= _maxSwapFee(id)
@@ -216,7 +216,7 @@ abstract contract AmAmm is IAmAmm {
         Bid memory topBid = _topBids[id];
 
         // require D_top / R_top >= K
-        if (topBid.deposit / topBid.rent < K) {
+        if (topBid.manager != address(0) && topBid.deposit / topBid.rent < K) {
             revert AmAmm__BidLocked();
         }
 
@@ -303,6 +303,9 @@ abstract contract AmAmm is IAmAmm {
             revert AmAmm__NotEnabled();
         }
 
+        // update state machine
+        _updateAmAmm(id);
+
         Bid storage relevantBid = topBid ? _topBids[id] : _nextBids[id];
 
         if (msgSender != relevantBid.manager) {
@@ -344,6 +347,12 @@ abstract contract AmAmm is IAmAmm {
 
     /// @inheritdoc IAmAmm
     function getRefund(address manager, PoolId id) external view override returns (uint256) {
+        return _refunds[manager][id];
+    }
+
+    /// @inheritdoc IAmAmm
+    function getRefundWrite(address manager, PoolId id) external override returns (uint256) {
+        _updateAmAmm(id);
         return _refunds[manager][id];
     }
 

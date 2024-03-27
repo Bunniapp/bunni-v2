@@ -80,6 +80,11 @@ interface IAmAmm {
     /// @param id The pool id
     function getRefund(address manager, PoolId id) external view returns (uint256);
 
+    /// @notice Updates the am-AMM state of a pool and then gets the refundable deposit owed to a manager in that pool
+    /// @param manager The address of the manager
+    /// @param id The pool id
+    function getRefundWrite(address manager, PoolId id) external returns (uint256);
+
     /// @notice Gets the fees accrued by a manager
     /// @param manager The address of the manager
     /// @param currency The currency of the fees
