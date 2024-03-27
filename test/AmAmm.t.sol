@@ -425,6 +425,50 @@ contract AmAmmTest is Test {
         assertEq(amAmm.bidToken().balanceOf(recipient), K * 1e18, "recipient balance incorrect");
     }
 
+    function test_withdrawFromTopBid_fail_notEnabled() external {
+        // start in state B
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+        skip(K * EPOCH_SIZE);
+
+        amAmm.setEnabled(POOL_0, false);
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        amAmm.withdrawFromTopBid(POOL_0, K * 1e18, address(this));
+    }
+
+    function test_withdrawFromTopBid_fail_unauthorized() external {
+        // start in state B
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+        skip(K * EPOCH_SIZE);
+
+        address recipient = address(0x42);
+        vm.startPrank(recipient);
+        vm.expectRevert(IAmAmm.AmAmm__Unauthorized.selector);
+        amAmm.withdrawFromTopBid(POOL_0, K * 1e18, recipient);
+        vm.stopPrank();
+    }
+
+    function test_withdrawFromTopBid_fail_invalidDepositAmount() external {
+        // start in state B
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+        skip(K * EPOCH_SIZE);
+
+        vm.expectRevert(IAmAmm.AmAmm__InvalidDepositAmount.selector);
+        amAmm.withdrawFromTopBid(POOL_0, K * 1e18 - 1, address(this));
+    }
+
+    function test_withdrawFromTopBid_bidLocked() external {
+        // start in state B
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+        skip(K * EPOCH_SIZE);
+
+        vm.expectRevert(IAmAmm.AmAmm__BidLocked.selector);
+        amAmm.withdrawFromTopBid(POOL_0, 2 * K * 1e18, address(this));
+    }
+
     function test_withdrawFromNextBid() external {
         // start in state C
         amAmm.bidToken().mint(address(this), 2 * K * 1e18);
@@ -443,6 +487,46 @@ contract AmAmmTest is Test {
 
         // verify token balances
         assertEq(amAmm.bidToken().balanceOf(recipient), K * 1e18, "recipient balance incorrect");
+    }
+
+    function test_withdrawFromNextBid_fail_notEnabled() external {
+        // start in state C
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+
+        amAmm.setEnabled(POOL_0, false);
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        amAmm.withdrawFromNextBid(POOL_0, K * 1e18, address(this));
+    }
+
+    function test_withdrawFromNextBid_fail_unauthorized() external {
+        // start in state C
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+
+        address recipient = address(0x42);
+        vm.startPrank(recipient);
+        vm.expectRevert(IAmAmm.AmAmm__Unauthorized.selector);
+        amAmm.withdrawFromNextBid(POOL_0, K * 1e18, recipient);
+        vm.stopPrank();
+    }
+
+    function test_withdrawFromNextBid_fail_invalidDepositAmount() external {
+        // start in state C
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+
+        vm.expectRevert(IAmAmm.AmAmm__InvalidDepositAmount.selector);
+        amAmm.withdrawFromNextBid(POOL_0, K * 1e18 - 1, address(this));
+    }
+
+    function test_withdrawFromNextBid_fail_bidLocked() external {
+        // start in state C
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+
+        vm.expectRevert(IAmAmm.AmAmm__BidLocked.selector);
+        amAmm.withdrawFromNextBid(POOL_0, 2 * K * 1e18, address(this));
     }
 
     function test_cancelNextBid() external {
@@ -465,6 +549,41 @@ contract AmAmmTest is Test {
         assertEq(amAmm.bidToken().balanceOf(recipient), 2 * K * 1e18, "recipient balance incorrect");
     }
 
+    function test_cancelNextBid_fail_notEnabled() external {
+        // start in state C
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+
+        amAmm.setEnabled(POOL_0, false);
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        amAmm.cancelNextBid(POOL_0, address(this));
+    }
+
+    function test_cancelNextBid_fail_unauthorized() external {
+        // start in state C
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+
+        address recipient = address(0x42);
+        vm.startPrank(recipient);
+        vm.expectRevert(IAmAmm.AmAmm__Unauthorized.selector);
+        amAmm.cancelNextBid(POOL_0, recipient);
+        vm.stopPrank();
+    }
+
+    function test_cancelNextBid_fail_bidLocked() external {
+        // start in state D
+        amAmm.bidToken().mint(address(this), K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: K * 1e18});
+        skip(K * EPOCH_SIZE);
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 2e18, deposit: 2 * K * 1e18});
+
+        skip(EPOCH_SIZE);
+        vm.expectRevert(IAmAmm.AmAmm__BidLocked.selector);
+        amAmm.cancelNextBid(POOL_0, address(this));
+    }
+
     function test_claimRefund() external {
         // start in state D
         amAmm.bidToken().mint(address(this), K * 1e18);
@@ -485,6 +604,23 @@ contract AmAmmTest is Test {
 
         assertEq(refundAmount, 2 * K * 1e18, "refund amount incorrect");
         assertEq(amAmm.bidToken().balanceOf(recipient), 2 * K * 1e18, "recipient balance incorrect");
+    }
+
+    function test_claimRefund_fail_notEnabled() external {
+        // start in state D
+        amAmm.bidToken().mint(address(this), K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: K * 1e18});
+        skip(K * EPOCH_SIZE);
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 2e18, deposit: 2 * K * 1e18});
+
+        // make higher bid
+        amAmm.bidToken().mint(address(this), 3 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 3e18, deposit: 3 * K * 1e18});
+
+        amAmm.setEnabled(POOL_0, false);
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        amAmm.claimRefund(POOL_0, address(this));
     }
 
     function test_setBidSwapFee_topBid() external {
@@ -521,6 +657,40 @@ contract AmAmmTest is Test {
         assertEq(bid.rent, 2e18, "rent incorrect");
         assertEq(bid.deposit, 2 * K * 1e18, "deposit incorrect");
         assertEq(bid.epoch, _getEpoch(block.timestamp), "epoch incorrect");
+    }
+
+    function test_setBidSwapFee_fail_notEnabled() external {
+        // start in state B
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+        skip(K * EPOCH_SIZE);
+
+        amAmm.setEnabled(POOL_0, false);
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        amAmm.setBidSwapFee(POOL_0, 0.02e6, true);
+    }
+
+    function test_setBidSwapFee_fail_unauthorized() external {
+        // start in state B
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+        skip(K * EPOCH_SIZE);
+
+        address eve = address(0x42);
+        vm.startPrank(eve);
+        vm.expectRevert(IAmAmm.AmAmm__Unauthorized.selector);
+        amAmm.setBidSwapFee(POOL_0, 0.02e6, true);
+        vm.stopPrank();
+    }
+
+    function test_setBidSwapFee_fail_invalidSwapFee() external {
+        // start in state B
+        amAmm.bidToken().mint(address(this), 2 * K * 1e18);
+        amAmm.bid({id: POOL_0, manager: address(this), swapFee: 0.01e6, rent: 1e18, deposit: 2 * K * 1e18});
+        skip(K * EPOCH_SIZE);
+
+        vm.expectRevert(IAmAmm.AmAmm__InvalidBid.selector);
+        amAmm.setBidSwapFee(POOL_0, 0.5e6, true);
     }
 
     function _getEpoch(uint256 timestamp) internal pure returns (uint72) {
