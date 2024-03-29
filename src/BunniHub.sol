@@ -157,6 +157,21 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         return _getPoolState(poolId);
     }
 
+    /// @inheritdoc IBunniHub
+    function poolParams(PoolId poolId) external view returns (PoolState memory) {
+        return _getPoolParams(_poolState[poolId].immutableParamsPointer);
+    }
+
+    /// @inheritdoc IBunniHub
+    function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken) {
+        return _getBunniTokenOfPool(poolId);
+    }
+
+    /// @inheritdoc IBunniHub
+    function hookParams(PoolId poolId) external view returns (bytes32) {
+        return _getHookParams(poolId);
+    }
+
     /// -----------------------------------------------------------------------
     /// Uniswap callback
     /// -----------------------------------------------------------------------
@@ -405,13 +420,9 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
     }
 
-    function _getPoolState(PoolId poolId) internal view returns (PoolState memory state) {
-        RawPoolState memory rawState = _poolState[poolId];
-        if (rawState.immutableParamsPointer == address(0)) revert BunniHub__BunniTokenNotInitialized();
-
+    function _getPoolParams(address ptr) internal view returns (PoolState memory state) {
         // read params via SSLOAD2
-        bytes memory immutableParams = rawState.immutableParamsPointer.read();
-
+        bytes memory immutableParams = ptr.read();
         {
             ILiquidityDensityFunction liquidityDensityFunction;
             assembly ("memory-safe") {
@@ -445,11 +456,11 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
 
         {
-            bytes32 hookParams;
+            bytes32 hookParams_;
             assembly ("memory-safe") {
-                hookParams := mload(add(immutableParams, 107))
+                hookParams_ := mload(add(immutableParams, 107))
             }
-            state.hookParams = hookParams;
+            state.hookParams = hookParams_;
         }
 
         {
@@ -523,7 +534,27 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             }
             state.maxRawTokenRatio1 = maxRawTokenRatio1;
         }
+    }
 
+    function _getBunniTokenOfPool(PoolId poolId) internal view returns (IBunniToken bunniToken) {
+        address ptr = _poolState[poolId].immutableParamsPointer;
+        if (ptr == address(0)) return IBunniToken(address(0));
+        bytes memory rawValue = ptr.read({start: 20, end: 40});
+        bunniToken = IBunniToken(address(bytes20(rawValue)));
+    }
+
+    function _getHookParams(PoolId poolId) internal view returns (bytes32) {
+        address ptr = _poolState[poolId].immutableParamsPointer;
+        if (ptr == address(0)) return bytes32(0);
+        bytes memory rawValue = ptr.read({start: 75, end: 107});
+        return bytes32(rawValue);
+    }
+
+    function _getPoolState(PoolId poolId) internal view returns (PoolState memory state) {
+        RawPoolState memory rawState = _poolState[poolId];
+        if (rawState.immutableParamsPointer == address(0)) revert BunniHub__BunniTokenNotInitialized();
+
+        state = _getPoolParams(rawState.immutableParamsPointer);
         state.rawBalance0 = rawState.rawBalance0;
         state.rawBalance1 = rawState.rawBalance1;
         state.reserve0 = address(state.vault0) != address(0) ? _reserve0[poolId] : 0;

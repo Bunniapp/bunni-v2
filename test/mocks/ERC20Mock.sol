@@ -9,6 +9,10 @@ contract ERC20Mock is ERC20 {
         _mint(to, amount);
     }
 
+    function burn(uint256 amount) public {
+        _burn(msg.sender, amount);
+    }
+
     function name() public pure override returns (string memory) {
         return "MockERC20";
     }

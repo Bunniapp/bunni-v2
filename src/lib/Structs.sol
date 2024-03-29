@@ -25,6 +25,7 @@ struct PoolState {
     uint24 minRawTokenRatio1;
     uint24 targetRawTokenRatio1;
     uint24 maxRawTokenRatio1;
+    bool amAmmEnabled;
     uint256 rawBalance0;
     uint256 rawBalance1;
     uint256 reserve0;

@@ -22,6 +22,7 @@ import "./lib/Structs.sol";
 import "./lib/VaultMath.sol";
 import "./lib/Constants.sol";
 import "./interfaces/IBunniHook.sol";
+import {AmAmm} from "./lib/AmAmm.sol";
 import {Oracle} from "./lib/Oracle.sol";
 import {Ownable} from "./lib/Ownable.sol";
 import {BaseHook} from "./lib/BaseHook.sol";
@@ -32,7 +33,7 @@ import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 
 /// @notice Bunni Hook
-contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
+contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     using SafeCastLib for *;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
@@ -117,7 +118,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         address recipient = _hookFeesRecipient;
         for (uint256 i; i < currencyList.length; i++) {
             Currency currency = currencyList[i];
-            uint256 balance = poolManager.balanceOf(address(this), currency.toId());
+            // can claim balance - am-AMM accrued fees
+            uint256 balance = poolManager.balanceOf(address(this), currency.toId()) - _totalFees[currency];
             if (balance != 0) {
                 poolManager.burn(address(this), currency.toId(), balance);
                 poolManager.take(currency, recipient, balance);
@@ -199,7 +201,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint16 surgeFeeHalflife,
             ,
             uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1
+            uint16 vaultSurgeThreshold1,
         ) = _decodeParams(hookParams);
         unchecked {
             return (feeMin <= feeMax) && (feeMax < SWAP_FEE_BASE)
@@ -240,7 +242,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-        (,,, uint24 feeTwapSecondsAgo,,,,,) = _decodeParams(hookParams);
+        (,,, uint24 feeTwapSecondsAgo,,,,,,) = _decodeParams(hookParams);
         (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
             uint32(block.timestamp - FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo)), tick
         );
@@ -300,8 +302,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint16 surgeFeeHalfLife,
             uint16 surgeFeeAutostartThreshold,
             uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1
+            uint16 vaultSurgeThreshold1,
+            bool amAmmEnabled
         ) = _decodeParams(bunniState.hookParams);
+
+        // update am-AMM state
+        address amAmmManager;
+        uint24 amAmmSwapFee;
+        if (amAmmEnabled) {
+            (amAmmManager, amAmmSwapFee) = _updateAmAmm(id);
+        }
 
         // get pool token balances
         (uint256 reserveBalance0, uint256 reserveBalance1) = (
@@ -362,7 +372,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
                     _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
             }
 
-            if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
+            if (!amAmmEnabled && feeMin != feeMax && feeQuadraticMultiplier != 0) {
                 // fee calculation needs TWAP
                 feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
             }
@@ -472,9 +482,31 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         // charge LP fee and hook fee
         // we do this by reducing the output token amount
         uint24 swapFee;
+        uint256 swapFeeAmount;
         uint256 hookFeesAmount;
         bool exactIn = params.amountSpecified >= 0;
-        {
+        if (amAmmEnabled && amAmmManager != address(0)) {
+            // give swap fee to am-AMM manager
+            swapFee = amAmmSwapFee;
+
+            if (exactIn) {
+                // we do not deduct swap fee from outputAmount because the am-AMM manager will take it
+                // it's stored in address(this) until claimed
+                swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+                _accrueFees(amAmmManager, outputToken, swapFeeAmount);
+            } else {
+                // increase input amount
+                // need to modify fee rate to maintain the same average price as exactIn case
+                // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
+                swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
+                inputAmount += swapFeeAmount;
+                _accrueFees(amAmmManager, inputToken, swapFeeAmount);
+            }
+
+            // add the swap fee to hookFeesAmount to satisfy hookHandleSwap()'s accounting
+            hookFeesAmount = swapFeeAmount;
+        } else {
+            // use default dynamic fee model
             swapFee = _getFee(
                 updatedSqrtPriceX96,
                 arithmeticMeanTick,
@@ -485,7 +517,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
                 surgeFee,
                 surgeFeeHalfLife
             );
-            uint256 swapFeeAmount;
 
             if (exactIn) {
                 // deduct swap fee from output
@@ -498,9 +529,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
                 swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
                 inputAmount += swapFeeAmount;
             }
+        }
 
+        {
+            // account for hook fees
             uint96 hookFeesModifier = _hookFeesModifier;
-            hookFeesAmount = swapFeeAmount.mulDivUp(hookFeesModifier, WAD);
+            hookFeesAmount += swapFeeAmount.mulDivUp(hookFeesModifier, WAD);
         }
 
         // take input by minting claim tokens to hook
@@ -537,6 +571,37 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         }
 
         return Hooks.NO_OP_SELECTOR;
+    }
+
+    /// -----------------------------------------------------------------------
+    /// AmAmm support
+    /// -----------------------------------------------------------------------
+
+    function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
+        bytes32 hookParams = hub.hookParams(id);
+        return uint8(bytes1(hookParams << 184)) != 0;
+    }
+
+    function _maxSwapFee(PoolId id) internal view virtual override returns (uint24) {
+        // use feeMax from hookParams
+        bytes32 hookParams = hub.hookParams(id);
+        return uint24(bytes3(hookParams << 24));
+    }
+
+    function _burnBidToken(PoolId id, uint256 amount) internal virtual override {
+        hub.bunniTokenOfPool(id).burn(amount);
+    }
+
+    function _pullBidToken(PoolId id, address from, uint256 amount) internal virtual override {
+        hub.bunniTokenOfPool(id).transferFrom(from, address(this), amount);
+    }
+
+    function _pushBidToken(PoolId id, address to, uint256 amount) internal virtual override {
+        hub.bunniTokenOfPool(id).transfer(to, amount);
+    }
+
+    function _transferFeeToken(Currency currency, address to, uint256 amount) internal virtual override {
+        poolManager.transfer(to, currency.toId(), amount);
     }
 
     /// -----------------------------------------------------------------------
@@ -606,6 +671,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
     ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
     /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
     ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
+    /// @return amAmmEnabled Whether the am-AMM is enabled for this pool
     function _decodeParams(bytes32 hookParams)
         internal
         pure
@@ -618,10 +684,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
             uint16 surgeFeeHalfLife,
             uint16 surgeFeeAutostartThreshold,
             uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1
+            uint16 vaultSurgeThreshold1,
+            bool amAmmEnabled
         )
     {
-        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes |
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | amAmmEnabled - 1 byte |
         feeMin = uint24(bytes3(hookParams));
         feeMax = uint24(bytes3(hookParams << 24));
         feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
@@ -631,6 +698,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard {
         surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
         vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
         vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
+        amAmmEnabled = uint8(bytes1(hookParams << 184)) != 0;
     }
 
     function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {
