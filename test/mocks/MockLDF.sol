@@ -95,6 +95,52 @@ contract MockLDF is ILiquidityDensityFunction {
         return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
     }
 
+    function cumulativeAmount0(
+        PoolKey calldata key,
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external view override returns (uint256) {
+        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        minTick = _minTick;
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
+        if (initialized) {
+            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
+        }
+
+        return LibGeometricDistribution.cumulativeAmount0(
+            roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96
+        );
+    }
+
+    function cumulativeAmount1(
+        PoolKey calldata key,
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external view override returns (uint256) {
+        (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        minTick = _minTick;
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
+        if (initialized) {
+            minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
+        }
+
+        return LibGeometricDistribution.cumulativeAmount1(
+            roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96
+        );
+    }
+
     function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMinTick) {
         // | initialized - 1 byte | lastMinTick - 3 bytes |
         initialized = uint8(bytes1(ldfState)) == 1;

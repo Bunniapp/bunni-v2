@@ -235,8 +235,6 @@ library BunniSwapMath {
                     );
 
                     updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
-                    console2.log("updatedTick", updatedTick);
-                    console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
                 } else {
                     // liquidity is insufficient to handle all of the input/output tokens
                     (updatedTick, updatedSqrtPriceX96) = params.zeroForOne
@@ -264,7 +262,6 @@ library BunniSwapMath {
                 );
                 updatedRoundedTickLiquidity =
                     ((totalLiquidity * updatedLiquidityDensityOfRoundedTickX96) >> 96).toUint128();
-                console2.log("updatedRoundedTickLiquidity", updatedRoundedTickLiquidity);
                 (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = LiquidityAmounts.getAmountsForLiquidity(
                     updatedSqrtPriceX96,
                     TickMath.getSqrtRatioAtTick(updatedRoundedTick),
@@ -276,10 +273,6 @@ library BunniSwapMath {
                     updatedActiveBalance0 + updatedDensity0RightOfRoundedTickX96.mulDivUp(totalLiquidity, Q96),
                     updatedActiveBalance1 + updatedDensity1LeftOfRoundedTickX96.mulDivUp(totalLiquidity, Q96)
                 );
-                console2.log("updatedActiveBalance0", updatedActiveBalance0);
-                console2.log("updatedActiveBalance1", updatedActiveBalance1);
-                console2.log("currentActiveBalance0", currentActiveBalance0);
-                console2.log("currentActiveBalance1", currentActiveBalance1);
 
                 (inputAmount, outputAmount) = params.zeroForOne
                     ? (

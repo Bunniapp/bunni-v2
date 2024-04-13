@@ -66,4 +66,36 @@ contract UniformDistribution is ILiquidityDensityFunction {
     {
         return LibUniformDistribution.isValidParams(tickSpacing, ldfParams);
     }
+
+    function cumulativeAmount0(
+        PoolKey calldata key,
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24, /* twapTick */
+        int24, /* spotPriceTick */
+        bool, /* useTwap */
+        bytes32 ldfParams,
+        bytes32 /* ldfState */
+    ) external pure override returns (uint256) {
+        (int24 tickLower, int24 tickUpper) = LibUniformDistribution.decodeParams(ldfParams);
+
+        return
+            LibUniformDistribution.cumulativeAmount0(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
+    }
+
+    function cumulativeAmount1(
+        PoolKey calldata key,
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24, /* twapTick */
+        int24, /* spotPriceTick */
+        bool, /* useTwap */
+        bytes32 ldfParams,
+        bytes32 /* ldfState */
+    ) external pure override returns (uint256) {
+        (int24 tickLower, int24 tickUpper) = LibUniformDistribution.decodeParams(ldfParams);
+
+        return
+            LibUniformDistribution.cumulativeAmount1(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
+    }
 }
