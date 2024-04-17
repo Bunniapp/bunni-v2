@@ -66,14 +66,13 @@ abstract contract AmAmm is IAmAmm {
 
         // ensure bid is valid
         // - manager can't be zero address
-        // - bid needs to be greater than top bid and next bid by >10%
+        // - bid needs to be greater than the next bid by >10%
         // - deposit needs to cover the rent for K hours
         // - deposit needs to be a multiple of rent
         // - swap fee needs to be <= _maxSwapFee(id)
         if (
-            manager == address(0) || rent <= _topBids[id].rent.mulWad(MIN_BID_MULTIPLIER)
-                || rent <= _nextBids[id].rent.mulWad(MIN_BID_MULTIPLIER) || deposit < rent * K || deposit % rent != 0
-                || swapFee > _maxSwapFee(id)
+            manager == address(0) || rent <= _nextBids[id].rent.mulWad(MIN_BID_MULTIPLIER) || deposit < rent * K
+                || deposit % rent != 0 || swapFee > _maxSwapFee(id)
         ) {
             revert AmAmm__InvalidBid();
         }
@@ -621,11 +620,15 @@ abstract contract AmAmm is IAmAmm {
             } else {
                 // State D
                 // we charge rent from the top bid only until K epochs after the next bid was submitted
+                // assuming the next bid's rent is greater than the top bid's rent + 10%, otherwise we don't care about
+                // the next bid
+                bool nextBidIsBetter = nextBid.rent > topBid.rent.mulWad(MIN_BID_MULTIPLIER);
                 uint72 epochsPassed;
                 unchecked {
                     // unchecked so that if epoch ever overflows, we simply wrap around
-                    epochsPassed =
-                        uint72(FixedPointMathLib.min(currentEpoch - topBid.epoch, nextBid.epoch + K - topBid.epoch));
+                    epochsPassed = nextBidIsBetter
+                        ? uint72(FixedPointMathLib.min(currentEpoch - topBid.epoch, nextBid.epoch + K - topBid.epoch))
+                        : currentEpoch - topBid.epoch;
                 }
                 uint256 rentOwed = epochsPassed * topBid.rent;
                 if (rentOwed >= topBid.deposit) {
@@ -659,13 +662,14 @@ abstract contract AmAmm is IAmAmm {
                     }
 
                     // check if K epochs have passed since the next bid was submitted
+                    // and that the next bid's rent is greater than the top bid's rent + 10%
                     // if so, promote next bid to top bid
                     uint72 nextBidStartEpoch;
                     unchecked {
                         // unchecked so that if epoch ever overflows, we simply wrap around
                         nextBidStartEpoch = nextBid.epoch + K;
                     }
-                    if (currentEpoch >= nextBidStartEpoch) {
+                    if (currentEpoch >= nextBidStartEpoch && nextBidIsBetter) {
                         // State D -> State B
                         // refund remaining deposit to top bid manager
                         _refunds[topBid.manager][id] += topBid.deposit;
