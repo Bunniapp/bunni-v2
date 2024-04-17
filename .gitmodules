@@ -25,3 +25,6 @@
 [submodule "lib/clones-with-immutable-args"]
 	path = lib/clones-with-immutable-args
 	url = https://github.com/wighawag/clones-with-immutable-args
+[submodule "lib/flood-contracts"]
+	path = lib/flood-contracts
+	url = https://github.com/flood-protocol/flood-contracts
