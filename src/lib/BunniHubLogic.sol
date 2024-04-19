@@ -655,7 +655,7 @@ library BunniHubLogic {
         }
 
         // do vault deposit
-        address(token).safeApprove(address(vault), amount);
+        address(token).safeApproveWithRetry(address(vault), amount);
         reserveChange = vault.deposit(amount, address(this));
         reserveChangeInUnderlying = vault.previewRedeem(reserveChange);
 

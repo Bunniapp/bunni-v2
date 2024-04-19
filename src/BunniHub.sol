@@ -388,7 +388,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             } else {
                 token = IERC20(Currency.unwrap(currency));
             }
-            address(token).safeApprove(address(vault), absAmount);
+            address(token).safeApproveWithRetry(address(vault), absAmount);
             reserveChange = vault.deposit(absAmount, address(this)).toInt256();
 
             // it's safe to use absAmount here since at worst the vault.deposit() call pulled less token

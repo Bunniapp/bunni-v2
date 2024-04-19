@@ -17,6 +17,8 @@ import "flood-contracts/src/interfaces/IFloodPlain.sol";
 
 import {IEIP712} from "permit2/src/interfaces/IEIP712.sol";
 
+import {WETH} from "solady/tokens/WETH.sol";
+import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -41,14 +43,16 @@ import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     using SafeCastLib for *;
     using OrderHashMemory for *;
+    using SafeTransferLib for *;
     using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
-    using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[65535];
     using AdditionalCurrencyLibrary for Currency;
 
+    WETH internal immutable weth;
     IBunniHub internal immutable hub;
+    address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
     bytes32 internal immutable domainSeparator;
 
@@ -75,13 +79,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         IPoolManager _poolManager,
         IBunniHub hub_,
         IFloodPlain floodPlain_,
+        WETH weth_,
         address owner_,
         address hookFeesRecipient_,
         uint96 hookFeesModifier_
     ) BaseHook(_poolManager) {
         hub = hub_;
         floodPlain = floodPlain_;
-        address permit2 = address(floodPlain_.PERMIT2());
+        permit2 = address(floodPlain_.PERMIT2());
+        weth = weth_;
         domainSeparator = IEIP712(permit2).DOMAIN_SEPARATOR();
         _hookFeesModifier = hookFeesModifier_;
         _hookFeesRecipient = hookFeesRecipient_;
@@ -1008,7 +1014,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
 
         // determin input & output
-        // TODO: handle native ETH
         if (willRebalanceToken0) {
             (inputToken, outputToken) = (key.currency0, key.currency1);
             if (balance0 - currentActiveBalance0 < targetAmount0) {
@@ -1037,17 +1042,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint256 outputAmount
     ) internal {
         // create Flood order
+        ERC20 inputERC20Token = inputToken.isNative() ? weth : ERC20(Currency.unwrap(inputToken));
+        ERC20 outputERC20Token = outputToken.isNative() ? weth : ERC20(Currency.unwrap(outputToken));
         IFloodPlain.Item[] memory offer = new IFloodPlain.Item[](1);
-        offer[0] = IFloodPlain.Item({token: Currency.unwrap(inputToken), amount: inputAmount});
+        offer[0] = IFloodPlain.Item({token: address(inputERC20Token), amount: inputAmount});
         IFloodPlain.Item memory consideration =
-            IFloodPlain.Item({token: Currency.unwrap(outputToken), amount: outputAmount});
+            IFloodPlain.Item({token: address(outputERC20Token), amount: outputAmount});
         // TODO: prehook should pull input tokens from BunniHub to BunniHook
+        // TODO: wrap native ETH input to WETH in prehook
         IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](0);
         // TODO: posthook should push output tokens from BunniHook to BunniHub and update pool balances
+        // TODO: unwrap WETH output to native ETH in posthook
         IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](0);
         IFloodPlain.Order memory order = IFloodPlain.Order({
             offerer: address(this),
-            zone: address(0),
+            zone: address(0), // TODO: use zone that whitelists fillers via governance
             recipient: address(this),
             offer: offer,
             consideration: consideration,
@@ -1057,8 +1066,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             postHooks: postHooks
         });
         IFloodPlain.SignedOrder memory signedOrder = IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)});
+
+        // record order for verification later
         _rebalanceOrderHash[id] = _newOrderHash(order);
         _rebalanceOrderDeadline[id] = order.deadline;
+
+        // approve input token to permit2
+        if (inputERC20Token.allowance(address(this), permit2) < inputAmount) {
+            address(inputERC20Token).safeApproveWithRetry(permit2, type(uint256).max);
+        }
+
+        // etch order so fillers can pick it up
         emit OrderEtched(order.hash(), signedOrder);
     }
 
