@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0
-
 pragma solidity ^0.8.15;
 
 import "forge-std/Test.sol";
 
 import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
+
+import {IFloodPlain} from "flood-contracts/src/interfaces/IFloodPlain.sol";
 
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 import {MulticallerEtcher} from "multicaller/MulticallerEtcher.sol";
@@ -37,8 +38,9 @@ import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {ERC20TaxMock} from "./mocks/ERC20TaxMock.sol";
 import {UniswapperTax} from "./mocks/UniswapperTax.sol";
+import {FloodDeployer} from "./utils/FloodDeployer.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
-import {Permit2Deployer} from "./mocks/Permit2Deployer.sol";
+import {Permit2Deployer} from "./utils/Permit2Deployer.sol";
 import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {ERC4626WithFeeMock} from "./mocks/ERC4626WithFeeMock.sol";
@@ -46,7 +48,7 @@ import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
-contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
+contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint256;
@@ -98,6 +100,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
     WETH internal weth;
     IPermit2 internal permit2;
     ERC20TaxMock internal tokenWithTax;
+    IFloodPlain internal floodPlain;
 
     function setUp() public {
         vm.warp(1e9); // init block timestamp to reasonable value
@@ -106,6 +109,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         permit2 = _deployPermit2();
         MulticallerEtcher.multicallerWithSender();
         MulticallerEtcher.multicallerWithSigner();
+
+        floodPlain = _deployFlood(address(permit2));
 
         // initialize uniswap
         token0 = new ERC20Mock();
@@ -163,7 +168,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
         // initialize bunni hook
         deployCodeTo(
             "BunniHook.sol",
-            abi.encode(poolManager, hub, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
+            abi.encode(poolManager, hub, floodPlain, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
             address(bunniHook)
         );
         vm.label(address(bunniHook), "BunniHook");

@@ -817,6 +817,46 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint16 updatedIndex,
         uint16 updatedCardinality
     ) internal {
+        // compute rebalance params
+        (bool success, Currency inputToken, Currency outputToken, uint256 inputAmount, uint256 outputAmount) =
+        _computeRebalanceParams(
+            id,
+            key,
+            updatedTick,
+            updatedSqrtPriceX96,
+            arithmeticMeanTick,
+            useTwap,
+            newLdfState,
+            rebalanceThreshold,
+            rebalanceMaxSlippage,
+            rebalanceTwapSecondsAgo,
+            updatedIndex,
+            updatedCardinality
+        );
+        if (!success) return;
+
+        // create rebalance order
+        _createRebalanceOrder(id, rebalanceOrderTTL, inputToken, outputToken, inputAmount, outputAmount);
+    }
+
+    function _computeRebalanceParams(
+        PoolId id,
+        PoolKey calldata key,
+        int24 updatedTick,
+        uint160 updatedSqrtPriceX96,
+        int24 arithmeticMeanTick,
+        bool useTwap,
+        bytes32 newLdfState,
+        uint16 rebalanceThreshold,
+        uint16 rebalanceMaxSlippage,
+        uint16 rebalanceTwapSecondsAgo,
+        uint16 updatedIndex,
+        uint16 updatedCardinality
+    )
+        internal
+        view
+        returns (bool success, Currency inputToken, Currency outputToken, uint256 inputAmount, uint256 outputAmount)
+    {
         // compute the ratio (excessLiquidity / totalLiquidity)
         // excessLiquidity is the minimum amount of liquidity that can be supported by the excess tokens
 
@@ -824,12 +864,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         PoolState memory bunniState = hub.poolState(id);
 
         // get fresh token balances
-        (uint256 reserveBalance0, uint256 reserveBalance1) = (
-            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        (uint256 balance0, uint256 balance1) = (
+            bunniState.rawBalance0 + getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
-        (uint256 balance0, uint256 balance1) =
-            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // compute total liquidity
         uint256 totalLiquidity;
@@ -858,10 +896,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                     uint128(liquidityDensityOfRoundedTickX96),
                     false
                 );
-                uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-                uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-                uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
-                uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
+                uint256 totalDensity0X96_ = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+                uint256 totalDensity1X96_ = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+                uint256 totalLiquidityEstimate0 =
+                    totalDensity0X96_ == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96_);
+                uint256 totalLiquidityEstimate1 =
+                    totalDensity1X96_ == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96_);
                 if (totalLiquidityEstimate0 == 0) {
                     totalLiquidity = totalLiquidityEstimate1;
                 } else if (totalLiquidityEstimate1 == 0) {
@@ -872,15 +912,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             }
 
             // compute active balance, which is the balance implied by the total liquidity & the LDF
-            uint128 updatedRoundedTickLiquidity =
-                ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
-            (currentActiveBalance0, currentActiveBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-                updatedSqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, false
-            );
-            (currentActiveBalance0, currentActiveBalance1) = (
-                currentActiveBalance0 + ((density0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-                currentActiveBalance1 + ((density1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
-            );
+            {
+                uint128 updatedRoundedTickLiquidity =
+                    ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
+                (currentActiveBalance0, currentActiveBalance1) = LiquidityAmounts.getAmountsForLiquidity(
+                    updatedSqrtPriceX96,
+                    roundedTickSqrtRatio,
+                    nextRoundedTickSqrtRatio,
+                    updatedRoundedTickLiquidity,
+                    false
+                );
+                (currentActiveBalance0, currentActiveBalance1) = (
+                    currentActiveBalance0 + ((density0RightOfRoundedTickX96 * totalLiquidity) >> 96),
+                    currentActiveBalance1 + ((density1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
+                );
+            }
 
             // compute excess liquidity if there's any
             (int24 minUsableTick, int24 maxUsableTick) =
@@ -904,113 +950,116 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // should rebalance if excessLiquidity / totalLiquidity >= 1 / rebalanceThreshold
         bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / rebalanceThreshold;
         bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / rebalanceThreshold;
+        if (!shouldRebalance0 && !shouldRebalance1) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
-        if (shouldRebalance0 || shouldRebalance1) {
-            // compute density of token0 and token1 after excess liquidity has been rebalanced
-            // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
-            uint256 totalDensity0X96;
-            uint256 totalDensity1X96;
-            {
-                int24 rebalanceSpotPriceTick =
-                    _getTwap(id, updatedTick, rebalanceTwapSecondsAgo, updatedIndex, updatedCardinality);
-                uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
-                (int24 roundedTick, int24 nextRoundedTick) = roundTick(rebalanceSpotPriceTick, key.tickSpacing);
-                (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-                    (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
-                (
-                    uint256 liquidityDensityOfRoundedTickX96,
-                    uint256 density0RightOfRoundedTickX96,
-                    uint256 density1LeftOfRoundedTickX96,
-                    ,
-                ) = bunniState.liquidityDensityFunction.query(
-                    key,
-                    roundedTick,
-                    arithmeticMeanTick,
-                    rebalanceSpotPriceTick,
-                    useTwap,
-                    bunniState.ldfParams,
-                    newLdfState
-                );
-                (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                    .getAmountsForLiquidity(
-                    rebalanceSpotPriceSqrtRatioX96,
-                    roundedTickSqrtRatio,
-                    nextRoundedTickSqrtRatio,
-                    uint128(liquidityDensityOfRoundedTickX96),
-                    false
-                );
-                totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-                totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-            }
+        // compute density of token0 and token1 after excess liquidity has been rebalanced
+        // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
+        uint256 totalDensity0X96;
+        uint256 totalDensity1X96;
+        {
+            int24 rebalanceSpotPriceTick =
+                _getTwap(id, updatedTick, rebalanceTwapSecondsAgo, updatedIndex, updatedCardinality);
+            uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
+            (int24 roundedTick, int24 nextRoundedTick) = roundTick(rebalanceSpotPriceTick, key.tickSpacing);
+            (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
+                (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+            (
+                uint256 liquidityDensityOfRoundedTickX96,
+                uint256 density0RightOfRoundedTickX96,
+                uint256 density1LeftOfRoundedTickX96,
+                ,
+            ) = bunniState.liquidityDensityFunction.query(
+                key, roundedTick, arithmeticMeanTick, rebalanceSpotPriceTick, useTwap, bunniState.ldfParams, newLdfState
+            );
+            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
+                .getAmountsForLiquidity(
+                rebalanceSpotPriceSqrtRatioX96,
+                roundedTickSqrtRatio,
+                nextRoundedTickSqrtRatio,
+                uint128(liquidityDensityOfRoundedTickX96),
+                false
+            );
+            totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+            totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+        }
 
-            // decide which token will be rebalanced (i.e. sold into the other token)
-            bool willRebalanceToken0;
-            if (shouldRebalance0 && shouldRebalance1) {
-                // edge case where both tokens have excess liquidity
-                // likely one token has actual excess liquidity, the other token has negligible excess liquidity from rounding errors
-                // rebalance the token for which excessLiquidity is larger
-                if (excessLiquidity0 > excessLiquidity1) {
-                    willRebalanceToken0 = true;
-                } else {
-                    willRebalanceToken0 = false;
-                }
-            } else if (shouldRebalance0) {
-                // rebalance token0
+        // decide which token will be rebalanced (i.e. sold into the other token)
+        bool willRebalanceToken0;
+        if (shouldRebalance0 && shouldRebalance1) {
+            // edge case where both tokens have excess liquidity
+            // likely one token has actual excess liquidity, the other token has negligible excess liquidity from rounding errors
+            // rebalance the token for which excessLiquidity is larger
+            if (excessLiquidity0 > excessLiquidity1) {
                 willRebalanceToken0 = true;
-            } else if (shouldRebalance1) {
-                // rebalance token1
+            } else {
                 willRebalanceToken0 = false;
             }
-
-            // compute target amounts (i.e. the token amounts of the excess liquidity)
-            uint256 excessLiquidity = willRebalanceToken0 ? excessLiquidity0 : excessLiquidity1;
-            uint256 targetAmount0 = excessLiquidity.fullMulDiv(totalDensity0X96, Q96);
-            uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
-
-            // determin input & output
-            // TODO: handle native ETH
-            Currency inputToken;
-            Currency outputToken;
-            uint256 inputAmount;
-            uint256 outputAmount;
-            if (willRebalanceToken0) {
-                (inputToken, outputToken) = (key.currency0, key.currency1);
-                if (balance0 - currentActiveBalance0 < targetAmount0) return; // should never happen
-                inputAmount = balance0 - currentActiveBalance0 - targetAmount0;
-                outputAmount = targetAmount1.mulDivUp(1e5 - rebalanceMaxSlippage, 1e5);
-            } else {
-                (inputToken, outputToken) = (key.currency1, key.currency0);
-                if (balance1 - currentActiveBalance1 < targetAmount1) return; // should never happen
-                inputAmount = balance1 - currentActiveBalance1 - targetAmount1;
-                outputAmount = targetAmount0.mulDivUp(1e5 - rebalanceMaxSlippage, 1e5);
-            }
-
-            // create Flood order
-            IFloodPlain.Item[] memory offer = new IFloodPlain.Item[](1);
-            offer[0] = IFloodPlain.Item({token: Currency.unwrap(inputToken), amount: inputAmount});
-            IFloodPlain.Item memory consideration =
-                IFloodPlain.Item({token: Currency.unwrap(outputToken), amount: outputAmount});
-            // TODO: prehook should pull input tokens from BunniHub to BunniHook
-            IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](0);
-            // TODO: posthook should push output tokens from BunniHook to BunniHub and update pool balances
-            IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](0);
-            IFloodPlain.Order memory order = IFloodPlain.Order({
-                offerer: address(this),
-                zone: address(0),
-                recipient: address(this),
-                offer: offer,
-                consideration: consideration,
-                deadline: block.timestamp + rebalanceOrderTTL,
-                nonce: block.number,
-                preHooks: preHooks,
-                postHooks: postHooks
-            });
-            IFloodPlain.SignedOrder memory signedOrder =
-                IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)});
-            _rebalanceOrderHash[id] = _newOrderHash(order);
-            _rebalanceOrderDeadline[id] = order.deadline;
-            emit OrderEtched(order.hash(), signedOrder);
+        } else if (shouldRebalance0) {
+            // rebalance token0
+            willRebalanceToken0 = true;
+        } else if (shouldRebalance1) {
+            // rebalance token1
+            willRebalanceToken0 = false;
         }
+
+        // compute target amounts (i.e. the token amounts of the excess liquidity)
+        uint256 excessLiquidity = willRebalanceToken0 ? excessLiquidity0 : excessLiquidity1;
+        uint256 targetAmount0 = excessLiquidity.fullMulDiv(totalDensity0X96, Q96);
+        uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
+
+        // determin input & output
+        // TODO: handle native ETH
+        if (willRebalanceToken0) {
+            (inputToken, outputToken) = (key.currency0, key.currency1);
+            if (balance0 - currentActiveBalance0 < targetAmount0) {
+                return (false, inputToken, outputToken, inputAmount, outputAmount);
+            } // should never happen
+            inputAmount = balance0 - currentActiveBalance0 - targetAmount0;
+            outputAmount = targetAmount1.mulDivUp(1e5 - rebalanceMaxSlippage, 1e5);
+        } else {
+            (inputToken, outputToken) = (key.currency1, key.currency0);
+            if (balance1 - currentActiveBalance1 < targetAmount1) {
+                return (false, inputToken, outputToken, inputAmount, outputAmount);
+            } // should never happen
+            inputAmount = balance1 - currentActiveBalance1 - targetAmount1;
+            outputAmount = targetAmount0.mulDivUp(1e5 - rebalanceMaxSlippage, 1e5);
+        }
+
+        success = true;
+    }
+
+    function _createRebalanceOrder(
+        PoolId id,
+        uint16 rebalanceOrderTTL,
+        Currency inputToken,
+        Currency outputToken,
+        uint256 inputAmount,
+        uint256 outputAmount
+    ) internal {
+        // create Flood order
+        IFloodPlain.Item[] memory offer = new IFloodPlain.Item[](1);
+        offer[0] = IFloodPlain.Item({token: Currency.unwrap(inputToken), amount: inputAmount});
+        IFloodPlain.Item memory consideration =
+            IFloodPlain.Item({token: Currency.unwrap(outputToken), amount: outputAmount});
+        // TODO: prehook should pull input tokens from BunniHub to BunniHook
+        IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](0);
+        // TODO: posthook should push output tokens from BunniHook to BunniHub and update pool balances
+        IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](0);
+        IFloodPlain.Order memory order = IFloodPlain.Order({
+            offerer: address(this),
+            zone: address(0),
+            recipient: address(this),
+            offer: offer,
+            consideration: consideration,
+            deadline: block.timestamp + rebalanceOrderTTL,
+            nonce: block.number,
+            preHooks: preHooks,
+            postHooks: postHooks
+        });
+        IFloodPlain.SignedOrder memory signedOrder = IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)});
+        _rebalanceOrderHash[id] = _newOrderHash(order);
+        _rebalanceOrderDeadline[id] = order.deadline;
+        emit OrderEtched(order.hash(), signedOrder);
     }
 
     function _newOrderHash(IFloodPlain.Order memory order) internal view returns (bytes32) {
