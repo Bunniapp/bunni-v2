@@ -10,12 +10,16 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
 
+import "flood-contracts/src/interfaces/IFloodPlain.sol";
+
+import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
+
 import {IOwnable} from "./IOwnable.sol";
 import {Oracle} from "../lib/Oracle.sol";
 import {IBunniHub} from "./IBunniHub.sol";
 import {IBaseHook} from "./IBaseHook.sol";
 
-interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
+interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, IERC1271 {
     /// -----------------------------------------------------------------------
     /// Errors
     /// -----------------------------------------------------------------------
@@ -50,6 +54,7 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         uint256 totalLiquidity
     );
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
+    event OrderEtched(bytes32 indexed orderHash, IFloodPlain.SignedOrder signedOrder);
 
     /// -----------------------------------------------------------------------
     /// Structs

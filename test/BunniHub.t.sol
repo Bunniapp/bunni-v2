@@ -1292,7 +1292,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                 Currency.unwrap(firstSwapInputToken) == address(tokenWithTax)
                     ? swapAmount * tokenWithTax.TAX_MULTIPLIER() / 100
                     : swapAmount
-                ),
+            ),
             sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
         });
         uint256 firstSwapInputAmount;
@@ -1325,7 +1325,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer {
                         ? firstSwapOutputAmount * tokenWithTax.TAX_MULTIPLIER() / 100
                         : firstSwapOutputAmount
                 )
-                ),
+            ),
             sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
         });
         uint256 secondSwapInputAmount;

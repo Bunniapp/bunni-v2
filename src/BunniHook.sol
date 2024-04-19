@@ -13,6 +13,10 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
+import "flood-contracts/src/interfaces/IFloodPlain.sol";
+
+import {IEIP712} from "permit2/src/interfaces/IEIP712.sol";
+
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -29,26 +33,33 @@ import {BaseHook} from "./lib/BaseHook.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {BunniSwapMath} from "./lib/BunniSwapMath.sol";
 import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
+import {OrderHashMemory} from "./lib/OrderHashMemory.sol";
 import {LiquidityAmounts} from "./lib/LiquidityAmounts.sol";
 import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 
 /// @notice Bunni Hook
 contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     using SafeCastLib for *;
+    using OrderHashMemory for *;
+    using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
-    using FixedPointMathLib for *;
     using Oracle for Oracle.Observation[65535];
     using AdditionalCurrencyLibrary for Currency;
 
     IBunniHub internal immutable hub;
+    IFloodPlain internal immutable floodPlain;
+    bytes32 internal immutable domainSeparator;
 
     /// @notice The list of observations for a given pool ID
     mapping(PoolId => Oracle.Observation[65535]) internal _observations;
 
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
+
+    mapping(PoolId id => bytes32) internal _rebalanceOrderHash;
+    mapping(PoolId id => uint256) internal _rebalanceOrderDeadline;
 
     mapping(PoolId => VaultSharePrices) public vaultSharePricesAtLastSwap;
     mapping(PoolId => bytes32) public ldfStates;
@@ -63,17 +74,42 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     constructor(
         IPoolManager _poolManager,
         IBunniHub hub_,
+        IFloodPlain floodPlain_,
         address owner_,
         address hookFeesRecipient_,
         uint96 hookFeesModifier_
     ) BaseHook(_poolManager) {
         hub = hub_;
+        floodPlain = floodPlain_;
+        address permit2 = address(floodPlain_.PERMIT2());
+        domainSeparator = IEIP712(permit2).DOMAIN_SEPARATOR();
         _hookFeesModifier = hookFeesModifier_;
         _hookFeesRecipient = hookFeesRecipient_;
         _initializeOwner(owner_);
         _poolManager.setOperator(address(hub_), true);
 
         emit SetHookFeesParams(hookFeesModifier_, hookFeesRecipient_);
+    }
+
+    /// -----------------------------------------------------------------------
+    /// EIP-1271 compliance
+    /// -----------------------------------------------------------------------
+
+    /// @dev Should return whether the signature provided is valid for the provided data
+    /// @param hash      Hash of the data to be signed
+    /// @param signature Signature byte array associated with _data
+    /// @return magicValue The bytes4 magic value 0x1626ba7e
+    function isValidSignature(bytes32 hash, bytes memory signature)
+        external
+        view
+        override
+        returns (bytes4 magicValue)
+    {
+        // verify rebalance order
+        PoolId id = abi.decode(signature, (PoolId));
+        if (_rebalanceOrderHash[id] == hash) {
+            return this.isValidSignature.selector;
+        }
     }
 
     /// -----------------------------------------------------------------------
@@ -202,13 +238,25 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             ,
             uint16 vaultSurgeThreshold0,
             uint16 vaultSurgeThreshold1,
-            ,
-            ,
+            uint16 rebalanceThreshold,
+            uint16 rebalanceMaxSlippage,
+            uint16 rebalanceTwapSecondsAgo,
+            uint16 rebalanceOrderTTL,
         ) = _decodeParams(hookParams);
         unchecked {
             return (feeMin <= feeMax) && (feeMax < SWAP_FEE_BASE)
                 && (feeQuadraticMultiplier == 0 || feeMin == feeMax || feeTwapSecondsAgo != 0) && (surgeFee < SWAP_FEE_BASE)
-                && (uint256(surgeFeeHalflife) * uint256(vaultSurgeThreshold0) * uint256(vaultSurgeThreshold1) != 0);
+                && (uint256(surgeFeeHalflife) * uint256(vaultSurgeThreshold0) * uint256(vaultSurgeThreshold1) != 0)
+                && (
+                    (
+                        rebalanceThreshold == 0 && rebalanceMaxSlippage == 0 && rebalanceTwapSecondsAgo == 0
+                            && rebalanceOrderTTL == 0
+                    )
+                        || (
+                            rebalanceThreshold != 0 && rebalanceMaxSlippage != 0 && rebalanceTwapSecondsAgo != 0
+                                && rebalanceOrderTTL != 0
+                        )
+                );
         }
     }
 
@@ -244,9 +292,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-        (,,, uint24 feeTwapSecondsAgo,,,,,,,,) = _decodeParams(hookParams);
+        uint24 feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
+        uint16 rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
         (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
-            uint32(block.timestamp - FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo)), tick
+            uint32(
+                block.timestamp
+                    - FixedPointMathLib.max(
+                        FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo), rebalanceTwapSecondsAgo
+                    )
+            ),
+            tick
         );
 
         return BunniHook.afterInitialize.selector;
@@ -305,8 +360,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             uint16 surgeFeeAutostartThreshold,
             uint16 vaultSurgeThreshold0,
             uint16 vaultSurgeThreshold1,
-            uint16 rebalanceThreshold0,
-            uint16 rebalanceThreshold1,
+            uint16 rebalanceThreshold,
+            uint16 rebalanceMaxSlippage,
+            uint16 rebalanceTwapSecondsAgo,
+            uint16 rebalanceOrderTTL,
             bool amAmmEnabled
         ) = _decodeParams(bunniState.hookParams);
 
@@ -365,21 +422,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
-        {
-            (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
+        (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
 
-            // (optional) get TWAP value
-            if (useTwap) {
-                // need to use TWAP
-                // compute TWAP value
-                arithmeticMeanTick =
-                    _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
-            }
-
-            if (!amAmmEnabled && feeMin != feeMax && feeQuadraticMultiplier != 0) {
-                // fee calculation needs TWAP
-                feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
-            }
+        // (optional) get TWAP value
+        if (useTwap) {
+            // need to use TWAP
+            // compute TWAP value
+            arithmeticMeanTick = _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
+        }
+        if (!amAmmEnabled && feeMin != feeMax && feeQuadraticMultiplier != 0) {
+            // fee calculation needs TWAP
+            feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
         }
 
         // get densities
@@ -574,10 +627,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             );
         }
 
-        // check if we need to rebalance if:
-        // - rebalanceThreshold0 != 0 || rebalanceThreshold1 != 0, i.e. rebalancing is enabled for at least one token
+        // we should rebalance if:
+        // - rebalanceThreshold != 0, i.e. rebalancing is enabled
         // - shouldSurge == true, since tokens can only go out of balance due to shifting or vault returns
-        if ((rebalanceThreshold0 != 0 || rebalanceThreshold1 != 0) && shouldSurge) {
+        // - the deadline of the last rebalance order has passed
+        if (rebalanceThreshold != 0 && shouldSurge && block.timestamp > _rebalanceOrderDeadline[id]) {
             _rebalance(
                 id,
                 key,
@@ -586,8 +640,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 arithmeticMeanTick,
                 useTwap,
                 newLdfState,
-                rebalanceThreshold0,
-                rebalanceThreshold1
+                rebalanceThreshold,
+                rebalanceMaxSlippage,
+                rebalanceTwapSecondsAgo,
+                rebalanceOrderTTL,
+                updatedIndex,
+                updatedCardinality
             );
         }
 
@@ -600,7 +658,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
         bytes32 hookParams = hub.hookParams(id);
-        return uint8(bytes1(hookParams << 216)) != 0;
+        return uint8(bytes1(hookParams << 248)) != 0;
     }
 
     function _maxSwapFee(PoolId id) internal view virtual override returns (uint24) {
@@ -692,12 +750,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
     /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
     ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
-    /// @return rebalanceThreshold0 The threshold for triggering a rebalance from excess token0.
-    ///         1 / rebalanceThreshold0 is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
-    ///         When set to 0, rebalancing from token0 is disabled.
-    /// @return rebalanceThreshold1 The threshold for triggering a rebalance from excess token1.
-    ///         1 / rebalanceThreshold1 is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
-    ///         When set to 0, rebalancing from token1 is disabled.
+    /// @return rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
+    ///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
+    ///         When set to 0, rebalancing is disabled.
+    /// @return rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals.
+    /// @return rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
+    /// @return rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
     /// @return amAmmEnabled Whether the am-AMM is enabled for this pool
     function _decodeParams(bytes32 hookParams)
         internal
@@ -712,12 +770,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             uint16 surgeFeeAutostartThreshold,
             uint16 vaultSurgeThreshold0,
             uint16 vaultSurgeThreshold1,
-            uint16 rebalanceThreshold0,
-            uint16 rebalanceThreshold1,
+            uint16 rebalanceThreshold,
+            uint16 rebalanceMaxSlippage,
+            uint16 rebalanceTwapSecondsAgo,
+            uint16 rebalanceOrderTTL,
             bool amAmmEnabled
         )
     {
-        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold0 - 2 bytes | rebalanceThreshold1 - 2 bytes | amAmmEnabled - 1 byte |
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
         feeMin = uint24(bytes3(hookParams));
         feeMax = uint24(bytes3(hookParams << 24));
         feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
@@ -727,9 +787,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
         vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
         vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
-        rebalanceThreshold0 = uint16(bytes2(hookParams << 184));
-        rebalanceThreshold1 = uint16(bytes2(hookParams << 200));
-        amAmmEnabled = uint8(bytes1(hookParams << 216)) != 0;
+        rebalanceThreshold = uint16(bytes2(hookParams << 184));
+        rebalanceMaxSlippage = uint16(bytes2(hookParams << 200));
+        rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
+        rebalanceOrderTTL = uint16(bytes2(hookParams << 232));
+        amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
     }
 
     function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {
@@ -748,8 +810,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         int24 arithmeticMeanTick,
         bool useTwap,
         bytes32 newLdfState,
-        uint16 rebalanceThreshold0,
-        uint16 rebalanceThreshold1
+        uint16 rebalanceThreshold,
+        uint16 rebalanceMaxSlippage,
+        uint16 rebalanceTwapSecondsAgo,
+        uint16 rebalanceOrderTTL,
+        uint16 updatedIndex,
+        uint16 updatedCardinality
     ) internal {
         // compute the ratio (excessLiquidity / totalLiquidity)
         // excessLiquidity is the minimum amount of liquidity that can be supported by the excess tokens
@@ -766,79 +832,190 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // compute total liquidity
-        (int24 roundedTick, int24 nextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
-        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
-        (
-            uint256 liquidityDensityOfRoundedTickX96,
-            uint256 density0RightOfRoundedTickX96,
-            uint256 density1LeftOfRoundedTickX96,
-            ,
-        ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
-        );
         uint256 totalLiquidity;
+        uint256 currentActiveBalance0;
+        uint256 currentActiveBalance1;
+        uint256 excessLiquidity0;
+        uint256 excessLiquidity1;
         {
-            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                .getAmountsForLiquidity(
-                updatedSqrtPriceX96,
-                roundedTickSqrtRatio,
-                nextRoundedTickSqrtRatio,
-                uint128(liquidityDensityOfRoundedTickX96),
-                false
+            (int24 roundedTick, int24 nextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
+            (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
+                (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+            (
+                uint256 liquidityDensityOfRoundedTickX96,
+                uint256 density0RightOfRoundedTickX96,
+                uint256 density1LeftOfRoundedTickX96,
+                ,
+            ) = bunniState.liquidityDensityFunction.query(
+                key, roundedTick, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
             );
-            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-            uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
-            uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
-            if (totalLiquidityEstimate0 == 0) {
-                totalLiquidity = totalLiquidityEstimate1;
-            } else if (totalLiquidityEstimate1 == 0) {
-                totalLiquidity = totalLiquidityEstimate0;
-            } else {
-                totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
+            {
+                (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
+                    .getAmountsForLiquidity(
+                    updatedSqrtPriceX96,
+                    roundedTickSqrtRatio,
+                    nextRoundedTickSqrtRatio,
+                    uint128(liquidityDensityOfRoundedTickX96),
+                    false
+                );
+                uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+                uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+                uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
+                uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
+                if (totalLiquidityEstimate0 == 0) {
+                    totalLiquidity = totalLiquidityEstimate1;
+                } else if (totalLiquidityEstimate1 == 0) {
+                    totalLiquidity = totalLiquidityEstimate0;
+                } else {
+                    totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
+                }
             }
+
+            // compute active balance, which is the balance implied by the total liquidity & the LDF
+            uint128 updatedRoundedTickLiquidity =
+                ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
+            (currentActiveBalance0, currentActiveBalance1) = LiquidityAmounts.getAmountsForLiquidity(
+                updatedSqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, false
+            );
+            (currentActiveBalance0, currentActiveBalance1) = (
+                currentActiveBalance0 + ((density0RightOfRoundedTickX96 * totalLiquidity) >> 96),
+                currentActiveBalance1 + ((density1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
+            );
+
+            // compute excess liquidity if there's any
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(key.tickSpacing), TickMath.maxUsableTick(key.tickSpacing) - key.tickSpacing);
+            excessLiquidity0 = balance0 > currentActiveBalance0
+                ? (balance0 - currentActiveBalance0).divWad(
+                    bunniState.liquidityDensityFunction.cumulativeAmount0(
+                        key, minUsableTick, WAD, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
+                    )
+                )
+                : 0;
+            excessLiquidity1 = balance1 > currentActiveBalance1
+                ? (balance1 - currentActiveBalance1).divWad(
+                    bunniState.liquidityDensityFunction.cumulativeAmount1(
+                        key, maxUsableTick, WAD, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
+                    )
+                )
+                : 0;
         }
-
-        // compute active balance, which is the balance implied by the total liquidity & the LDF
-        uint128 updatedRoundedTickLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
-        (uint256 currentActiveBalance0, uint256 currentActiveBalance1) = LiquidityAmounts.getAmountsForLiquidity(
-            updatedSqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, updatedRoundedTickLiquidity, false
-        );
-        (currentActiveBalance0, currentActiveBalance1) = (
-            currentActiveBalance0 + ((density0RightOfRoundedTickX96 * totalLiquidity) >> 96),
-            currentActiveBalance1 + ((density1LeftOfRoundedTickX96 * totalLiquidity) >> 96)
-        );
-
-        // compute excess liquidity if there's any
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(key.tickSpacing), TickMath.maxUsableTick(key.tickSpacing) - key.tickSpacing);
-        uint256 excessLiquidity0 = rebalanceThreshold0 != 0 && balance0 > currentActiveBalance0
-            ? (balance0 - currentActiveBalance0).divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount0(
-                    key, minUsableTick, WAD, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
-                )
-            )
-            : 0;
-        uint256 excessLiquidity1 = rebalanceThreshold1 != 0 && balance1 > currentActiveBalance1
-            ? (balance1 - currentActiveBalance1).divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount1(
-                    key, maxUsableTick, WAD, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
-                )
-            )
-            : 0;
 
         // should rebalance if excessLiquidity / totalLiquidity >= 1 / rebalanceThreshold
-        bool shouldRebalance0 = rebalanceThreshold0 != 0 && excessLiquidity0 >= totalLiquidity / rebalanceThreshold0;
-        bool shouldRebalance1 = rebalanceThreshold1 != 0 && excessLiquidity1 >= totalLiquidity / rebalanceThreshold1;
-        if (shouldRebalance0 && shouldRebalance1) {
-            // edge case where both tokens have excess liquidity
-            // likely one token has actual excess liquidity, the other token has negligible excess liquidity from rounding errors
-            // rebalance the token for which (excessLiquidity / totalLiquidity) is larger
-        } else if (shouldRebalance0) {
-            // rebalance token0
-        } else if (shouldRebalance1) {
-            // rebalance token1
+        bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / rebalanceThreshold;
+        bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / rebalanceThreshold;
+
+        if (shouldRebalance0 || shouldRebalance1) {
+            // compute density of token0 and token1 after excess liquidity has been rebalanced
+            // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
+            uint256 totalDensity0X96;
+            uint256 totalDensity1X96;
+            {
+                int24 rebalanceSpotPriceTick =
+                    _getTwap(id, updatedTick, rebalanceTwapSecondsAgo, updatedIndex, updatedCardinality);
+                uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
+                (int24 roundedTick, int24 nextRoundedTick) = roundTick(rebalanceSpotPriceTick, key.tickSpacing);
+                (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
+                    (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+                (
+                    uint256 liquidityDensityOfRoundedTickX96,
+                    uint256 density0RightOfRoundedTickX96,
+                    uint256 density1LeftOfRoundedTickX96,
+                    ,
+                ) = bunniState.liquidityDensityFunction.query(
+                    key,
+                    roundedTick,
+                    arithmeticMeanTick,
+                    rebalanceSpotPriceTick,
+                    useTwap,
+                    bunniState.ldfParams,
+                    newLdfState
+                );
+                (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
+                    .getAmountsForLiquidity(
+                    rebalanceSpotPriceSqrtRatioX96,
+                    roundedTickSqrtRatio,
+                    nextRoundedTickSqrtRatio,
+                    uint128(liquidityDensityOfRoundedTickX96),
+                    false
+                );
+                totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
+                totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+            }
+
+            // decide which token will be rebalanced (i.e. sold into the other token)
+            bool willRebalanceToken0;
+            if (shouldRebalance0 && shouldRebalance1) {
+                // edge case where both tokens have excess liquidity
+                // likely one token has actual excess liquidity, the other token has negligible excess liquidity from rounding errors
+                // rebalance the token for which excessLiquidity is larger
+                if (excessLiquidity0 > excessLiquidity1) {
+                    willRebalanceToken0 = true;
+                } else {
+                    willRebalanceToken0 = false;
+                }
+            } else if (shouldRebalance0) {
+                // rebalance token0
+                willRebalanceToken0 = true;
+            } else if (shouldRebalance1) {
+                // rebalance token1
+                willRebalanceToken0 = false;
+            }
+
+            // compute target amounts (i.e. the token amounts of the excess liquidity)
+            uint256 excessLiquidity = willRebalanceToken0 ? excessLiquidity0 : excessLiquidity1;
+            uint256 targetAmount0 = excessLiquidity.fullMulDiv(totalDensity0X96, Q96);
+            uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
+
+            // determin input & output
+            // TODO: handle native ETH
+            Currency inputToken;
+            Currency outputToken;
+            uint256 inputAmount;
+            uint256 outputAmount;
+            if (willRebalanceToken0) {
+                (inputToken, outputToken) = (key.currency0, key.currency1);
+                if (balance0 - currentActiveBalance0 < targetAmount0) return; // should never happen
+                inputAmount = balance0 - currentActiveBalance0 - targetAmount0;
+                outputAmount = targetAmount1.mulDivUp(1e5 - rebalanceMaxSlippage, 1e5);
+            } else {
+                (inputToken, outputToken) = (key.currency1, key.currency0);
+                if (balance1 - currentActiveBalance1 < targetAmount1) return; // should never happen
+                inputAmount = balance1 - currentActiveBalance1 - targetAmount1;
+                outputAmount = targetAmount0.mulDivUp(1e5 - rebalanceMaxSlippage, 1e5);
+            }
+
+            // create Flood order
+            IFloodPlain.Item[] memory offer = new IFloodPlain.Item[](1);
+            offer[0] = IFloodPlain.Item({token: Currency.unwrap(inputToken), amount: inputAmount});
+            IFloodPlain.Item memory consideration =
+                IFloodPlain.Item({token: Currency.unwrap(outputToken), amount: outputAmount});
+            // TODO: prehook should pull input tokens from BunniHub to BunniHook
+            IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](0);
+            // TODO: posthook should push output tokens from BunniHook to BunniHub and update pool balances
+            IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](0);
+            IFloodPlain.Order memory order = IFloodPlain.Order({
+                offerer: address(this),
+                zone: address(0),
+                recipient: address(this),
+                offer: offer,
+                consideration: consideration,
+                deadline: block.timestamp + rebalanceOrderTTL,
+                nonce: block.number,
+                preHooks: preHooks,
+                postHooks: postHooks
+            });
+            IFloodPlain.SignedOrder memory signedOrder =
+                IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)});
+            _rebalanceOrderHash[id] = _newOrderHash(order);
+            _rebalanceOrderDeadline[id] = order.deadline;
+            emit OrderEtched(order.hash(), signedOrder);
         }
+    }
+
+    function _newOrderHash(IFloodPlain.Order memory order) internal view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked("\x19\x01", domainSeparator, OrderHashMemory.hashAsWitness(order, address(floodPlain)))
+        );
     }
 }

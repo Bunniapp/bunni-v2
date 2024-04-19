@@ -453,11 +453,11 @@ contract BunniQuoter is IBunniQuoter {
                         FixedPointMathLib.min(
                             inputData.params.amount0Desired,
                             returnData.amount0.mulDiv(inputData.params.amount1Desired, returnData.amount1)
-                            ),
+                        ),
                         FixedPointMathLib.min(
                             inputData.params.amount1Desired,
                             returnData.amount1.mulDiv(inputData.params.amount0Desired, returnData.amount0)
-                            )
+                        )
                     );
                 }
             }
