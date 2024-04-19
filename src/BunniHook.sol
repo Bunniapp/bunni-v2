@@ -54,7 +54,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     IBunniHub internal immutable hub;
     address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
-    bytes32 internal immutable domainSeparator;
 
     /// @notice The list of observations for a given pool ID
     mapping(PoolId => Oracle.Observation[65535]) internal _observations;
@@ -88,7 +87,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
-        domainSeparator = IEIP712(permit2).DOMAIN_SEPARATOR();
         _hookFeesModifier = hookFeesModifier_;
         _hookFeesRecipient = hookFeesRecipient_;
         _initializeOwner(owner_);
@@ -151,10 +149,36 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         nonReentrant
         returns (bytes memory)
     {
+        // decode input
+        (HookLockCallbackType t, bytes memory callbackData) = abi.decode(data, (HookLockCallbackType, bytes));
+
+        if (t == HookLockCallbackType.BURN_AND_TAKE) {
+            return _burnAndTake(lockCaller, callbackData);
+        } else if (t == HookLockCallbackType.CLAIM_FEES) {
+            return _claimFees(lockCaller, callbackData);
+        } else {
+            revert BunniHook__InvalidLockCallbackType();
+        }
+    }
+
+    function _burnAndTake(address lockCaller, bytes memory callbackData) internal returns (bytes memory) {
+        if (lockCaller != address(this)) revert BunniHook__Unauthorized();
+
+        // decode data
+        (Currency currency, address to, uint256 amount) = abi.decode(callbackData, (Currency, address, uint256));
+
+        // burn and take
+        poolManager.burn(address(this), currency.toId(), amount);
+        poolManager.take(currency, to, amount);
+
+        return bytes("");
+    }
+
+    function _claimFees(address lockCaller, bytes memory callbackData) internal returns (bytes memory) {
         if (lockCaller != owner()) revert BunniHook__Unauthorized();
 
         // decode data
-        Currency[] memory currencyList = abi.decode(data, (Currency[]));
+        Currency[] memory currencyList = abi.decode(callbackData, (Currency[]));
 
         // claim protocol fees
         address recipient = _hookFeesRecipient;
@@ -659,153 +683,43 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// -----------------------------------------------------------------------
-    /// AmAmm support
+    /// Rebalancing functions
     /// -----------------------------------------------------------------------
 
-    function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
-        bytes32 hookParams = hub.hookParams(id);
-        return uint8(bytes1(hookParams << 248)) != 0;
+    struct RebalanceOrderHookArgs {
+        PoolKey key;
+        Currency currency;
+        uint256 amount;
     }
 
-    function _maxSwapFee(PoolId id) internal view virtual override returns (uint24) {
-        // use feeMax from hookParams
-        bytes32 hookParams = hub.hookParams(id);
-        return uint24(bytes3(hookParams << 24));
-    }
-
-    function _burnBidToken(PoolId id, uint256 amount) internal virtual override {
-        hub.bunniTokenOfPool(id).burn(amount);
-    }
-
-    function _pullBidToken(PoolId id, address from, uint256 amount) internal virtual override {
-        hub.bunniTokenOfPool(id).transferFrom(from, address(this), amount);
-    }
-
-    function _pushBidToken(PoolId id, address to, uint256 amount) internal virtual override {
-        hub.bunniTokenOfPool(id).transfer(to, amount);
-    }
-
-    function _transferFeeToken(Currency currency, address to, uint256 amount) internal virtual override {
-        poolManager.transfer(to, currency.toId(), amount);
-    }
-
-    /// -----------------------------------------------------------------------
-    /// Internal functions
-    /// -----------------------------------------------------------------------
-
-    function _getFee(
-        uint160 postSwapSqrtPriceX96,
-        int24 arithmeticMeanTick,
-        uint32 lastSurgeTimestamp,
-        uint24 feeMin,
-        uint24 feeMax,
-        uint24 feeQuadraticMultiplier,
-        uint24 surgeFee,
-        uint16 surgeFeeHalfLife
-    ) internal view returns (uint24 fee) {
-        // compute surge fee
-        // surge fee gets applied after the LDF shifts (if it's dynamic)
-        unchecked {
-            uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
-            fee = uint24(
-                uint256(surgeFee).mulWadUp(
-                    uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
-                )
-            );
+    /// @notice Called by the FloodPlain contract prior to executing a rebalance order.
+    /// Should ensure the hook has exactly `args.amount` tokens of `args.currency` upon return.
+    /// @param args The rebalance order hook arguments
+    function rebalanceOrderPreHook(RebalanceOrderHookArgs calldata args) external {
+        // verify call came from Flood
+        if (msg.sender != address(floodPlain)) {
+            revert BunniHook__Unauthorized();
         }
 
-        // special case for fixed fee pools
-        if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));
+        // pull input tokens from BunniHub to BunniHook
+        // received in the form of PoolManager claim tokens
+        bool zeroForOne = args.key.currency1 == args.currency;
+        hub.hookHandleSwap({key: args.key, zeroForOne: zeroForOne, inputAmount: 0, outputAmount: args.amount});
 
-        uint256 ratio =
-            uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
-        if (ratio > MAX_SWAP_FEE_RATIO) ratio = MAX_SWAP_FEE_RATIO;
-        ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
-        uint256 delta = dist(ratio, SWAP_FEE_BASE);
-        // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
-        unchecked {
-            uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);
-            return uint24(FixedPointMathLib.max(fee, FixedPointMathLib.min(feeMin + quadraticTerm, feeMax)));
+        // unwrap claim tokens
+        // NOTE: tax-on-transfer tokens are not supported due to this unwrap since we need exactly args.amount tokens upon return
+        poolManager.lock(address(this), abi.encode(args.currency, address(this), args.amount));
+
+        // ensure we have exactly args.amount tokens
+        if (args.currency.balanceOfSelf() != args.amount) {
+            revert BunniHook__PrehookPostConditionFailed();
         }
-    }
 
-    function _getTwap(
-        PoolId id,
-        int24 currentTick,
-        uint32 twapSecondsAgo,
-        uint16 updatedIndex,
-        uint16 updatedCardinality
-    ) internal view returns (int24 arithmeticMeanTick) {
-        (int56 tickCumulative0, int56 tickCumulative1) = _observations[id].observeDouble(
-            uint32(block.timestamp), twapSecondsAgo, 0, currentTick, updatedIndex, updatedCardinality
-        );
-        int56 tickCumulativesDelta = tickCumulative1 - tickCumulative0;
-        arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
-    }
-
-    /// @dev Decodes hookParams into params used by this hook
-    /// @param hookParams The hook params raw bytes32
-    /// @return feeMin The minimum swap fee, 6 decimals
-    /// @return feeMax The maximum swap fee (may be exceeded if surge fee is active), 6 decimals
-    /// @return feeQuadraticMultiplier The quadratic multiplier for the dynamic swap fee formula, 6 decimals
-    /// @return feeTwapSecondsAgo The time window for the TWAP used by the dynamic swap fee formula
-    /// @return surgeFee The max surge swap fee, 6 decimals
-    /// @return surgeFeeHalfLife The half-life of the surge fee in seconds. The surge fee decays exponentially, and the half-life is the time it takes for the surge fee to decay to half its value.
-    /// @return surgeFeeAutostartThreshold Time after a swap when the surge fee exponential decay autostarts, in seconds. The autostart avoids the pool being stuck on a high fee.
-    /// @return vaultSurgeThreshold0 The threshold for the vault0 share price change to trigger the surge fee. Only used if both vaults are set.
-    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
-    /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
-    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
-    /// @return rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
-    ///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
-    ///         When set to 0, rebalancing is disabled.
-    /// @return rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals.
-    /// @return rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
-    /// @return rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
-    /// @return amAmmEnabled Whether the am-AMM is enabled for this pool
-    function _decodeParams(bytes32 hookParams)
-        internal
-        pure
-        returns (
-            uint24 feeMin,
-            uint24 feeMax,
-            uint24 feeQuadraticMultiplier,
-            uint24 feeTwapSecondsAgo,
-            uint24 surgeFee,
-            uint16 surgeFeeHalfLife,
-            uint16 surgeFeeAutostartThreshold,
-            uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1,
-            uint16 rebalanceThreshold,
-            uint16 rebalanceMaxSlippage,
-            uint16 rebalanceTwapSecondsAgo,
-            uint16 rebalanceOrderTTL,
-            bool amAmmEnabled
-        )
-    {
-        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
-        feeMin = uint24(bytes3(hookParams));
-        feeMax = uint24(bytes3(hookParams << 24));
-        feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
-        feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
-        surgeFee = uint24(bytes3(hookParams << 96));
-        surgeFeeHalfLife = uint16(bytes2(hookParams << 120));
-        surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
-        vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
-        vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
-        rebalanceThreshold = uint16(bytes2(hookParams << 184));
-        rebalanceMaxSlippage = uint16(bytes2(hookParams << 200));
-        rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
-        rebalanceOrderTTL = uint16(bytes2(hookParams << 232));
-        amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
-    }
-
-    function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {
-        ObservationState memory state = _states[id];
-        (updatedIndex, updatedCardinality) = _observations[id].write(
-            state.index, uint32(block.timestamp), tick, state.cardinality, state.cardinalityNext
-        );
-        (_states[id].index, _states[id].cardinality) = (updatedIndex, updatedCardinality);
+        // wrap native ETH input to WETH
+        // we're implicitly trusting the WETH contract won't charge a fee which is OK in practice
+        if (args.currency.isNative()) {
+            weth.deposit{value: args.amount}();
+        }
     }
 
     function _rebalance(
@@ -842,7 +756,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         if (!success) return;
 
         // create rebalance order
-        _createRebalanceOrder(id, rebalanceOrderTTL, inputToken, outputToken, inputAmount, outputAmount);
+        _createRebalanceOrder(id, key, rebalanceOrderTTL, inputToken, outputToken, inputAmount, outputAmount);
     }
 
     function _computeRebalanceParams(
@@ -1035,6 +949,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     function _createRebalanceOrder(
         PoolId id,
+        PoolKey calldata key,
         uint16 rebalanceOrderTTL,
         Currency inputToken,
         Currency outputToken,
@@ -1048,9 +963,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         offer[0] = IFloodPlain.Item({token: address(inputERC20Token), amount: inputAmount});
         IFloodPlain.Item memory consideration =
             IFloodPlain.Item({token: address(outputERC20Token), amount: outputAmount});
-        // TODO: prehook should pull input tokens from BunniHub to BunniHook
-        // TODO: wrap native ETH input to WETH in prehook
-        IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](0);
+        // prehook should pull input tokens from BunniHub to BunniHook
+        IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](1);
+        preHooks[0] = IFloodPlain.Hook({
+            target: address(this),
+            data: abi.encodeWithSelector(
+                this.rebalanceOrderPreHook.selector,
+                RebalanceOrderHookArgs({key: key, currency: inputToken, amount: inputAmount})
+            )
+        });
         // TODO: posthook should push output tokens from BunniHook to BunniHub and update pool balances
         // TODO: unwrap WETH output to native ETH in posthook
         IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](0);
@@ -1080,9 +1001,166 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         emit OrderEtched(order.hash(), signedOrder);
     }
 
+    /// -----------------------------------------------------------------------
+    /// AmAmm support
+    /// -----------------------------------------------------------------------
+
+    function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
+        bytes32 hookParams = hub.hookParams(id);
+        return uint8(bytes1(hookParams << 248)) != 0;
+    }
+
+    function _maxSwapFee(PoolId id) internal view virtual override returns (uint24) {
+        // use feeMax from hookParams
+        bytes32 hookParams = hub.hookParams(id);
+        return uint24(bytes3(hookParams << 24));
+    }
+
+    function _burnBidToken(PoolId id, uint256 amount) internal virtual override {
+        hub.bunniTokenOfPool(id).burn(amount);
+    }
+
+    function _pullBidToken(PoolId id, address from, uint256 amount) internal virtual override {
+        hub.bunniTokenOfPool(id).transferFrom(from, address(this), amount);
+    }
+
+    function _pushBidToken(PoolId id, address to, uint256 amount) internal virtual override {
+        hub.bunniTokenOfPool(id).transfer(to, amount);
+    }
+
+    function _transferFeeToken(Currency currency, address to, uint256 amount) internal virtual override {
+        poolManager.transfer(to, currency.toId(), amount);
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Utility functions
+    /// -----------------------------------------------------------------------
+
+    function _getFee(
+        uint160 postSwapSqrtPriceX96,
+        int24 arithmeticMeanTick,
+        uint32 lastSurgeTimestamp,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier,
+        uint24 surgeFee,
+        uint16 surgeFeeHalfLife
+    ) internal view returns (uint24 fee) {
+        // compute surge fee
+        // surge fee gets applied after the LDF shifts (if it's dynamic)
+        unchecked {
+            uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
+            fee = uint24(
+                uint256(surgeFee).mulWadUp(
+                    uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
+                )
+            );
+        }
+
+        // special case for fixed fee pools
+        if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));
+
+        uint256 ratio =
+            uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
+        if (ratio > MAX_SWAP_FEE_RATIO) ratio = MAX_SWAP_FEE_RATIO;
+        ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
+        uint256 delta = dist(ratio, SWAP_FEE_BASE);
+        // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
+        unchecked {
+            uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);
+            return uint24(FixedPointMathLib.max(fee, FixedPointMathLib.min(feeMin + quadraticTerm, feeMax)));
+        }
+    }
+
+    function _getTwap(
+        PoolId id,
+        int24 currentTick,
+        uint32 twapSecondsAgo,
+        uint16 updatedIndex,
+        uint16 updatedCardinality
+    ) internal view returns (int24 arithmeticMeanTick) {
+        (int56 tickCumulative0, int56 tickCumulative1) = _observations[id].observeDouble(
+            uint32(block.timestamp), twapSecondsAgo, 0, currentTick, updatedIndex, updatedCardinality
+        );
+        int56 tickCumulativesDelta = tickCumulative1 - tickCumulative0;
+        arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
+    }
+
+    /// @dev Decodes hookParams into params used by this hook
+    /// @param hookParams The hook params raw bytes32
+    /// @return feeMin The minimum swap fee, 6 decimals
+    /// @return feeMax The maximum swap fee (may be exceeded if surge fee is active), 6 decimals
+    /// @return feeQuadraticMultiplier The quadratic multiplier for the dynamic swap fee formula, 6 decimals
+    /// @return feeTwapSecondsAgo The time window for the TWAP used by the dynamic swap fee formula
+    /// @return surgeFee The max surge swap fee, 6 decimals
+    /// @return surgeFeeHalfLife The half-life of the surge fee in seconds. The surge fee decays exponentially, and the half-life is the time it takes for the surge fee to decay to half its value.
+    /// @return surgeFeeAutostartThreshold Time after a swap when the surge fee exponential decay autostarts, in seconds. The autostart avoids the pool being stuck on a high fee.
+    /// @return vaultSurgeThreshold0 The threshold for the vault0 share price change to trigger the surge fee. Only used if both vaults are set.
+    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
+    /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
+    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
+    /// @return rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
+    ///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
+    ///         When set to 0, rebalancing is disabled.
+    /// @return rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals.
+    /// @return rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
+    /// @return rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
+    /// @return amAmmEnabled Whether the am-AMM is enabled for this pool
+    function _decodeParams(bytes32 hookParams)
+        internal
+        pure
+        returns (
+            uint24 feeMin,
+            uint24 feeMax,
+            uint24 feeQuadraticMultiplier,
+            uint24 feeTwapSecondsAgo,
+            uint24 surgeFee,
+            uint16 surgeFeeHalfLife,
+            uint16 surgeFeeAutostartThreshold,
+            uint16 vaultSurgeThreshold0,
+            uint16 vaultSurgeThreshold1,
+            uint16 rebalanceThreshold,
+            uint16 rebalanceMaxSlippage,
+            uint16 rebalanceTwapSecondsAgo,
+            uint16 rebalanceOrderTTL,
+            bool amAmmEnabled
+        )
+    {
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
+        feeMin = uint24(bytes3(hookParams));
+        feeMax = uint24(bytes3(hookParams << 24));
+        feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
+        feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
+        surgeFee = uint24(bytes3(hookParams << 96));
+        surgeFeeHalfLife = uint16(bytes2(hookParams << 120));
+        surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
+        vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
+        vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
+        rebalanceThreshold = uint16(bytes2(hookParams << 184));
+        rebalanceMaxSlippage = uint16(bytes2(hookParams << 200));
+        rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
+        rebalanceOrderTTL = uint16(bytes2(hookParams << 232));
+        amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
+    }
+
+    function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {
+        ObservationState memory state = _states[id];
+        (updatedIndex, updatedCardinality) = _observations[id].write(
+            state.index, uint32(block.timestamp), tick, state.cardinality, state.cardinalityNext
+        );
+        (_states[id].index, _states[id].cardinality) = (updatedIndex, updatedCardinality);
+    }
+
+    /// @dev The hash that Permit2 uses when verifying the order's signature.
+    /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
+    /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
     function _newOrderHash(IFloodPlain.Order memory order) internal view returns (bytes32) {
         return keccak256(
-            abi.encodePacked("\x19\x01", domainSeparator, OrderHashMemory.hashAsWitness(order, address(floodPlain)))
+            abi.encodePacked(
+                "\x19\x01",
+                IEIP712(permit2).DOMAIN_SEPARATOR(),
+                OrderHashMemory.hashAsWitness(order, address(floodPlain))
+            )
         );
     }
 }

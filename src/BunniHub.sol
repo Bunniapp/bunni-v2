@@ -375,7 +375,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             poolManager.burn(address(this), currency.toId(), absAmount);
 
             // take tokens from poolManager
-            // Note: if the token has a transfer tax then the subsequent vault.deposit() will fail
+            // NOTE: if the token has a transfer tax then the subsequent vault.deposit() will fail
             // since we have less token than needed
             poolManager.take(currency, address(this), absAmount);
 

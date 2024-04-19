@@ -168,7 +168,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // initialize bunni hook
         deployCodeTo(
             "BunniHook.sol",
-            abi.encode(poolManager, hub, floodPlain, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
+            abi.encode(poolManager, hub, floodPlain, weth, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
             address(bunniHook)
         );
         vm.label(address(bunniHook), "BunniHook");
@@ -750,7 +750,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         currencies[0] = key.currency0;
         currencies[1] = key.currency1;
         snapStart(string.concat("collect protocol fees", snapLabel));
-        poolManager.lock(address(bunniHook), abi.encode(currencies));
+        poolManager.lock(address(bunniHook), abi.encode(HookLockCallbackType.CLAIM_FEES, abi.encode(currencies)));
         snapEnd();
 
         // check balances
