@@ -78,5 +78,6 @@ enum LockCallbackType {
 
 enum HookLockCallbackType {
     BURN_AND_TAKE,
+    SETTLE_AND_MINT,
     CLAIM_FEES
 }

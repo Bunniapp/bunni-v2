@@ -223,30 +223,32 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
 
         // push output claim tokens to hook
-        if (zeroForOne) {
-            if (address(state.vault1) != address(0) && state.rawBalance1 < outputAmount) {
-                // insufficient token balance
-                // withdraw tokens from reserves
-                (int256 reserve1Change, int256 rawBalance1Change) = _updateVaultReserveViaClaimTokens(
-                    (outputAmount - state.rawBalance1).toInt256(), outputToken, state.vault1
-                );
-                state.reserve1 = (state.reserve1.toInt256() + reserve1Change).toUint256();
-                state.rawBalance1 = (state.rawBalance1.toInt256() + rawBalance1Change).toUint256();
+        if (outputAmount != 0) {
+            if (zeroForOne) {
+                if (address(state.vault1) != address(0) && state.rawBalance1 < outputAmount) {
+                    // insufficient token balance
+                    // withdraw tokens from reserves
+                    (int256 reserve1Change, int256 rawBalance1Change) = _updateVaultReserveViaClaimTokens(
+                        (outputAmount - state.rawBalance1).toInt256(), outputToken, state.vault1
+                    );
+                    state.reserve1 = (state.reserve1.toInt256() + reserve1Change).toUint256();
+                    state.rawBalance1 = (state.rawBalance1.toInt256() + rawBalance1Change).toUint256();
+                }
+                state.rawBalance1 -= outputAmount;
+            } else {
+                if (address(state.vault0) != address(0) && state.rawBalance0 < outputAmount) {
+                    // insufficient token balance
+                    // withdraw tokens from reserves
+                    (int256 reserve0Change, int256 rawBalance0Change) = _updateVaultReserveViaClaimTokens(
+                        (outputAmount - state.rawBalance0).toInt256(), outputToken, state.vault0
+                    );
+                    state.reserve0 = (state.reserve0.toInt256() + reserve0Change).toUint256();
+                    state.rawBalance0 = (state.rawBalance0.toInt256() + rawBalance0Change).toUint256();
+                }
+                state.rawBalance0 -= outputAmount;
             }
-            state.rawBalance1 -= outputAmount;
-        } else {
-            if (address(state.vault0) != address(0) && state.rawBalance0 < outputAmount) {
-                // insufficient token balance
-                // withdraw tokens from reserves
-                (int256 reserve0Change, int256 rawBalance0Change) = _updateVaultReserveViaClaimTokens(
-                    (outputAmount - state.rawBalance0).toInt256(), outputToken, state.vault0
-                );
-                state.reserve0 = (state.reserve0.toInt256() + reserve0Change).toUint256();
-                state.rawBalance0 = (state.rawBalance0.toInt256() + rawBalance0Change).toUint256();
-            }
-            state.rawBalance0 -= outputAmount;
+            poolManager.transfer(address(key.hooks), outputToken.toId(), outputAmount);
         }
-        poolManager.transfer(address(key.hooks), outputToken.toId(), outputAmount);
 
         // update raw token balances if we're using vaults and the (rawBalance / balance) ratio is outside the bounds
         if (address(state.vault0) != address(0)) {

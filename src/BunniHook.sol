@@ -153,28 +153,40 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         (HookLockCallbackType t, bytes memory callbackData) = abi.decode(data, (HookLockCallbackType, bytes));
 
         if (t == HookLockCallbackType.BURN_AND_TAKE) {
-            return _burnAndTake(lockCaller, callbackData);
+            _burnAndTake(lockCaller, callbackData);
+        } else if (t == HookLockCallbackType.SETTLE_AND_MINT) {
+            _settleAndMint(lockCaller, callbackData);
         } else if (t == HookLockCallbackType.CLAIM_FEES) {
-            return _claimFees(lockCaller, callbackData);
+            _claimFees(lockCaller, callbackData);
         } else {
             revert BunniHook__InvalidLockCallbackType();
         }
-    }
-
-    function _burnAndTake(address lockCaller, bytes memory callbackData) internal returns (bytes memory) {
-        if (lockCaller != address(this)) revert BunniHook__Unauthorized();
-
-        // decode data
-        (Currency currency, address to, uint256 amount) = abi.decode(callbackData, (Currency, address, uint256));
-
-        // burn and take
-        poolManager.burn(address(this), currency.toId(), amount);
-        poolManager.take(currency, to, amount);
-
         return bytes("");
     }
 
-    function _claimFees(address lockCaller, bytes memory callbackData) internal returns (bytes memory) {
+    function _burnAndTake(address lockCaller, bytes memory callbackData) internal {
+        if (lockCaller != address(this)) revert BunniHook__Unauthorized();
+
+        // decode data
+        (Currency currency, uint256 amount) = abi.decode(callbackData, (Currency, uint256));
+
+        // burn and take
+        poolManager.burn(address(this), currency.toId(), amount);
+        poolManager.take(currency, address(this), amount);
+    }
+
+    function _settleAndMint(address lockCaller, bytes memory callbackData) internal {
+        if (lockCaller != address(this)) revert BunniHook__Unauthorized();
+
+        // decode data
+        Currency currency = abi.decode(callbackData, (Currency));
+
+        // settle and mint
+        uint256 paid = poolManager.settle(currency);
+        poolManager.mint(address(this), currency.toId(), paid);
+    }
+
+    function _claimFees(address lockCaller, bytes memory callbackData) internal {
         if (lockCaller != owner()) revert BunniHook__Unauthorized();
 
         // decode data
@@ -191,7 +203,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 poolManager.take(currency, recipient, balance);
             }
         }
-        return bytes("");
     }
 
     /// -----------------------------------------------------------------------
@@ -686,16 +697,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Rebalancing functions
     /// -----------------------------------------------------------------------
 
-    struct RebalanceOrderHookArgs {
+    struct RebalanceOrderPreHookArgs {
         PoolKey key;
         Currency currency;
         uint256 amount;
     }
 
+    struct RebalanceOrderPostHookArgs {
+        PoolKey key;
+        Currency currency;
+    }
+
     /// @notice Called by the FloodPlain contract prior to executing a rebalance order.
     /// Should ensure the hook has exactly `args.amount` tokens of `args.currency` upon return.
     /// @param args The rebalance order hook arguments
-    function rebalanceOrderPreHook(RebalanceOrderHookArgs calldata args) external {
+    function rebalanceOrderPreHook(RebalanceOrderPreHookArgs calldata args) external nonReentrant {
         // verify call came from Flood
         if (msg.sender != address(floodPlain)) {
             revert BunniHook__Unauthorized();
@@ -703,12 +719,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // pull input tokens from BunniHub to BunniHook
         // received in the form of PoolManager claim tokens
-        bool zeroForOne = args.key.currency1 == args.currency;
-        hub.hookHandleSwap({key: args.key, zeroForOne: zeroForOne, inputAmount: 0, outputAmount: args.amount});
+        hub.hookHandleSwap({
+            key: args.key,
+            zeroForOne: args.key.currency1 == args.currency,
+            inputAmount: 0,
+            outputAmount: args.amount
+        });
 
         // unwrap claim tokens
         // NOTE: tax-on-transfer tokens are not supported due to this unwrap since we need exactly args.amount tokens upon return
-        poolManager.lock(address(this), abi.encode(args.currency, address(this), args.amount));
+        poolManager.lock(
+            address(this), abi.encode(HookLockCallbackType.BURN_AND_TAKE, abi.encode(args.currency, args.amount))
+        );
 
         // ensure we have exactly args.amount tokens
         if (args.currency.balanceOfSelf() != args.amount) {
@@ -720,6 +742,43 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         if (args.currency.isNative()) {
             weth.deposit{value: args.amount}();
         }
+    }
+
+    /// @notice Called by the FloodPlain contract after executing a rebalance order.
+    /// Should transfer any output tokens from the order to BunniHub and update pool balances.
+    /// @param args The rebalance order hook arguments
+    function rebalanceOrderPostHook(RebalanceOrderPostHookArgs calldata args) external nonReentrant {
+        // verify call came from Flood
+        if (msg.sender != address(floodPlain)) {
+            revert BunniHook__Unauthorized();
+        }
+
+        uint256 orderOutputAmount;
+        if (args.currency.isNative()) {
+            // unwrap WETH output to native ETH
+            orderOutputAmount = weth.balanceOf(address(this));
+            weth.withdraw(orderOutputAmount);
+        } else {
+            orderOutputAmount = args.currency.balanceOfSelf();
+        }
+
+        // wrap claim tokens
+        // NOTE: tax-on-transfer tokens are not supported because we need exactly orderOutputAmount tokens
+        if (args.currency.isNative()) {
+            address(poolManager).safeTransferETH(orderOutputAmount);
+        } else {
+            Currency.unwrap(args.currency).safeTransfer(address(poolManager), orderOutputAmount);
+        }
+        poolManager.lock(address(this), abi.encode(HookLockCallbackType.SETTLE_AND_MINT, abi.encode(args.currency)));
+
+        // posthook should push output tokens from BunniHook to BunniHub and update pool balances
+        // BunniHub receives output tokens in the form of PoolManager claim tokens
+        hub.hookHandleSwap({
+            key: args.key,
+            zeroForOne: args.key.currency0 == args.currency,
+            inputAmount: orderOutputAmount,
+            outputAmount: 0
+        });
     }
 
     function _rebalance(
@@ -963,18 +1022,26 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         offer[0] = IFloodPlain.Item({token: address(inputERC20Token), amount: inputAmount});
         IFloodPlain.Item memory consideration =
             IFloodPlain.Item({token: address(outputERC20Token), amount: outputAmount});
-        // prehook should pull input tokens from BunniHub to BunniHook
+
+        // prehook should pull input tokens from BunniHub to BunniHook and update pool balances
         IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](1);
         preHooks[0] = IFloodPlain.Hook({
             target: address(this),
             data: abi.encodeWithSelector(
                 this.rebalanceOrderPreHook.selector,
-                RebalanceOrderHookArgs({key: key, currency: inputToken, amount: inputAmount})
+                RebalanceOrderPreHookArgs({key: key, currency: inputToken, amount: inputAmount})
             )
         });
-        // TODO: posthook should push output tokens from BunniHook to BunniHub and update pool balances
-        // TODO: unwrap WETH output to native ETH in posthook
-        IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](0);
+
+        // posthook should push output tokens from BunniHook to BunniHub and update pool balances
+        IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](1);
+        postHooks[0] = IFloodPlain.Hook({
+            target: address(this),
+            data: abi.encodeWithSelector(
+                this.rebalanceOrderPostHook.selector, RebalanceOrderPostHookArgs({key: key, currency: outputToken})
+            )
+        });
+
         IFloodPlain.Order memory order = IFloodPlain.Order({
             offerer: address(this),
             zone: address(0), // TODO: use zone that whitelists fillers via governance
@@ -986,7 +1053,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             preHooks: preHooks,
             postHooks: postHooks
         });
-        IFloodPlain.SignedOrder memory signedOrder = IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)});
 
         // record order for verification later
         _rebalanceOrderHash[id] = _newOrderHash(order);
@@ -998,7 +1064,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
 
         // etch order so fillers can pick it up
-        emit OrderEtched(order.hash(), signedOrder);
+        // use PoolId as signature to enable isValidSignature() to find the correct order hash
+        emit OrderEtched(order.hash(), IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)}));
     }
 
     /// -----------------------------------------------------------------------
