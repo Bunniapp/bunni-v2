@@ -63,6 +63,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     mapping(PoolId id => bytes32) internal _rebalanceOrderHash;
     mapping(PoolId id => uint256) internal _rebalanceOrderDeadline;
+    mapping(PoolId id => bytes32) internal _rebalanceOrderHookArgsHash;
 
     mapping(PoolId => VaultSharePrices) public vaultSharePricesAtLastSwap;
     mapping(PoolId => bytes32) public ldfStates;
@@ -697,31 +698,42 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Rebalancing functions
     /// -----------------------------------------------------------------------
 
-    struct RebalanceOrderPreHookArgs {
+    struct RebalanceOrderHookArgs {
         PoolKey key;
+        RebalanceOrderPreHookArgs preHookArgs;
+        RebalanceOrderPostHookArgs postHookArgs;
+    }
+
+    struct RebalanceOrderPreHookArgs {
         Currency currency;
         uint256 amount;
     }
 
     struct RebalanceOrderPostHookArgs {
-        PoolKey key;
         Currency currency;
     }
 
     /// @notice Called by the FloodPlain contract prior to executing a rebalance order.
-    /// Should ensure the hook has exactly `args.amount` tokens of `args.currency` upon return.
-    /// @param args The rebalance order hook arguments
-    function rebalanceOrderPreHook(RebalanceOrderPreHookArgs calldata args) external nonReentrant {
+    /// Should ensure the hook has exactly `hookArgs.preHookArgs.amount` tokens of `hookArgs.preHookArgs.currency` upon return.
+    /// @param hookArgs The rebalance order hook arguments
+    function rebalanceOrderPreHook(RebalanceOrderHookArgs calldata hookArgs) external nonReentrant {
         // verify call came from Flood
         if (msg.sender != address(floodPlain)) {
             revert BunniHook__Unauthorized();
         }
 
+        // ensure args can be trusted
+        if (keccak256(abi.encode(hookArgs)) != _rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
+            revert BunniHook__InvalidRebalanceOrderHookArgs();
+        }
+
+        RebalanceOrderPreHookArgs calldata args = hookArgs.preHookArgs;
+
         // pull input tokens from BunniHub to BunniHook
         // received in the form of PoolManager claim tokens
         hub.hookHandleSwap({
-            key: args.key,
-            zeroForOne: args.key.currency1 == args.currency,
+            key: hookArgs.key,
+            zeroForOne: hookArgs.key.currency1 == args.currency,
             inputAmount: 0,
             outputAmount: args.amount
         });
@@ -746,12 +758,19 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     /// @notice Called by the FloodPlain contract after executing a rebalance order.
     /// Should transfer any output tokens from the order to BunniHub and update pool balances.
-    /// @param args The rebalance order hook arguments
-    function rebalanceOrderPostHook(RebalanceOrderPostHookArgs calldata args) external nonReentrant {
+    /// @param hookArgs The rebalance order hook arguments
+    function rebalanceOrderPostHook(RebalanceOrderHookArgs calldata hookArgs) external nonReentrant {
         // verify call came from Flood
         if (msg.sender != address(floodPlain)) {
             revert BunniHook__Unauthorized();
         }
+
+        // ensure args can be trusted
+        if (keccak256(abi.encode(hookArgs)) != _rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
+            revert BunniHook__InvalidRebalanceOrderHookArgs();
+        }
+
+        RebalanceOrderPostHookArgs calldata args = hookArgs.postHookArgs;
 
         uint256 orderOutputAmount;
         if (args.currency.isNative()) {
@@ -774,8 +793,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // posthook should push output tokens from BunniHook to BunniHub and update pool balances
         // BunniHub receives output tokens in the form of PoolManager claim tokens
         hub.hookHandleSwap({
-            key: args.key,
-            zeroForOne: args.key.currency0 == args.currency,
+            key: hookArgs.key,
+            zeroForOne: hookArgs.key.currency0 == args.currency,
             inputAmount: orderOutputAmount,
             outputAmount: 0
         });
@@ -1023,23 +1042,24 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         IFloodPlain.Item memory consideration =
             IFloodPlain.Item({token: address(outputERC20Token), amount: outputAmount});
 
+        RebalanceOrderHookArgs memory hookArgs = RebalanceOrderHookArgs({
+            key: key,
+            preHookArgs: RebalanceOrderPreHookArgs({currency: inputToken, amount: inputAmount}),
+            postHookArgs: RebalanceOrderPostHookArgs({currency: outputToken})
+        });
+
         // prehook should pull input tokens from BunniHub to BunniHook and update pool balances
         IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](1);
         preHooks[0] = IFloodPlain.Hook({
             target: address(this),
-            data: abi.encodeWithSelector(
-                this.rebalanceOrderPreHook.selector,
-                RebalanceOrderPreHookArgs({key: key, currency: inputToken, amount: inputAmount})
-            )
+            data: abi.encodeWithSelector(this.rebalanceOrderPreHook.selector, hookArgs)
         });
 
         // posthook should push output tokens from BunniHook to BunniHub and update pool balances
         IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](1);
         postHooks[0] = IFloodPlain.Hook({
             target: address(this),
-            data: abi.encodeWithSelector(
-                this.rebalanceOrderPostHook.selector, RebalanceOrderPostHookArgs({key: key, currency: outputToken})
-            )
+            data: abi.encodeWithSelector(this.rebalanceOrderPostHook.selector, hookArgs)
         });
 
         IFloodPlain.Order memory order = IFloodPlain.Order({
@@ -1057,6 +1077,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // record order for verification later
         _rebalanceOrderHash[id] = _newOrderHash(order);
         _rebalanceOrderDeadline[id] = order.deadline;
+        _rebalanceOrderHookArgsHash[id] = keccak256(abi.encode(hookArgs));
 
         // approve input token to permit2
         if (inputERC20Token.allowance(address(this), permit2) < inputAmount) {
