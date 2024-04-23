@@ -698,25 +698,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Rebalancing functions
     /// -----------------------------------------------------------------------
 
-    struct RebalanceOrderHookArgs {
-        PoolKey key;
-        RebalanceOrderPreHookArgs preHookArgs;
-        RebalanceOrderPostHookArgs postHookArgs;
-    }
-
-    struct RebalanceOrderPreHookArgs {
-        Currency currency;
-        uint256 amount;
-    }
-
-    struct RebalanceOrderPostHookArgs {
-        Currency currency;
-    }
-
-    /// @notice Called by the FloodPlain contract prior to executing a rebalance order.
-    /// Should ensure the hook has exactly `hookArgs.preHookArgs.amount` tokens of `hookArgs.preHookArgs.currency` upon return.
-    /// @param hookArgs The rebalance order hook arguments
-    function rebalanceOrderPreHook(RebalanceOrderHookArgs calldata hookArgs) external nonReentrant {
+    /// @inheritdoc IBunniHook
+    function rebalanceOrderPreHook(RebalanceOrderHookArgs calldata hookArgs) external override nonReentrant {
         // verify call came from Flood
         if (msg.sender != address(floodPlain)) {
             revert BunniHook__Unauthorized();
@@ -756,10 +739,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
     }
 
-    /// @notice Called by the FloodPlain contract after executing a rebalance order.
-    /// Should transfer any output tokens from the order to BunniHub and update pool balances.
-    /// @param hookArgs The rebalance order hook arguments
-    function rebalanceOrderPostHook(RebalanceOrderHookArgs calldata hookArgs) external nonReentrant {
+    /// @inheritdoc IBunniHook
+    function rebalanceOrderPostHook(RebalanceOrderHookArgs calldata hookArgs) external override nonReentrant {
         // verify call came from Flood
         if (msg.sender != address(floodPlain)) {
             revert BunniHook__Unauthorized();
@@ -950,6 +931,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / rebalanceThreshold;
         if (!shouldRebalance0 && !shouldRebalance1) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
+        console2.log("excessLiquidity0", excessLiquidity0);
+        console2.log("excessLiquidity1", excessLiquidity1);
+        console2.log("totalLiquidity", totalLiquidity);
+
         // compute density of token0 and token1 after excess liquidity has been rebalanced
         // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
         uint256 totalDensity0X96;
@@ -1050,17 +1035,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // prehook should pull input tokens from BunniHub to BunniHook and update pool balances
         IFloodPlain.Hook[] memory preHooks = new IFloodPlain.Hook[](1);
-        preHooks[0] = IFloodPlain.Hook({
-            target: address(this),
-            data: abi.encodeWithSelector(this.rebalanceOrderPreHook.selector, hookArgs)
-        });
+        preHooks[0] =
+            IFloodPlain.Hook({target: address(this), data: abi.encodeCall(this.rebalanceOrderPreHook, (hookArgs))});
 
         // posthook should push output tokens from BunniHook to BunniHub and update pool balances
         IFloodPlain.Hook[] memory postHooks = new IFloodPlain.Hook[](1);
-        postHooks[0] = IFloodPlain.Hook({
-            target: address(this),
-            data: abi.encodeWithSelector(this.rebalanceOrderPostHook.selector, hookArgs)
-        });
+        postHooks[0] =
+            IFloodPlain.Hook({target: address(this), data: abi.encodeCall(this.rebalanceOrderPostHook, (hookArgs))});
 
         IFloodPlain.Order memory order = IFloodPlain.Order({
             offerer: address(this),

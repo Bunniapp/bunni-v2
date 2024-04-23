@@ -85,6 +85,21 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
         uint120 sharePrice1;
     }
 
+    struct RebalanceOrderHookArgs {
+        PoolKey key;
+        RebalanceOrderPreHookArgs preHookArgs;
+        RebalanceOrderPostHookArgs postHookArgs;
+    }
+
+    struct RebalanceOrderPreHookArgs {
+        Currency currency;
+        uint256 amount;
+    }
+
+    struct RebalanceOrderPostHookArgs {
+        Currency currency;
+    }
+
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
@@ -162,4 +177,18 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     /// @param newModifier The new fee modifier
     /// @param newRecipient The new recipient
     function setHookFeesParams(uint96 newModifier, address newRecipient) external;
+
+    /// -----------------------------------------------------------------------
+    /// Rebalance functions
+    /// -----------------------------------------------------------------------
+
+    /// @notice Called by the FloodPlain contract prior to executing a rebalance order.
+    /// Should ensure the hook has exactly `hookArgs.preHookArgs.amount` tokens of `hookArgs.preHookArgs.currency` upon return.
+    /// @param hookArgs The rebalance order hook arguments
+    function rebalanceOrderPreHook(RebalanceOrderHookArgs calldata hookArgs) external;
+
+    /// @notice Called by the FloodPlain contract after executing a rebalance order.
+    /// Should transfer any output tokens from the order to BunniHub and update pool balances.
+    /// @param hookArgs The rebalance order hook arguments
+    function rebalanceOrderPostHook(RebalanceOrderHookArgs calldata hookArgs) external;
 }

@@ -12,7 +12,9 @@ import {MulticallerEtcher} from "multicaller/MulticallerEtcher.sol";
 import {MulticallerWithSender} from "multicaller/MulticallerWithSender.sol";
 import {MulticallerWithSigner} from "multicaller/MulticallerWithSigner.sol";
 
+import {IEIP712} from "permit2/src/interfaces/IEIP712.sol";
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
+import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
@@ -40,9 +42,11 @@ import {ERC20TaxMock} from "./mocks/ERC20TaxMock.sol";
 import {UniswapperTax} from "./mocks/UniswapperTax.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
+import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
 import {Permit2Deployer} from "./utils/Permit2Deployer.sol";
 import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
+import {OrderHashMemory} from "../src/lib/OrderHashMemory.sol";
 import {ERC4626WithFeeMock} from "./mocks/ERC4626WithFeeMock.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
@@ -72,6 +76,10 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint16 internal constant VAULT_SURGE_THRESHOLD_1 = 1e3; // 0.1% change in share price
     uint256 internal constant TOKEN_TAX = 0.05e18;
     uint256 internal constant VAULT_FEE = 0.03e18;
+    uint16 internal constant REBALANCE_THRESHOLD = 100; // 1 / 100 = 1%
+    uint16 internal constant REBALANCE_MAX_SLIPPAGE = 0.05e5; // 5%
+    uint16 internal constant REBALANCE_TWAP_SECONDS_AGO = 1 hours;
+    uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -1493,6 +1501,101 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(actualAmount1, amount1, "actual amount1 doesn't match quoted amount1");
     }
 
+    function test_rebalance_basicOrderCreation(
+        bool useVault0,
+        bool useVault1,
+        uint32 alpha,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+
+        MockLDF ldf_ = new MockLDF();
+        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
+        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            bytes32(
+                abi.encodePacked(
+                    feeMin,
+                    feeMax,
+                    feeQuadraticMultiplier,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME,
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1,
+                    REBALANCE_THRESHOLD,
+                    REBALANCE_MAX_SLIPPAGE,
+                    REBALANCE_TWAP_SECONDS_AGO,
+                    REBALANCE_ORDER_TTL
+                )
+            )
+        );
+
+        // shift liquidity to the right
+        // the LDF will demand more token0, so we'll have too much of token1
+        // the rebalance should swap from token1 to token0
+        ldf_.setMinTick(-20);
+
+        // make small swap
+        uint256 swapAmount = 1e6;
+        _mint(key.currency0, address(this), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(1e6),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_RATIO + 1
+        });
+        vm.recordLogs();
+        _swap(key, params, 0, "");
+
+        // validate etched order
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        Vm.Log memory orderEtchedLog = logs[logs.length - 3];
+        assertEq(orderEtchedLog.emitter, address(bunniHook), "emitter not bunniHook");
+        assertEq(orderEtchedLog.topics[0], IBunniHook.OrderEtched.selector, "not OrderEtched event");
+        IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
+        IFloodPlain.Order memory order = signedOrder.order;
+        assertEq(
+            bunniHook.isValidSignature(_newOrderHash(order), abi.encode(key.toId())),
+            IERC1271.isValidSignature.selector,
+            "order signature not valid"
+        );
+        assertEq(order.offerer, address(bunniHook), "offerer not bunniHook");
+        assertEq(order.recipient, address(bunniHook), "recipient not bunniHook");
+        assertEq(order.offer[0].token, Currency.unwrap(key.currency1), "offer token not token1");
+        assertEq(order.consideration.token, Currency.unwrap(key.currency0), "consideration token not token0");
+        assertEq(order.deadline, vm.getBlockTimestamp() + REBALANCE_ORDER_TTL, "deadline incorrect");
+        assertEq(order.preHooks[0].target, address(bunniHook), "preHook target not bunniHook");
+        IBunniHook.RebalanceOrderHookArgs memory expectedHookArgs = IBunniHook.RebalanceOrderHookArgs({
+            key: key,
+            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: key.currency1, amount: order.offer[0].amount}),
+            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: key.currency0})
+        });
+        assertEq(
+            order.preHooks[0].data,
+            abi.encodeCall(IBunniHook.rebalanceOrderPreHook, (expectedHookArgs)),
+            "preHook data incorrect"
+        );
+        assertEq(order.postHooks[0].target, address(bunniHook), "postHook target not bunniHook");
+        assertEq(
+            order.postHooks[0].data,
+            abi.encodeCall(IBunniHook.rebalanceOrderPostHook, (expectedHookArgs)),
+            "postHook data incorrect"
+        );
+        assertEq(signedOrder.signature, abi.encode(key.toId()), "signature incorrect");
+    }
+
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
         internal
         returns (uint256 shares, uint256 amount0, uint256 amount1)
@@ -1890,5 +1993,18 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         } else {
             poolManager.lock{value: value}(address(swapper_), data);
         }
+    }
+
+    /// @dev The hash that Permit2 uses when verifying the order's signature.
+    /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
+    /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
+    function _newOrderHash(IFloodPlain.Order memory order) internal view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                IEIP712(permit2).DOMAIN_SEPARATOR(),
+                OrderHashMemory.hashAsWitness(order, address(floodPlain))
+            )
+        );
     }
 }
