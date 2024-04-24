@@ -6,6 +6,7 @@ import "forge-std/Test.sol";
 import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 
 import {IFloodPlain} from "flood-contracts/src/interfaces/IFloodPlain.sol";
+import {IOnChainOrders} from "flood-contracts/src/interfaces/IOnChainOrders.sol";
 
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 import {MulticallerEtcher} from "multicaller/MulticallerEtcher.sol";
@@ -190,12 +191,16 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // approve tokens
         token0.approve(address(permit2), type(uint256).max);
         token0.approve(address(swapper), type(uint256).max);
+        token0.approve(address(floodPlain), type(uint256).max);
         token1.approve(address(permit2), type(uint256).max);
         token1.approve(address(swapper), type(uint256).max);
+        token1.approve(address(floodPlain), type(uint256).max);
         weth.approve(address(permit2), type(uint256).max);
         weth.approve(address(swapper), type(uint256).max);
+        weth.approve(address(floodPlain), type(uint256).max);
         tokenWithTax.approve(address(permit2), type(uint256).max);
         tokenWithTax.approve(address(swapperWithTax), type(uint256).max);
+        tokenWithTax.approve(address(floodPlain), type(uint256).max);
 
         // permit2 approve tokens to hub
         permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
@@ -1501,7 +1506,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(actualAmount1, amount1, "actual amount1 doesn't match quoted amount1");
     }
 
-    function test_rebalance_basicOrderCreation(
+    function test_rebalance_basicOrderCreationAndFulfillment(
+        uint256 swapAmount,
         bool useVault0,
         bool useVault1,
         uint32 alpha,
@@ -1509,6 +1515,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         uint24 feeMax,
         uint24 feeQuadraticMultiplier
     ) external {
+        swapAmount = bound(swapAmount, 1e6, 1e36);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
@@ -1548,12 +1555,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // the rebalance should swap from token1 to token0
         ldf_.setMinTick(-20);
 
-        // make small swap
-        uint256 swapAmount = 1e6;
+        // make swap to trigger rebalance
         _mint(key.currency0, address(this), swapAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(1e6),
+            amountSpecified: int256(swapAmount),
             sqrtPriceLimitX96: TickMath.MIN_SQRT_RATIO + 1
         });
         vm.recordLogs();
@@ -1562,8 +1568,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // validate etched order
         Vm.Log[] memory logs = vm.getRecordedLogs();
         Vm.Log memory orderEtchedLog = logs[logs.length - 3];
-        assertEq(orderEtchedLog.emitter, address(bunniHook), "emitter not bunniHook");
-        assertEq(orderEtchedLog.topics[0], IBunniHook.OrderEtched.selector, "not OrderEtched event");
+        assertEq(orderEtchedLog.emitter, address(floodPlain), "emitter not floodPlain");
+        assertEq(orderEtchedLog.topics[0], IOnChainOrders.OrderEtched.selector, "not OrderEtched event");
         IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
         IFloodPlain.Order memory order = signedOrder.order;
         assertEq(
@@ -1594,6 +1600,31 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             "postHook data incorrect"
         );
         assertEq(signedOrder.signature, abi.encode(key.toId()), "signature incorrect");
+
+        // fulfill order
+        _mint(key.currency0, address(this), order.consideration.amount);
+        (uint256 beforeBalance0, uint256 beforeBalance1) = hub.poolBalances(key.toId());
+        uint256 beforeFulfillerBalance0 = key.currency0.balanceOfSelf();
+        floodPlain.fulfillOrder(signedOrder);
+        (uint256 afterBalance0, uint256 afterBalance1) = hub.poolBalances(key.toId());
+
+        // verify balances
+        assertEq(
+            beforeFulfillerBalance0 - key.currency0.balanceOfSelf(),
+            order.consideration.amount,
+            "didn't take currency0 from fulfiller"
+        );
+        assertApproxEqAbs(
+            beforeBalance1 - afterBalance1, order.offer[0].amount, 10, "offer tokens taken from hub incorrect"
+        );
+        assertApproxEqAbs(
+            afterBalance0 - beforeBalance0,
+            order.consideration.amount,
+            10,
+            "consideration tokens given to hub incorrect"
+        );
+
+        // TODO: verify excess liquidity after the rebalance
     }
 
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)

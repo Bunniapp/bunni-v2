@@ -13,6 +13,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
+import "flood-contracts/src/interfaces/IOnChainOrders.sol";
 import "flood-contracts/src/interfaces/IFloodPlain.sol";
 
 import {IEIP712} from "permit2/src/interfaces/IEIP712.sol";
@@ -42,7 +43,6 @@ import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 /// @notice Bunni Hook
 contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     using SafeCastLib for *;
-    using OrderHashMemory for *;
     using SafeTransferLib for *;
     using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
@@ -147,7 +147,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         external
         override
         poolManagerOnly
-        nonReentrant
         returns (bytes memory)
     {
         // decode input
@@ -931,6 +930,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / rebalanceThreshold;
         if (!shouldRebalance0 && !shouldRebalance1) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
+        console2.log("currentActiveBalance0", currentActiveBalance0);
+        console2.log("currentActiveBalance1", currentActiveBalance1);
         console2.log("excessLiquidity0", excessLiquidity0);
         console2.log("excessLiquidity1", excessLiquidity1);
         console2.log("totalLiquidity", totalLiquidity);
@@ -1067,7 +1068,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // etch order so fillers can pick it up
         // use PoolId as signature to enable isValidSignature() to find the correct order hash
-        emit OrderEtched(order.hash(), IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)}));
+        IOnChainOrders(address(floodPlain)).etchOrder(
+            IFloodPlain.SignedOrder({order: order, signature: abi.encode(id)})
+        );
     }
 
     /// -----------------------------------------------------------------------

@@ -57,7 +57,6 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
         uint256 totalLiquidity
     );
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
-    event OrderEtched(bytes32 indexed orderHash, IFloodPlain.SignedOrder signedOrder);
 
     /// -----------------------------------------------------------------------
     /// Structs

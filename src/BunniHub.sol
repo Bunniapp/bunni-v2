@@ -172,6 +172,13 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         return _getHookParams(poolId);
     }
 
+    /// @inheritdoc IBunniHub
+    function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1) {
+        PoolState memory state = _getPoolState(poolId);
+        balance0 = state.rawBalance0 + getReservesInUnderlying(state.reserve0, state.vault0);
+        balance1 = state.rawBalance1 + getReservesInUnderlying(state.reserve1, state.vault1);
+    }
+
     /// -----------------------------------------------------------------------
     /// Uniswap callback
     /// -----------------------------------------------------------------------
