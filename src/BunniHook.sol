@@ -750,6 +750,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             revert BunniHook__InvalidRebalanceOrderHookArgs();
         }
 
+        // invalidate the rebalance order hash
+        // don't delete the deadline to maintain a min rebalance interval
+        PoolId id = hookArgs.key.toId();
+        delete _rebalanceOrderHash[id];
+        delete _rebalanceOrderHookArgsHash[id];
+
         RebalanceOrderPostHookArgs calldata args = hookArgs.postHookArgs;
 
         uint256 orderOutputAmount;
@@ -930,6 +936,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / rebalanceThreshold;
         if (!shouldRebalance0 && !shouldRebalance1) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
+        console2.log("balance0", balance0);
+        console2.log("balance1", balance1);
         console2.log("currentActiveBalance0", currentActiveBalance0);
         console2.log("currentActiveBalance1", currentActiveBalance1);
         console2.log("excessLiquidity0", excessLiquidity0);
@@ -990,6 +998,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint256 excessLiquidity = willRebalanceToken0 ? excessLiquidity0 : excessLiquidity1;
         uint256 targetAmount0 = excessLiquidity.fullMulDiv(totalDensity0X96, Q96);
         uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
+
+        console2.log("targetAmount0", targetAmount0);
+        console2.log("targetAmount1", targetAmount1);
 
         // determin input & output
         if (willRebalanceToken0) {

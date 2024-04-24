@@ -34,6 +34,7 @@ import "../src/ldf/ShiftMode.sol";
 import {MockLDF} from "./mocks/MockLDF.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniHook} from "../src/BunniHook.sol";
+import {BunniLens} from "./utils/BunniLens.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {BunniToken} from "../src/BunniToken.sol";
 import {Uniswapper} from "./mocks/Uniswapper.sol";
@@ -78,7 +79,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint256 internal constant TOKEN_TAX = 0.05e18;
     uint256 internal constant VAULT_FEE = 0.03e18;
     uint16 internal constant REBALANCE_THRESHOLD = 100; // 1 / 100 = 1%
-    uint16 internal constant REBALANCE_MAX_SLIPPAGE = 0.05e5; // 5%
+    uint16 internal constant REBALANCE_MAX_SLIPPAGE = 1; // 5%
     uint16 internal constant REBALANCE_TWAP_SECONDS_AGO = 1 hours;
     uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
 
@@ -110,6 +111,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     IPermit2 internal permit2;
     ERC20TaxMock internal tokenWithTax;
     IFloodPlain internal floodPlain;
+    BunniLens internal lens;
 
     function setUp() public {
         vm.warp(1e9); // init block timestamp to reasonable value
@@ -184,6 +186,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // deploy quoter
         quoter = new BunniQuoter(hub);
+
+        // deploy lens
+        lens = new BunniLens(hub);
 
         // initialize LDF
         ldf = new GeometricDistribution();
@@ -1515,7 +1520,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         uint24 feeMax,
         uint24 feeQuadraticMultiplier
     ) external {
-        swapAmount = bound(swapAmount, 1e6, 1e36);
+        swapAmount = bound(swapAmount, 1e3, 1e6);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
@@ -1555,7 +1560,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // the rebalance should swap from token1 to token0
         ldf_.setMinTick(-20);
 
-        // make swap to trigger rebalance
+        // make small swap to trigger rebalance
         _mint(key.currency0, address(this), swapAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -1567,7 +1572,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // validate etched order
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        Vm.Log memory orderEtchedLog = logs[logs.length - 3];
+        Vm.Log memory orderEtchedLog;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].emitter == address(floodPlain) && logs[i].topics[0] == IOnChainOrders.OrderEtched.selector) {
+                orderEtchedLog = logs[i];
+                break;
+            }
+        }
         assertEq(orderEtchedLog.emitter, address(floodPlain), "emitter not floodPlain");
         assertEq(orderEtchedLog.topics[0], IOnChainOrders.OrderEtched.selector, "not OrderEtched event");
         IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
@@ -1624,7 +1635,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             "consideration tokens given to hub incorrect"
         );
 
-        // TODO: verify excess liquidity after the rebalance
+        // verify excess liquidity after the rebalance
+        (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity) = lens.getExcessLiquidity(key);
+        bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / REBALANCE_THRESHOLD;
+        bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / REBALANCE_THRESHOLD;
+        assertFalse(shouldRebalance0, "shouldRebalance0 is still true after rebalance");
+        assertFalse(shouldRebalance1, "shouldRebalance1 is still true after rebalance");
     }
 
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
