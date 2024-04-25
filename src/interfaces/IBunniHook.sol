@@ -10,6 +10,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
 
+import "flood-contracts/src/interfaces/IZone.sol";
 import "flood-contracts/src/interfaces/IFloodPlain.sol";
 
 import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
@@ -56,6 +57,7 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
         uint24 fee,
         uint256 totalLiquidity
     );
+    event SetZone(IZone zone);
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
 
     /// -----------------------------------------------------------------------

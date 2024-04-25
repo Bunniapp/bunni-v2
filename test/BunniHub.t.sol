@@ -33,6 +33,7 @@ import "../src/lib/Structs.sol";
 import "../src/ldf/ShiftMode.sol";
 import {MockLDF} from "./mocks/MockLDF.sol";
 import {BunniHub} from "../src/BunniHub.sol";
+import {BunniZone} from "../src/BunniZone.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {BunniLens} from "./utils/BunniLens.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
@@ -112,6 +113,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     ERC20TaxMock internal tokenWithTax;
     IFloodPlain internal floodPlain;
     BunniLens internal lens;
+    BunniZone internal zone;
 
     function setUp() public {
         vm.warp(1e9); // init block timestamp to reasonable value
@@ -176,10 +178,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // initialize bunni hub
         hub = new BunniHub(poolManager, weth, permit2, new BunniToken());
 
+        // deploy zone
+        zone = new BunniZone(address(this));
+
         // initialize bunni hook
         deployCodeTo(
             "BunniHook.sol",
-            abi.encode(poolManager, hub, floodPlain, weth, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
+            abi.encode(poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
             address(bunniHook)
         );
         vm.label(address(bunniHook), "BunniHook");
@@ -212,6 +217,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
         permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
         permit2.approve(address(tokenWithTax), address(hub), type(uint160).max, type(uint48).max);
+
+        // whitelist address(this) as fulfiller
+        zone.setIsWhitelisted(address(this), true);
     }
 
     function test_deposit(uint256 depositAmount0, uint256 depositAmount1) public {

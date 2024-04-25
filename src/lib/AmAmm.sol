@@ -534,8 +534,6 @@ abstract contract AmAmm is IAmAmm {
 
         topBid = _topBids[id];
         nextBid = _nextBids[id];
-        bool updatedTopBid;
-        bool updatedNextBid;
 
         // run state machine
         {
@@ -548,9 +546,6 @@ abstract contract AmAmm is IAmAmm {
                 if (!stepHasUpdatedTopBid && !stepHasUpdatedNextBid) {
                     break;
                 }
-
-                updatedTopBid = updatedTopBid || stepHasUpdatedTopBid;
-                updatedNextBid = updatedNextBid || stepHasUpdatedNextBid;
             }
         }
     }

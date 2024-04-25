@@ -13,8 +13,9 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
-import "flood-contracts/src/interfaces/IOnChainOrders.sol";
+import "flood-contracts/src/interfaces/IZone.sol";
 import "flood-contracts/src/interfaces/IFloodPlain.sol";
+import "flood-contracts/src/interfaces/IOnChainOrders.sol";
 
 import {IEIP712} from "permit2/src/interfaces/IEIP712.sol";
 
@@ -68,6 +69,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     mapping(PoolId => VaultSharePrices) public vaultSharePricesAtLastSwap;
     mapping(PoolId => bytes32) public ldfStates;
     mapping(PoolId => Slot0) public slot0s;
+    IZone public floodZone;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
     uint96 internal _hookFeesModifier;
@@ -80,6 +82,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         IBunniHub hub_,
         IFloodPlain floodPlain_,
         WETH weth_,
+        IZone floodZone_,
         address owner_,
         address hookFeesRecipient_,
         uint96 hookFeesModifier_
@@ -88,6 +91,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
+        floodZone = floodZone_;
         _hookFeesModifier = hookFeesModifier_;
         _hookFeesRecipient = hookFeesRecipient_;
         _initializeOwner(owner_);
@@ -219,6 +223,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
     /// Owner functions
     /// -----------------------------------------------------------------------
+
+    function setZone(IZone zone) external onlyOwner {
+        floodZone = zone;
+        emit SetZone(zone);
+    }
 
     /// @inheritdoc IBunniHook
     function setHookFeesParams(uint96 newModifier, address newRecipient) external onlyOwner {
@@ -1067,7 +1076,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         IFloodPlain.Order memory order = IFloodPlain.Order({
             offerer: address(this),
-            zone: address(0), // TODO: use zone that whitelists fillers via governance
+            zone: address(floodZone),
             recipient: address(this),
             offer: offer,
             consideration: consideration,
