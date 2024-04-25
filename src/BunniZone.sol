@@ -8,8 +8,9 @@ import "flood-contracts/src/interfaces/IFloodPlain.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
+import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
+
 import {Ownable} from "./lib/Ownable.sol";
-import {IAmAmm} from "./interfaces/IAmAmm.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
 import {IBunniZone} from "./interfaces/IBunniZone.sol";
 
@@ -53,7 +54,7 @@ contract BunniZone is IBunniZone, Ownable {
     }
 
     /// @inheritdoc IZone
-    function fee(IFloodPlain.Order calldata order, address fulfiller) external view returns (IZone.FeeInfo memory) {
+    function fee(IFloodPlain.Order calldata, address) external pure returns (IZone.FeeInfo memory) {
         return IZone.FeeInfo(address(0), 0);
     }
 }

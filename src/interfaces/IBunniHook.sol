@@ -10,6 +10,8 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
 
+import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
+
 import "flood-contracts/src/interfaces/IZone.sol";
 import "flood-contracts/src/interfaces/IFloodPlain.sol";
 
@@ -20,7 +22,7 @@ import {Oracle} from "../lib/Oracle.sol";
 import {IBunniHub} from "./IBunniHub.sol";
 import {IBaseHook} from "./IBaseHook.sol";
 
-interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, IERC1271 {
+interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, IERC1271, IAmAmm {
     /// -----------------------------------------------------------------------
     /// Errors
     /// -----------------------------------------------------------------------
