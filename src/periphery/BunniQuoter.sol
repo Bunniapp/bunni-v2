@@ -8,6 +8,7 @@ import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManage
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
+import {IAmAmm} from "../interfaces/IAmAmm.sol";
 import {IBunniHub} from "../interfaces/IBunniHub.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {IBunniQuoter} from "../interfaces/IBunniQuoter.sol";
@@ -83,8 +84,21 @@ contract BunniQuoter is IBunniQuoter {
             uint16 surgeFeeHalfLife,
             uint16 surgeFeeAutostartThreshold,
             uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1
+            uint16 vaultSurgeThreshold1,
+            ,
+            ,
+            ,
+            ,
+            bool amAmmEnabled
         ) = _decodeParams(bunniState.hookParams);
+
+        // use read-only version of am-AMM
+        address amAmmManager;
+        uint24 amAmmSwapFee;
+        if (amAmmEnabled) {
+            IAmAmm.Bid memory topBid = IAmAmm(address(key.hooks)).getTopBid(id);
+            (amAmmManager, amAmmSwapFee) = (topBid.manager, topBid.swapFee);
+        }
 
         // get pool token balances
         (uint256 reserveBalance0, uint256 reserveBalance1) = (
@@ -200,6 +214,14 @@ contract BunniQuoter is IBunniQuoter {
             params: params
         });
 
+        // ensure swap never moves price in the opposite direction
+        if (
+            (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
+                || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
+        ) {
+            return (false, 0, 0, 0, 0, 0, 0);
+        }
+
         if (shouldSurge) {
             // use unchecked so that if uint32 overflows we wrap around
             // overflows are ok since we only look at differences
@@ -214,10 +236,15 @@ contract BunniQuoter is IBunniQuoter {
             }
         }
 
-        // charge LP fee and hook fee
-        // we do this by reducing the output token amount
+        // charge swap fee
+        uint256 swapFeeAmount;
         bool exactIn = params.amountSpecified >= 0;
-        {
+        bool useAmAmmFee = amAmmEnabled && amAmmManager != address(0);
+        if (useAmAmmFee) {
+            // give swap fee to am-AMM manager
+            swapFee = amAmmSwapFee;
+        } else {
+            // use default dynamic fee model
             swapFee = _getFee(
                 updatedSqrtPriceX96,
                 arithmeticMeanTick,
@@ -228,19 +255,17 @@ contract BunniQuoter is IBunniQuoter {
                 surgeFee,
                 surgeFeeHalfLife
             );
-            uint256 swapFeeAmount;
+        }
 
-            if (exactIn) {
-                // deduct swap fee from output
-                swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
-                outputAmount -= swapFeeAmount;
-            } else {
-                // increase input amount
-                // need to modify fee rate to maintain the same average price as exactIn case
-                // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
-                swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-                inputAmount += swapFeeAmount;
-            }
+        if (exactIn) {
+            swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+            outputAmount -= swapFeeAmount;
+        } else {
+            // increase input amount
+            // need to modify fee rate to maintain the same average price as exactIn case
+            // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
+            swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
+            inputAmount += swapFeeAmount;
         }
 
         // if we reached this point, the swap was successful
@@ -508,6 +533,13 @@ contract BunniQuoter is IBunniQuoter {
     ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
     /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
     ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
+    /// @return rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
+    ///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
+    ///         When set to 0, rebalancing is disabled.
+    /// @return rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals.
+    /// @return rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
+    /// @return rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
+    /// @return amAmmEnabled Whether the am-AMM is enabled for this pool
     function _decodeParams(bytes32 hookParams)
         internal
         pure
@@ -520,10 +552,15 @@ contract BunniQuoter is IBunniQuoter {
             uint16 surgeFeeHalfLife,
             uint16 surgeFeeAutostartThreshold,
             uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1
+            uint16 vaultSurgeThreshold1,
+            uint16 rebalanceThreshold,
+            uint16 rebalanceMaxSlippage,
+            uint16 rebalanceTwapSecondsAgo,
+            uint16 rebalanceOrderTTL,
+            bool amAmmEnabled
         )
     {
-        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes |
+        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
         feeMin = uint24(bytes3(hookParams));
         feeMax = uint24(bytes3(hookParams << 24));
         feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
@@ -533,6 +570,11 @@ contract BunniQuoter is IBunniQuoter {
         surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
         vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
         vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
+        rebalanceThreshold = uint16(bytes2(hookParams << 184));
+        rebalanceMaxSlippage = uint16(bytes2(hookParams << 200));
+        rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
+        rebalanceOrderTTL = uint16(bytes2(hookParams << 232));
+        amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
     }
 
     function _getTwap(PoolKey memory poolKey, uint24 twapSecondsAgo) internal view returns (int24 arithmeticMeanTick) {

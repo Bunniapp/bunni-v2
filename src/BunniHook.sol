@@ -412,7 +412,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         address amAmmManager;
         uint24 amAmmSwapFee;
         if (amAmmEnabled) {
-            (amAmmManager, amAmmSwapFee) = _updateAmAmm(id);
+            (amAmmManager, amAmmSwapFee) = _updateAmAmmWrite(id);
         }
 
         // get pool token balances
@@ -577,19 +577,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         (Currency inputToken, Currency outputToken) =
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
 
-        // charge LP fee and hook fee
-        // we do this by reducing the output token amount
+        // charge swap fee
         uint24 swapFee;
         uint256 swapFeeAmount;
         uint256 hookFeesAmount;
         bool exactIn = params.amountSpecified >= 0;
-        if (amAmmEnabled && amAmmManager != address(0)) {
+        bool useAmAmmFee = amAmmEnabled && amAmmManager != address(0);
+        if (useAmAmmFee) {
             // give swap fee to am-AMM manager
             swapFee = amAmmSwapFee;
 
             if (exactIn) {
-                // we do not deduct swap fee from outputAmount because the am-AMM manager will take it
-                // it's stored in address(this) until claimed
                 swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
                 _accrueFees(amAmmManager, outputToken, swapFeeAmount);
             } else {
@@ -597,12 +595,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 // need to modify fee rate to maintain the same average price as exactIn case
                 // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
                 swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-                inputAmount += swapFeeAmount;
                 _accrueFees(amAmmManager, inputToken, swapFeeAmount);
             }
-
-            // add the swap fee to hookFeesAmount to satisfy hookHandleSwap()'s accounting
-            hookFeesAmount = swapFeeAmount;
         } else {
             // use default dynamic fee model
             swapFee = _getFee(
@@ -619,20 +613,26 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             if (exactIn) {
                 // deduct swap fee from output
                 swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
-                outputAmount -= swapFeeAmount;
             } else {
                 // increase input amount
                 // need to modify fee rate to maintain the same average price as exactIn case
                 // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
                 swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-                inputAmount += swapFeeAmount;
             }
         }
 
         {
-            // account for hook fees
+            // take hook fees from swap fee
             uint96 hookFeesModifier = _hookFeesModifier;
-            hookFeesAmount += swapFeeAmount.mulDivUp(hookFeesModifier, WAD);
+            hookFeesAmount = swapFeeAmount.mulDivUp(hookFeesModifier, WAD);
+            swapFeeAmount -= hookFeesAmount;
+        }
+
+        // modify input/output amount with fees
+        if (exactIn) {
+            outputAmount -= swapFeeAmount + hookFeesAmount;
+        } else {
+            inputAmount += swapFeeAmount + hookFeesAmount;
         }
 
         // take input by minting claim tokens to hook
@@ -643,11 +643,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // - push output tokens to pool manager and mint claim tokens to hook
         // - update raw token balances
         if (exactIn) {
-            // need to add hookFeesAmount to output so that we can get the hook fees
-            hub.hookHandleSwap(key, params.zeroForOne, inputAmount, outputAmount + hookFeesAmount);
+            hub.hookHandleSwap(
+                key,
+                params.zeroForOne,
+                inputAmount,
+                // if am-AMM is used, the swap fee needs to be taken from BunniHub, else it stays in BunniHub with the LPs
+                useAmAmmFee ? outputAmount + swapFeeAmount + hookFeesAmount : outputAmount + hookFeesAmount
+            );
         } else {
-            // need to subtract hookFeesAmount from input so that we can keep the hook fees
-            hub.hookHandleSwap(key, params.zeroForOne, inputAmount - hookFeesAmount, outputAmount);
+            hub.hookHandleSwap(
+                key,
+                params.zeroForOne,
+                // if am-AMM is not used, the swap fee needs to be sent to BunniHub to the LPs, else it stays in BunniHook with the am-AMM manager
+                useAmAmmFee ? inputAmount - swapFeeAmount - hookFeesAmount : inputAmount - hookFeesAmount,
+                outputAmount
+            );
         }
 
         // burn output claim tokens
