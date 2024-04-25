@@ -28,3 +28,6 @@
 [submodule "lib/flood-contracts"]
 	path = lib/flood-contracts
 	url = https://github.com/flood-protocol/flood-contracts
+[submodule "lib/biddog"]
+	path = lib/biddog
+	url = https://github.com/bunniapp/biddog
