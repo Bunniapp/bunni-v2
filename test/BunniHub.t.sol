@@ -1649,6 +1649,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / REBALANCE_THRESHOLD;
         assertFalse(shouldRebalance0, "shouldRebalance0 is still true after rebalance");
         assertFalse(shouldRebalance1, "shouldRebalance1 is still true after rebalance");
+
+        // verify surge fee is applied
+        (,, uint32 lastSwapTimestamp, uint32 lastSurgeTImestamp) = bunniHook.slot0s(key.toId());
+        assertEq(lastSwapTimestamp, uint32(vm.getBlockTimestamp()), "lastSwapTimestamp incorrect");
+        assertEq(lastSurgeTImestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTImestamp incorrect");
     }
 
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
