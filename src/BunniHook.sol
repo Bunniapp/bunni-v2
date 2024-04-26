@@ -788,6 +788,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         delete _rebalanceOrderHash[id];
         delete _rebalanceOrderHookArgsHash[id];
 
+        // surge fee should be applied after the rebalance has been executed
+        // since totalLiquidity will be increased
+        // no need to check surgeFeeAutostartThreshold sincewe just increased the liquidity in this tx
+        // so block.timestamp is the exact time when the surge should occur
+        slot0s[id].lastSwapTimestamp = uint32(block.timestamp);
+        slot0s[id].lastSurgeTimestamp = uint32(block.timestamp);
+
         RebalanceOrderPostHookArgs calldata args = hookArgs.postHookArgs;
 
         uint256 orderOutputAmount;
