@@ -10,12 +10,19 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
 
+import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
+
+import "flood-contracts/src/interfaces/IZone.sol";
+import "flood-contracts/src/interfaces/IFloodPlain.sol";
+
+import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
+
 import {IOwnable} from "./IOwnable.sol";
 import {Oracle} from "../lib/Oracle.sol";
 import {IBunniHub} from "./IBunniHub.sol";
 import {IBaseHook} from "./IBaseHook.sol";
 
-interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
+interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, IERC1271, IAmAmm {
     /// -----------------------------------------------------------------------
     /// Errors
     /// -----------------------------------------------------------------------
@@ -23,6 +30,9 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     error BunniHook__InvalidSwap();
     error BunniHook__Unauthorized();
     error BunniHook__NoAddLiquidity();
+    error BunniHook__InvalidLockCallbackType();
+    error BunniHook__PrehookPostConditionFailed();
+    error BunniHook__InvalidRebalanceOrderHookArgs();
 
     /// -----------------------------------------------------------------------
     /// Events
@@ -49,6 +59,7 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         uint24 fee,
         uint256 totalLiquidity
     );
+    event SetZone(IZone zone);
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
 
     /// -----------------------------------------------------------------------
@@ -75,6 +86,21 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
         bool initialized;
         uint120 sharePrice0;
         uint120 sharePrice1;
+    }
+
+    struct RebalanceOrderHookArgs {
+        PoolKey key;
+        RebalanceOrderPreHookArgs preHookArgs;
+        RebalanceOrderPostHookArgs postHookArgs;
+    }
+
+    struct RebalanceOrderPreHookArgs {
+        Currency currency;
+        uint256 amount;
+    }
+
+    struct RebalanceOrderPostHookArgs {
+        Currency currency;
     }
 
     /// -----------------------------------------------------------------------
@@ -154,4 +180,18 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback {
     /// @param newModifier The new fee modifier
     /// @param newRecipient The new recipient
     function setHookFeesParams(uint96 newModifier, address newRecipient) external;
+
+    /// -----------------------------------------------------------------------
+    /// Rebalance functions
+    /// -----------------------------------------------------------------------
+
+    /// @notice Called by the FloodPlain contract prior to executing a rebalance order.
+    /// Should ensure the hook has exactly `hookArgs.preHookArgs.amount` tokens of `hookArgs.preHookArgs.currency` upon return.
+    /// @param hookArgs The rebalance order hook arguments
+    function rebalanceOrderPreHook(RebalanceOrderHookArgs calldata hookArgs) external;
+
+    /// @notice Called by the FloodPlain contract after executing a rebalance order.
+    /// Should transfer any output tokens from the order to BunniHub and update pool balances.
+    /// @param hookArgs The rebalance order hook arguments
+    function rebalanceOrderPostHook(RebalanceOrderHookArgs calldata hookArgs) external;
 }

@@ -308,11 +308,11 @@ library BunniHubLogic {
                         FixedPointMathLib.min(
                             inputData.params.amount0Desired,
                             returnData.amount0.mulDiv(inputData.params.amount1Desired, returnData.amount1)
-                            ),
+                        ),
                         FixedPointMathLib.min(
                             inputData.params.amount1Desired,
                             returnData.amount1.mulDiv(inputData.params.amount0Desired, returnData.amount0)
-                            )
+                        )
                     );
                 }
             }
@@ -655,7 +655,7 @@ library BunniHubLogic {
         }
 
         // do vault deposit
-        address(token).safeApprove(address(vault), amount);
+        address(token).safeApproveWithRetry(address(vault), amount);
         reserveChange = vault.deposit(amount, address(this));
         reserveChangeInUnderlying = vault.previewRedeem(reserveChange);
 

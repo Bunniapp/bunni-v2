@@ -81,6 +81,50 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         return LibCarpetedDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
     }
 
+    function cumulativeAmount0(
+        PoolKey calldata key,
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external pure override returns (uint256) {
+        LibCarpetedDoubleGeometricDistribution.Params memory params =
+            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
+        if (initialized) {
+            params.minTick = enforceShiftMode(params.minTick, lastMinTick, params.shiftMode);
+        }
+
+        return LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(
+            roundedTick, totalLiquidity, key.tickSpacing, params
+        );
+    }
+
+    function cumulativeAmount1(
+        PoolKey calldata key,
+        int24 roundedTick,
+        uint256 totalLiquidity,
+        int24 twapTick,
+        int24, /* spotPriceTick */
+        bool useTwap,
+        bytes32 ldfParams,
+        bytes32 ldfState
+    ) external pure override returns (uint256) {
+        LibCarpetedDoubleGeometricDistribution.Params memory params =
+            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
+        if (initialized) {
+            params.minTick = enforceShiftMode(params.minTick, lastMinTick, params.shiftMode);
+        }
+
+        return LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(
+            roundedTick, totalLiquidity, key.tickSpacing, params
+        );
+    }
+
     function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMinTick) {
         // | initialized - 1 byte | lastMinTick - 3 bytes |
         initialized = uint8(bytes1(ldfState)) == 1;

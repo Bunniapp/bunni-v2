@@ -9,6 +9,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {CREATE3Script} from "./base/CREATE3Script.sol";
 
 import {BunniHub} from "../src/BunniHub.sol";
+import {BunniZone} from "../src/BunniZone.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {BunniToken} from "../src/BunniToken.sol";
 
@@ -18,7 +19,7 @@ contract DeployCoreScript is CREATE3Script {
 
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
-    function run() external returns (BunniHub hub, BunniHook hook, bytes32 hookSalt) {
+    function run() external returns (BunniHub hub, BunniZone zone, BunniHook hook, bytes32 hookSalt) {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
         address deployer = vm.addr(deployerPrivateKey);
@@ -29,6 +30,7 @@ contract DeployCoreScript is CREATE3Script {
         address owner = vm.envAddress(string.concat("OWNER_", block.chainid.toString()));
         address hookFeesRecipient = vm.envAddress(string.concat("HOOK_FEES_RECIPIENT_", block.chainid.toString()));
         uint96 hookFeesModifier = vm.envUint("HOOK_FEES_MODIFIER").toUint96();
+        address floodPlain = vm.envAddress("FLOOD_PLAIN");
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -37,6 +39,14 @@ contract DeployCoreScript is CREATE3Script {
                 create3.deploy(
                     getCreate3ContractSalt("BunniHub"),
                     bytes.concat(type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2, new BunniToken()))
+                )
+            )
+        );
+
+        zone = BunniZone(
+            payable(
+                create3.deploy(
+                    getCreate3ContractSalt("BunniZone"), bytes.concat(type(BunniZone).creationCode, abi.encode(owner))
                 )
             )
         );
@@ -59,7 +69,7 @@ contract DeployCoreScript is CREATE3Script {
                     hookSalt,
                     bytes.concat(
                         type(BunniHook).creationCode,
-                        abi.encode(poolManager, hub, owner, hookFeesRecipient, hookFeesModifier)
+                        abi.encode(poolManager, hub, floodPlain, weth, zone, owner, hookFeesRecipient, hookFeesModifier)
                     )
                 )
             )

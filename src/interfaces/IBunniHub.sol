@@ -237,4 +237,7 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
 
     /// @notice The PoolId of a given BunniToken.
     function poolIdOfBunniToken(IBunniToken bunniToken) external view returns (PoolId);
+
+    /// @notice The token balances of a Bunni pool. Reserves in vaults are converted to raw token balances via ERC4626.previewRedeem().
+    function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1);
 }

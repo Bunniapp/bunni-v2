@@ -75,3 +75,9 @@ enum LockCallbackType {
     WITHDRAW,
     INITIALIZE_POOL
 }
+
+enum HookLockCallbackType {
+    BURN_AND_TAKE,
+    SETTLE_AND_MINT,
+    CLAIM_FEES
+}
