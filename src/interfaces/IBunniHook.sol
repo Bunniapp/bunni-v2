@@ -159,6 +159,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
 
     function globalAmAmmEnabledOverride() external view returns (BoolOverride);
 
+    function getAmAmmEnabled(PoolId id) external view returns (bool);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------

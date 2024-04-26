@@ -328,6 +328,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
     }
 
+    /// @inheritdoc IBunniHook
+    function getAmAmmEnabled(PoolId id) external view override returns (bool) {
+        return _amAmmEnabled(id);
+    }
+
     /// -----------------------------------------------------------------------
     /// Hooks
     /// -----------------------------------------------------------------------

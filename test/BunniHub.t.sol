@@ -1656,6 +1656,48 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(lastSurgeTImestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTImestamp incorrect");
     }
 
+    function test_amAmmOverride(uint256 poolOverride_, uint256 globalOverride_, bool poolEnabled) external {
+        BoolOverride poolOverride = BoolOverride(uint8(bound(poolOverride_, 0, 2)));
+        BoolOverride globalOverride = BoolOverride(uint8(bound(globalOverride_, 0, 2)));
+
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            ERC4626(address(0)),
+            ERC4626(address(0)),
+            bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH)),
+            bytes32(
+                abi.encodePacked(
+                    FEE_MIN,
+                    FEE_MAX,
+                    FEE_QUADRATIC_MULTIPLIER,
+                    FEE_TWAP_SECONDS_AGO,
+                    SURGE_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME,
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1,
+                    REBALANCE_THRESHOLD,
+                    REBALANCE_MAX_SLIPPAGE,
+                    REBALANCE_TWAP_SECONDS_AGO,
+                    REBALANCE_ORDER_TTL,
+                    poolEnabled
+                )
+            )
+        );
+        PoolId id = key.toId();
+
+        bunniHook.setAmAmmEnabledOverride(id, poolOverride);
+        bunniHook.setGlobalAmAmmEnabledOverride(globalOverride);
+
+        // verify amAmmEnabled
+        bool expected;
+        if (poolOverride != BoolOverride.UNSET) expected = poolOverride == BoolOverride.TRUE;
+        else if (globalOverride != BoolOverride.UNSET) expected = globalOverride == BoolOverride.TRUE;
+        else expected = poolEnabled;
+        assertEq(bunniHook.getAmAmmEnabled(id), expected, "getAmAmmEnabled incorrect");
+    }
+
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
         internal
         returns (uint256 shares, uint256 amount0, uint256 amount1)
