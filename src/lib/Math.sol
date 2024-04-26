@@ -8,6 +8,9 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./Constants.sol";
 
+using FixedPointMathLib for int256;
+using FixedPointMathLib for uint256;
+
 /// @dev modified from solady
 function dist(uint256 x, uint256 y) pure returns (uint256 z) {
     /// @solidity memory-safe-assembly
@@ -60,4 +63,20 @@ function xWadToRoundedTick(int256 xWad, int24 mu, int24 tickSpacing, bool roundU
 function percentDelta(uint256 a, uint256 b) pure returns (uint256) {
     uint256 absDelta = dist(a, b);
     return FixedPointMathLib.divWad(absDelta, b);
+}
+
+function computeSurgeFee(uint32 lastSurgeTimestamp, uint24 surgeFee, uint16 surgeFeeHalfLife)
+    view
+    returns (uint24 fee)
+{
+    // compute surge fee
+    // surge fee gets applied after the LDF shifts (if it's dynamic)
+    unchecked {
+        uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
+        fee = uint24(
+            uint256(surgeFee).mulWadUp(
+                uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
+            )
+        );
+    }
 }

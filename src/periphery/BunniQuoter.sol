@@ -18,6 +18,7 @@ import "../lib/Math.sol";
 import "../lib/Structs.sol";
 import "../lib/Constants.sol";
 import "../lib/VaultMath.sol";
+import "../lib/AmAmmPayload.sol";
 import "../lib/BunniSwapMath.sol";
 import {LiquidityAmounts} from "../lib/LiquidityAmounts.sol";
 
@@ -96,9 +97,14 @@ contract BunniQuoter is IBunniQuoter {
         // use read-only version of am-AMM
         address amAmmManager;
         uint24 amAmmSwapFee;
+        bool amAmmEnableSurgeFee;
         if (amAmmEnabled) {
             IAmAmm.Bid memory topBid = IAmAmm(address(key.hooks)).getTopBid(id);
-            (amAmmManager, amAmmSwapFee) = (topBid.manager, topBid.swapFee);
+            amAmmManager = topBid.manager;
+            uint24 swapFee0For1;
+            uint24 swapFee1For0;
+            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(topBid.payload);
+            amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
         }
 
         // get pool token balances
@@ -243,7 +249,12 @@ contract BunniQuoter is IBunniQuoter {
         bool useAmAmmFee = amAmmEnabled && amAmmManager != address(0);
         if (useAmAmmFee) {
             // give swap fee to am-AMM manager
-            swapFee = amAmmSwapFee;
+            // apply surge fee if manager enabled it
+            swapFee = amAmmEnableSurgeFee
+                ? uint24(
+                    FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, surgeFee, surgeFeeHalfLife))
+                )
+                : amAmmSwapFee;
         } else {
             // use default dynamic fee model
             swapFee = _getFee(
@@ -600,14 +611,7 @@ contract BunniQuoter is IBunniQuoter {
     ) internal view returns (uint24 fee) {
         // compute surge fee
         // surge fee gets applied after the LDF shifts (if it's dynamic)
-        unchecked {
-            uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
-            fee = uint24(
-                uint256(surgeFee).mulWadUp(
-                    uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
-                )
-            );
-        }
+        fee = computeSurgeFee(lastSurgeTimestamp, surgeFee, surgeFeeHalfLife);
 
         // special case for fixed fee pools
         if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));

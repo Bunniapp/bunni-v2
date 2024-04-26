@@ -31,6 +31,7 @@ import "./lib/Math.sol";
 import "./lib/Structs.sol";
 import "./lib/VaultMath.sol";
 import "./lib/Constants.sol";
+import "./lib/AmAmmPayload.sol";
 import "./interfaces/IBunniHook.sol";
 import {Oracle} from "./lib/Oracle.sol";
 import {Ownable} from "./lib/Ownable.sol";
@@ -421,8 +422,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // update am-AMM state
         address amAmmManager;
         uint24 amAmmSwapFee;
+        bool amAmmEnableSurgeFee;
         if (amAmmEnabled) {
-            (amAmmManager, amAmmSwapFee) = _updateAmAmmWrite(id);
+            bytes7 payload;
+            (amAmmManager, payload) = _updateAmAmmWrite(id);
+            uint24 swapFee0For1;
+            uint24 swapFee1For0;
+            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(payload);
+            amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
         }
 
         // get pool token balances
@@ -595,7 +602,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         bool useAmAmmFee = amAmmEnabled && amAmmManager != address(0);
         if (useAmAmmFee) {
             // give swap fee to am-AMM manager
-            swapFee = amAmmSwapFee;
+            // apply surge fee if manager enabled it
+            swapFee = amAmmEnableSurgeFee
+                ? uint24(
+                    FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, surgeFee, surgeFeeHalfLife))
+                )
+                : amAmmSwapFee;
 
             if (exactIn) {
                 swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
@@ -1113,10 +1125,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return uint8(bytes1(hookParams << 248)) != 0;
     }
 
-    function _maxSwapFee(PoolId id) internal view virtual override returns (uint24) {
+    function _payloadIsValid(PoolId id, bytes7 payload) internal view virtual override returns (bool) {
         // use feeMax from hookParams
         bytes32 hookParams = hub.hookParams(id);
-        return uint24(bytes3(hookParams << 24));
+        uint24 maxSwapFee = uint24(bytes3(hookParams << 24));
+
+        // payload is valid if swapFee0For1 and swapFee1For0 are at most maxSwapFee
+        (uint24 swapFee0For1, uint24 swapFee1For0,) = decodeAmAmmPayload(payload);
+        return swapFee0For1 <= maxSwapFee && swapFee1For0 <= maxSwapFee;
     }
 
     function _burnBidToken(PoolId id, uint256 amount) internal virtual override {
@@ -1151,14 +1167,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     ) internal view returns (uint24 fee) {
         // compute surge fee
         // surge fee gets applied after the LDF shifts (if it's dynamic)
-        unchecked {
-            uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
-            fee = uint24(
-                uint256(surgeFee).mulWadUp(
-                    uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
-                )
-            );
-        }
+        fee = computeSurgeFee(lastSurgeTimestamp, surgeFee, surgeFeeHalfLife);
 
         // special case for fixed fee pools
         if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));
