@@ -17,6 +17,7 @@ import "flood-contracts/src/interfaces/IFloodPlain.sol";
 
 import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 
+import "../lib/Structs.sol";
 import {IOwnable} from "./IOwnable.sol";
 import {Oracle} from "../lib/Oracle.sol";
 import {IBunniHub} from "./IBunniHub.sol";
@@ -61,6 +62,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     );
     event SetZone(IZone zone);
     event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
+    event SetAmAmmEnabledOverride(PoolId indexed id, BoolOverride indexed boolOverride);
+    event SetGlobalAmAmmEnabledOverride(BoolOverride indexed boolOverride);
 
     /// -----------------------------------------------------------------------
     /// Structs
@@ -150,6 +153,14 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
         view
         returns (bool initialized, uint120 sharePrice0, uint120 sharePrice1);
 
+    function floodZone() external view returns (IZone);
+
+    function amAmmEnabledOverride(PoolId id) external view returns (BoolOverride);
+
+    function globalAmAmmEnabledOverride() external view returns (BoolOverride);
+
+    function getAmAmmEnabled(PoolId id) external view returns (bool);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------
@@ -176,10 +187,23 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     /// Owner functions
     /// -----------------------------------------------------------------------
 
+    /// @notice Set the FloodZone contract address. Only callable by the owner.
+    /// @param zone The new FloodZone contract address
+    function setZone(IZone zone) external;
+
     /// @notice Set the hook fees params. Only callable by the owner.
     /// @param newModifier The new fee modifier
     /// @param newRecipient The new recipient
     function setHookFeesParams(uint96 newModifier, address newRecipient) external;
+
+    /// @notice Overrides amAmmEnabled for the given pool. Only callable by the owner.
+    /// @param id The pool id
+    /// @param boolOverride The new override value
+    function setAmAmmEnabledOverride(PoolId id, BoolOverride boolOverride) external;
+
+    /// @notice Overrides amAmmEnabled for all pools. Only callable by the owner.
+    /// @param boolOverride The new override value
+    function setGlobalAmAmmEnabledOverride(BoolOverride boolOverride) external;
 
     /// -----------------------------------------------------------------------
     /// Rebalance functions
