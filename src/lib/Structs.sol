@@ -81,3 +81,9 @@ enum HookLockCallbackType {
     SETTLE_AND_MINT,
     CLAIM_FEES
 }
+
+enum BoolOverride {
+    UNSET,
+    TRUE,
+    FALSE
+}

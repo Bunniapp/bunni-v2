@@ -71,6 +71,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     mapping(PoolId => VaultSharePrices) public vaultSharePricesAtLastSwap;
     mapping(PoolId => bytes32) public ldfStates;
     mapping(PoolId => Slot0) public slot0s;
+    mapping(PoolId => BoolOverride) public amAmmEnabledOverride;
+
+    BoolOverride public globalAmAmmEnabledOverride;
     IZone public floodZone;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
@@ -226,6 +229,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Owner functions
     /// -----------------------------------------------------------------------
 
+    /// @inheritdoc IBunniHook
     function setZone(IZone zone) external onlyOwner {
         floodZone = zone;
         emit SetZone(zone);
@@ -237,6 +241,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         _hookFeesRecipient = newRecipient;
 
         emit SetHookFeesParams(newModifier, newRecipient);
+    }
+
+    /// @inheritdoc IBunniHook
+    function setAmAmmEnabledOverride(PoolId id, BoolOverride boolOverride) external onlyOwner {
+        amAmmEnabledOverride[id] = boolOverride;
+        emit SetAmAmmEnabledOverride(id, boolOverride);
+    }
+
+    /// @inheritdoc IBunniHook
+    function setGlobalAmAmmEnabledOverride(BoolOverride boolOverride) external onlyOwner {
+        globalAmAmmEnabledOverride = boolOverride;
+        emit SetGlobalAmAmmEnabledOverride(boolOverride);
     }
 
     /// -----------------------------------------------------------------------
@@ -1127,9 +1143,19 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// AmAmm support
     /// -----------------------------------------------------------------------
 
+    /// @dev precedence is poolOverride > globalOverride > poolEnabled
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
+        BoolOverride poolOverride = amAmmEnabledOverride[id];
+
+        if (poolOverride != BoolOverride.UNSET) return poolOverride == BoolOverride.TRUE;
+
+        BoolOverride globalOverride = globalAmAmmEnabledOverride;
+
+        if (globalOverride != BoolOverride.UNSET) return globalOverride == BoolOverride.TRUE;
+
         bytes32 hookParams = hub.hookParams(id);
-        return uint8(bytes1(hookParams << 248)) != 0;
+        bool poolEnabled = uint8(bytes1(hookParams << 248)) != 0;
+        return poolEnabled;
     }
 
     function _payloadIsValid(PoolId id, bytes7 payload) internal view virtual override returns (bool) {
