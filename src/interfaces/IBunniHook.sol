@@ -73,9 +73,9 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     /// @member cardinality The cardinality of the observations array for the pool
     /// @member cardinalityNext The cardinality target of the observations array for the pool, which will replace cardinality when enough observations are written
     struct ObservationState {
-        uint16 index;
-        uint16 cardinality;
-        uint16 cardinalityNext;
+        uint32 index;
+        uint32 cardinality;
+        uint32 cardinalityNext;
     }
 
     struct Slot0 {
@@ -170,9 +170,9 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     /// @param cardinalityNext The new cardinality target
     /// @return cardinalityNextOld The old cardinality target
     /// @return cardinalityNextNew The new cardinality target
-    function increaseCardinalityNext(PoolKey calldata key, uint16 cardinalityNext)
+    function increaseCardinalityNext(PoolKey calldata key, uint32 cardinalityNext)
         external
-        returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew);
+        returns (uint32 cardinalityNextOld, uint32 cardinalityNextNew);
 
     /// -----------------------------------------------------------------------
     /// BunniHub functions

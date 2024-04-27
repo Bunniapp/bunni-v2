@@ -50,7 +50,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
-    using Oracle for Oracle.Observation[65535];
+    using Oracle for Oracle.Observation[MAX_CARDINALITY];
     using AdditionalCurrencyLibrary for Currency;
 
     WETH internal immutable weth;
@@ -59,7 +59,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     IFloodPlain internal immutable floodPlain;
 
     /// @notice The list of observations for a given pool ID
-    mapping(PoolId => Oracle.Observation[65535]) internal _observations;
+    mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) internal _observations;
 
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) internal _states;
@@ -131,10 +131,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHook
-    function increaseCardinalityNext(PoolKey calldata key, uint16 cardinalityNext)
+    function increaseCardinalityNext(PoolKey calldata key, uint32 cardinalityNext)
         external
         override
-        returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew)
+        returns (uint32 cardinalityNextOld, uint32 cardinalityNextNew)
     {
         PoolId id = key.toId();
 
@@ -501,7 +501,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
-        (uint16 updatedIndex, uint16 updatedCardinality) = _updateOracle(id, currentTick);
+        (uint32 updatedIndex, uint32 updatedCardinality) = _updateOracle(id, currentTick);
 
         // (optional) get TWAP value
         if (useTwap) {
@@ -858,8 +858,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint16 rebalanceMaxSlippage,
         uint16 rebalanceTwapSecondsAgo,
         uint16 rebalanceOrderTTL,
-        uint16 updatedIndex,
-        uint16 updatedCardinality
+        uint32 updatedIndex,
+        uint32 updatedCardinality
     ) internal {
         // compute rebalance params
         (bool success, Currency inputToken, Currency outputToken, uint256 inputAmount, uint256 outputAmount) =
@@ -894,8 +894,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint16 rebalanceThreshold,
         uint16 rebalanceMaxSlippage,
         uint16 rebalanceTwapSecondsAgo,
-        uint16 updatedIndex,
-        uint16 updatedCardinality
+        uint32 updatedIndex,
+        uint32 updatedCardinality
     )
         internal
         view
@@ -1226,8 +1226,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         PoolId id,
         int24 currentTick,
         uint32 twapSecondsAgo,
-        uint16 updatedIndex,
-        uint16 updatedCardinality
+        uint32 updatedIndex,
+        uint32 updatedCardinality
     ) internal view returns (int24 arithmeticMeanTick) {
         (int56 tickCumulative0, int56 tickCumulative1) = _observations[id].observeDouble(
             uint32(block.timestamp), twapSecondsAgo, 0, currentTick, updatedIndex, updatedCardinality
@@ -1293,7 +1293,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
     }
 
-    function _updateOracle(PoolId id, int24 tick) internal returns (uint16 updatedIndex, uint16 updatedCardinality) {
+    function _updateOracle(PoolId id, int24 tick) internal returns (uint32 updatedIndex, uint32 updatedCardinality) {
         ObservationState memory state = _states[id];
         (updatedIndex, updatedCardinality) = _observations[id].write(
             state.index, uint32(block.timestamp), tick, state.cardinality, state.cardinalityNext
