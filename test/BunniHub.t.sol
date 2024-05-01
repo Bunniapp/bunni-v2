@@ -1927,8 +1927,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 minRawTokenRatio1: 0.08e6,
                 targetRawTokenRatio1: 0.1e6,
                 maxRawTokenRatio1: 0.12e6,
-                sqrtPriceX96: TickMath.getSqrtRatioAtTick(4),
-                cardinalityNext: 100
+                sqrtPriceX96: TickMath.getSqrtRatioAtTick(4)
             })
         );
 

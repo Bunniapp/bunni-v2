@@ -545,11 +545,6 @@ library BunniHubLogic {
             )
         );
 
-        // initialize cardinality target
-        if (params.cardinalityNext != 0) {
-            params.hooks.increaseCardinalityNext(key, params.cardinalityNext);
-        }
-
         emit IBunniHub.NewBunni(token, poolId);
     }
 

@@ -174,7 +174,6 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
     /// @param targetRawTokenRatio1 The target (rawBalance / balance) ratio for token1
     /// @param maxRawTokenRatio1 The maximum (rawBalance / balance) ratio for token1
     /// @param sqrtPriceX96 The initial sqrt price of the Uniswap V4 pool
-    /// @param cardinalityNext The cardinality target for the Uniswap V4 pool
     struct DeployBunniTokenParams {
         Currency currency0;
         Currency currency1;
@@ -194,7 +193,6 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         uint24 targetRawTokenRatio1;
         uint24 maxRawTokenRatio1;
         uint160 sqrtPriceX96;
-        uint16 cardinalityNext;
     }
 
     /// @notice Deploys the BunniToken contract for a Bunni position. This token

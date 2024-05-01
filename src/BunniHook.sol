@@ -136,7 +136,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     /// @inheritdoc IBunniHook
     function increaseCardinalityNext(PoolKey calldata key, uint32 cardinalityNext)
-        external
+        public
         override
         returns (uint32 cardinalityNextOld, uint32 cardinalityNextNew)
     {
@@ -374,19 +374,23 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
-        (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-        uint24 feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
-        uint16 rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
-        (_states[id].intermediateObservation, _states[id].cardinality, _states[id].cardinalityNext) = _observations[id]
-            .initialize(
-            uint32(
-                block.timestamp
-                    - FixedPointMathLib.max(
-                        FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo), rebalanceTwapSecondsAgo
-                    )
-            ),
-            tick
-        );
+        uint32 maxTwapSecondsAgo;
+        {
+            (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
+            uint24 feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
+            uint16 rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
+            maxTwapSecondsAgo = uint32(
+                FixedPointMathLib.max(FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo), rebalanceTwapSecondsAgo)
+            );
+            (_states[id].intermediateObservation, _states[id].cardinality, _states[id].cardinalityNext) =
+                _observations[id].initialize(uint32(block.timestamp - maxTwapSecondsAgo), tick);
+        }
+
+        // increase cardinality target based on maxTwapSecondsAgo
+        uint32 cardinalityNext = (maxTwapSecondsAgo + (oracleMinInterval >> 1)) / oracleMinInterval + 1; // round up + 1
+        if (cardinalityNext > 1) {
+            increaseCardinalityNext(key, cardinalityNext);
+        }
 
         return BunniHook.afterInitialize.selector;
     }
