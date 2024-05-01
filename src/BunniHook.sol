@@ -76,6 +76,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     BoolOverride public globalAmAmmEnabledOverride;
     IZone public floodZone;
 
+    uint32 public immutable oracleMinInterval;
+
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
     uint96 internal _hookFeesModifier;
 
@@ -90,12 +92,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         IZone floodZone_,
         address owner_,
         address hookFeesRecipient_,
-        uint96 hookFeesModifier_
+        uint96 hookFeesModifier_,
+        uint32 oracleMinInterval_
     ) BaseHook(_poolManager) {
         hub = hub_;
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
+        oracleMinInterval = oracleMinInterval_;
         floodZone = floodZone_;
         _hookFeesModifier = hookFeesModifier_;
         _hookFeesRecipient = hookFeesRecipient_;
@@ -290,8 +294,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         ObservationState memory state = _states[id];
         Slot0 memory slot0 = slot0s[id];
 
-        return
-            _observations[id].observe(uint32(block.timestamp), secondsAgos, slot0.tick, state.index, state.cardinality);
+        return _observations[id].observe(
+            state.intermediateObservation,
+            uint32(block.timestamp),
+            secondsAgos,
+            slot0.tick,
+            state.index,
+            state.cardinality
+        );
     }
 
     /// @inheritdoc IBunniHook
@@ -367,7 +377,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
         uint24 feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
         uint16 rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
-        (_states[id].cardinality, _states[id].cardinalityNext) = _observations[id].initialize(
+        (_states[id].intermediateObservation, _states[id].cardinality, _states[id].cardinalityNext) = _observations[id]
+            .initialize(
             uint32(
                 block.timestamp
                     - FixedPointMathLib.max(
@@ -501,17 +512,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
-        (uint32 updatedIndex, uint32 updatedCardinality) = _updateOracle(id, currentTick);
+        (Oracle.Observation memory updatedIntermediate, uint32 updatedIndex, uint32 updatedCardinality) =
+            _updateOracle(id, currentTick);
 
         // (optional) get TWAP value
         if (useTwap) {
             // need to use TWAP
             // compute TWAP value
-            arithmeticMeanTick = _getTwap(id, currentTick, bunniState.twapSecondsAgo, updatedIndex, updatedCardinality);
+            arithmeticMeanTick = _getTwap(
+                id, currentTick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
+            );
         }
         if (!amAmmEnabled && feeMin != feeMax && feeQuadraticMultiplier != 0) {
             // fee calculation needs TWAP
-            feeMeanTick = _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIndex, updatedCardinality);
+            feeMeanTick =
+                _getTwap(id, currentTick, feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality);
         }
 
         // get densities
@@ -738,6 +753,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 rebalanceMaxSlippage,
                 rebalanceTwapSecondsAgo,
                 rebalanceOrderTTL,
+                updatedIntermediate,
                 updatedIndex,
                 updatedCardinality
             );
@@ -858,6 +874,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint16 rebalanceMaxSlippage,
         uint16 rebalanceTwapSecondsAgo,
         uint16 rebalanceOrderTTL,
+        Oracle.Observation memory updatedIntermediate,
         uint32 updatedIndex,
         uint32 updatedCardinality
     ) internal {
@@ -874,6 +891,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             rebalanceThreshold,
             rebalanceMaxSlippage,
             rebalanceTwapSecondsAgo,
+            updatedIntermediate,
             updatedIndex,
             updatedCardinality
         );
@@ -894,6 +912,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint16 rebalanceThreshold,
         uint16 rebalanceMaxSlippage,
         uint16 rebalanceTwapSecondsAgo,
+        Oracle.Observation memory updatedIntermediate,
         uint32 updatedIndex,
         uint32 updatedCardinality
     )
@@ -1009,8 +1028,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint256 totalDensity0X96;
         uint256 totalDensity1X96;
         {
-            int24 rebalanceSpotPriceTick =
-                _getTwap(id, updatedTick, rebalanceTwapSecondsAgo, updatedIndex, updatedCardinality);
+            int24 rebalanceSpotPriceTick = _getTwap(
+                id, updatedTick, rebalanceTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
+            );
             uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
             (int24 roundedTick, int24 nextRoundedTick) = roundTick(rebalanceSpotPriceTick, key.tickSpacing);
             (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
@@ -1226,11 +1246,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         PoolId id,
         int24 currentTick,
         uint32 twapSecondsAgo,
+        Oracle.Observation memory updatedIntermediate,
         uint32 updatedIndex,
         uint32 updatedCardinality
     ) internal view returns (int24 arithmeticMeanTick) {
         (int56 tickCumulative0, int56 tickCumulative1) = _observations[id].observeDouble(
-            uint32(block.timestamp), twapSecondsAgo, 0, currentTick, updatedIndex, updatedCardinality
+            updatedIntermediate,
+            uint32(block.timestamp),
+            twapSecondsAgo,
+            0,
+            currentTick,
+            updatedIndex,
+            updatedCardinality
         );
         int56 tickCumulativesDelta = tickCumulative1 - tickCumulative0;
         arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
@@ -1293,12 +1320,22 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
     }
 
-    function _updateOracle(PoolId id, int24 tick) internal returns (uint32 updatedIndex, uint32 updatedCardinality) {
+    function _updateOracle(PoolId id, int24 tick)
+        internal
+        returns (Oracle.Observation memory updatedIntermediate, uint32 updatedIndex, uint32 updatedCardinality)
+    {
         ObservationState memory state = _states[id];
-        (updatedIndex, updatedCardinality) = _observations[id].write(
-            state.index, uint32(block.timestamp), tick, state.cardinality, state.cardinalityNext
+        (updatedIntermediate, updatedIndex, updatedCardinality) = _observations[id].write(
+            state.intermediateObservation,
+            state.index,
+            uint32(block.timestamp),
+            tick,
+            state.cardinality,
+            state.cardinalityNext,
+            oracleMinInterval
         );
-        (_states[id].index, _states[id].cardinality) = (updatedIndex, updatedCardinality);
+        (_states[id].intermediateObservation, _states[id].index, _states[id].cardinality) =
+            (updatedIntermediate, updatedIndex, updatedCardinality);
     }
 
     /// @dev The hash that Permit2 uses when verifying the order's signature.

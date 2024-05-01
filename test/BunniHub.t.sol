@@ -83,6 +83,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint16 internal constant REBALANCE_MAX_SLIPPAGE = 1; // 5%
     uint16 internal constant REBALANCE_TWAP_SECONDS_AGO = 1 hours;
     uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
+    uint32 internal constant ORACLE_MIN_INTERVAL = 1 hours;
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -184,7 +185,17 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // initialize bunni hook
         deployCodeTo(
             "BunniHook.sol",
-            abi.encode(poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEES_RECIPIENT, HOOK_SWAP_FEE),
+            abi.encode(
+                poolManager,
+                hub,
+                floodPlain,
+                weth,
+                zone,
+                address(this),
+                HOOK_FEES_RECIPIENT,
+                HOOK_SWAP_FEE,
+                ORACLE_MIN_INTERVAL
+            ),
             address(bunniHook)
         );
         vm.label(address(bunniHook), "BunniHook");

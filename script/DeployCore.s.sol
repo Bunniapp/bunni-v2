@@ -31,6 +31,7 @@ contract DeployCoreScript is CREATE3Script {
         address hookFeesRecipient = vm.envAddress(string.concat("HOOK_FEES_RECIPIENT_", block.chainid.toString()));
         uint96 hookFeesModifier = vm.envUint("HOOK_FEES_MODIFIER").toUint96();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
+        uint32 oracleMinInterval = vm.envUint("ORACLE_MIN_INTERVAL").toUint32();
 
         vm.startBroadcast(deployerPrivateKey);
 

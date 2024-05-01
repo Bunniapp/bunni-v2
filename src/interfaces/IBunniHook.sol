@@ -72,10 +72,12 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     /// @member index The index of the last written observation for the pool
     /// @member cardinality The cardinality of the observations array for the pool
     /// @member cardinalityNext The cardinality target of the observations array for the pool, which will replace cardinality when enough observations are written
+    /// @member intermediateObservation Used to maintain a min interval between observations
     struct ObservationState {
         uint32 index;
         uint32 cardinality;
         uint32 cardinalityNext;
+        Oracle.Observation intermediateObservation;
     }
 
     struct Slot0 {
@@ -160,6 +162,8 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     function globalAmAmmEnabledOverride() external view returns (BoolOverride);
 
     function getAmAmmEnabled(PoolId id) external view returns (bool);
+
+    function oracleMinInterval() external view returns (uint32);
 
     /// -----------------------------------------------------------------------
     /// External functions
