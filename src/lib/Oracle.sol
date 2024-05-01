@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.19;
 
+import {MAX_CARDINALITY} from "./Constants.sol";
+
 /// @title Oracle
 /// @notice Provides price data useful for a wide variety of system designs. Based on Uniswap's
 /// truncated oracle.
@@ -9,6 +11,9 @@ pragma solidity ^0.8.19;
 /// maximum length of the oracle array. New slots will be added when the array is fully populated.
 /// Observations are overwritten when the full length of the oracle array is populated.
 /// The most recent observation is available, independent of the length of the oracle array, by passing 0 to observe()
+/// A minimum observation interval is enforced to make the choice of cardinality more meaningful. This is done by
+/// only recording an observation if the time elapsed since the last observation is >= minInterval, and recording the data
+/// into a separate "intermediate" observation slot otherwise to ensure tickCumulative is accurate.
 library Oracle {
     /// @notice Thrown when trying to interact with an Oracle of a non-initialized pool
     error OracleCardinalityCannotBeZero();
@@ -66,14 +71,16 @@ library Oracle {
     /// @notice Initialize the oracle array by writing the first slot. Called once for the lifecycle of the observations array
     /// @param self The stored oracle array
     /// @param time The time of the oracle initialization, via block.timestamp truncated to uint32
+    /// @return intermediate The intermediate observation in between min intervals
     /// @return cardinality The number of populated elements in the oracle array
     /// @return cardinalityNext The new length of the oracle array, independent of population
-    function initialize(Observation[65535] storage self, uint32 time, int24 tick)
+    function initialize(Observation[MAX_CARDINALITY] storage self, uint32 time, int24 tick)
         internal
-        returns (uint16 cardinality, uint16 cardinalityNext)
+        returns (Observation memory intermediate, uint32 cardinality, uint32 cardinalityNext)
     {
-        self[0] = Observation({blockTimestamp: time, prevTick: tick, tickCumulative: 0, initialized: true});
-        return (1, 1);
+        intermediate = Observation({blockTimestamp: time, prevTick: tick, tickCumulative: 0, initialized: true});
+        self[0] = intermediate;
+        return (intermediate, 1, 1);
     }
 
     /// @notice Writes an oracle observation to the array
@@ -81,26 +88,40 @@ library Oracle {
     /// If the index is at the end of the allowable array length (according to cardinality), and the next cardinality
     /// is greater than the current one, cardinality may be increased. This restriction is created to preserve ordering.
     /// @param self The stored oracle array
+    /// @param intermediate The intermediate observation in between min intervals. Always the most recent observation.
     /// @param index The index of the observation that was most recently written to the observations array
     /// @param blockTimestamp The timestamp of the new observation
     /// @param tick The active tick at the time of the new observation
     /// @param cardinality The number of populated elements in the oracle array
     /// @param cardinalityNext The new length of the oracle array, independent of population
+    /// @param minInterval The minimum interval between observations.
+    /// @return intermediateUpdated The updated intermediate observation
     /// @return indexUpdated The new index of the most recently written element in the oracle array
     /// @return cardinalityUpdated The new cardinality of the oracle array
     function write(
-        Observation[65535] storage self,
-        uint16 index,
+        Observation[MAX_CARDINALITY] storage self,
+        Observation memory intermediate,
+        uint32 index,
         uint32 blockTimestamp,
         int24 tick,
-        uint16 cardinality,
-        uint16 cardinalityNext
-    ) internal returns (uint16 indexUpdated, uint16 cardinalityUpdated) {
+        uint32 cardinality,
+        uint32 cardinalityNext,
+        uint32 minInterval
+    ) internal returns (Observation memory intermediateUpdated, uint32 indexUpdated, uint32 cardinalityUpdated) {
         unchecked {
-            Observation memory last = self[index];
-
             // early return if we've already written an observation this block
-            if (last.blockTimestamp == blockTimestamp) return (index, cardinality);
+            if (intermediate.blockTimestamp == blockTimestamp) {
+                return (intermediate, index, cardinality);
+            }
+
+            // update the intermediate observation using the most recent observation
+            // which is always the current intermediate observation
+            intermediateUpdated = transform(intermediate, blockTimestamp, tick);
+
+            // if the time since the last recorded observation is less than the minimum interval, we store the observation in the intermediate observation
+            if (blockTimestamp - self[index].blockTimestamp < minInterval) {
+                return (intermediateUpdated, index, cardinality);
+            }
 
             // if the conditions are right, we can bump the cardinality
             if (cardinalityNext > cardinality && index == (cardinality - 1)) {
@@ -110,7 +131,7 @@ library Oracle {
             }
 
             indexUpdated = (index + 1) % cardinalityUpdated;
-            self[indexUpdated] = transform(last, blockTimestamp, tick);
+            self[indexUpdated] = intermediateUpdated;
         }
     }
 
@@ -119,14 +140,14 @@ library Oracle {
     /// @param current The current next cardinality of the oracle array
     /// @param next The proposed next cardinality which will be populated in the oracle array
     /// @return next The next cardinality which will be populated in the oracle array
-    function grow(Observation[65535] storage self, uint16 current, uint16 next) internal returns (uint16) {
+    function grow(Observation[MAX_CARDINALITY] storage self, uint32 current, uint32 next) internal returns (uint32) {
         unchecked {
             if (current == 0) revert OracleCardinalityCannotBeZero();
             // no-op if the passed next value isn't greater than the current next value
             if (next <= current) return current;
             // store in each slot to prevent fresh SSTOREs in swaps
             // this data will not be used because the initialized boolean is still false
-            for (uint16 i = current; i < next; i++) {
+            for (uint32 i = current; i < next; i++) {
                 self[i].blockTimestamp = 1;
             }
             return next;
@@ -162,11 +183,13 @@ library Oracle {
     /// @param cardinality The number of populated elements in the oracle array
     /// @return beforeOrAt The observation recorded before, or at, the target
     /// @return atOrAfter The observation recorded at, or after, the target
-    function binarySearch(Observation[65535] storage self, uint32 time, uint32 target, uint16 index, uint16 cardinality)
-        private
-        view
-        returns (Observation memory beforeOrAt, Observation memory atOrAfter)
-    {
+    function binarySearch(
+        Observation[MAX_CARDINALITY] storage self,
+        uint32 time,
+        uint32 target,
+        uint32 index,
+        uint32 cardinality
+    ) private view returns (Observation memory beforeOrAt, Observation memory atOrAfter) {
         unchecked {
             uint256 l = (index + 1) % cardinality; // oldest observation
             uint256 r = l + cardinality - 1; // newest observation
@@ -199,6 +222,7 @@ library Oracle {
     /// @dev Assumes there is at least 1 initialized observation.
     /// Used by observeSingle() to compute the counterfactual accumulator values as of a given block timestamp.
     /// @param self The stored oracle array
+    /// @param intermediate The intermediate observation in between min intervals. Always the most recent observation.
     /// @param time The current block.timestamp
     /// @param target The timestamp at which the reserved observation should be for
     /// @param tick The active tick at the time of the returned or simulated observation
@@ -207,16 +231,17 @@ library Oracle {
     /// @return beforeOrAt The observation which occurred at, or before, the given timestamp
     /// @return atOrAfter The observation which occurred at, or after, the given timestamp
     function getSurroundingObservations(
-        Observation[65535] storage self,
+        Observation[MAX_CARDINALITY] storage self,
+        Observation memory intermediate,
         uint32 time,
         uint32 target,
         int24 tick,
-        uint16 index,
-        uint16 cardinality
+        uint32 index,
+        uint32 cardinality
     ) private view returns (Observation memory beforeOrAt, Observation memory atOrAfter) {
         unchecked {
             // optimistically set before to the newest observation
-            beforeOrAt = self[index];
+            beforeOrAt = intermediate;
 
             // if the target is chronologically at or after the newest observation, we can early return
             if (lte(time, beforeOrAt.blockTimestamp, target)) {
@@ -227,6 +252,16 @@ library Oracle {
                     // otherwise, we need to transform
                     return (beforeOrAt, transform(beforeOrAt, target, tick));
                 }
+            }
+
+            // now, set before to the newest *recorded* Observation
+            beforeOrAt = self[index];
+            atOrAfter = intermediate;
+
+            // if the target is chronologically at or after the newest recorded observation, we can early return
+            // beforeAt would be self[index] and atOrAfter would be intermediate
+            if (lte(time, beforeOrAt.blockTimestamp, target)) {
+                return (beforeOrAt, atOrAfter);
             }
 
             // now, set before to the oldest observation
@@ -248,6 +283,7 @@ library Oracle {
     /// If called with a timestamp falling between two observations, returns the counterfactual accumulator values
     /// at exactly the timestamp between the two observations.
     /// @param self The stored oracle array
+    /// @param intermediate The intermediate observation in between min intervals. Always the most recent observation.
     /// @param time The current block timestamp
     /// @param secondsAgo The amount of time to look back, in seconds, at which point to return an observation
     /// @param tick The current tick
@@ -255,24 +291,24 @@ library Oracle {
     /// @param cardinality The number of populated elements in the oracle array
     /// @return tickCumulative The tick * time elapsed since the pool was first initialized, as of `secondsAgo`
     function observeSingle(
-        Observation[65535] storage self,
+        Observation[MAX_CARDINALITY] storage self,
+        Observation memory intermediate,
         uint32 time,
         uint32 secondsAgo,
         int24 tick,
-        uint16 index,
-        uint16 cardinality
+        uint32 index,
+        uint32 cardinality
     ) internal view returns (int56 tickCumulative) {
         unchecked {
             if (secondsAgo == 0) {
-                Observation memory last = self[index];
-                if (last.blockTimestamp != time) last = transform(last, time, tick);
-                return last.tickCumulative;
+                if (intermediate.blockTimestamp != time) intermediate = transform(intermediate, time, tick);
+                return intermediate.tickCumulative;
             }
 
             uint32 target = time - secondsAgo;
 
             (Observation memory beforeOrAt, Observation memory atOrAfter) =
-                getSurroundingObservations(self, time, target, tick, index, cardinality);
+                getSurroundingObservations(self, intermediate, time, target, tick, index, cardinality);
 
             if (target == beforeOrAt.blockTimestamp) {
                 // we're at the left boundary
@@ -294,6 +330,7 @@ library Oracle {
     /// @notice Returns the accumulator values as of each time seconds ago from the given time in the array of `secondsAgos`
     /// @dev Reverts if `secondsAgos` > oldest observation
     /// @param self The stored oracle array
+    /// @param intermediate The intermediate observation in between min intervals. Always the most recent observation.
     /// @param time The current block.timestamp
     /// @param secondsAgo0 Amount of time to look back, in seconds, at which point to return an observation
     /// @param secondsAgo1 Amount of time to look back, in seconds, at which point to return an observation
@@ -303,25 +340,27 @@ library Oracle {
     /// @return tickCumulative0 The first tick * time elapsed since the pool was first initialized, as of `secondsAgo0`
     /// @return tickCumulative1 The second tick * time elapsed since the pool was first initialized, as of `secondsAgo1`
     function observeDouble(
-        Observation[65535] storage self,
+        Observation[MAX_CARDINALITY] storage self,
+        Observation memory intermediate,
         uint32 time,
         uint32 secondsAgo0,
         uint32 secondsAgo1,
         int24 tick,
-        uint16 index,
-        uint16 cardinality
+        uint32 index,
+        uint32 cardinality
     ) internal view returns (int56 tickCumulative0, int56 tickCumulative1) {
         unchecked {
             if (cardinality == 0) revert OracleCardinalityCannotBeZero();
 
-            tickCumulative0 = observeSingle(self, time, secondsAgo0, tick, index, cardinality);
-            tickCumulative1 = observeSingle(self, time, secondsAgo1, tick, index, cardinality);
+            tickCumulative0 = observeSingle(self, intermediate, time, secondsAgo0, tick, index, cardinality);
+            tickCumulative1 = observeSingle(self, intermediate, time, secondsAgo1, tick, index, cardinality);
         }
     }
 
     /// @notice Returns the accumulator values as of each time seconds ago from the given time in the array of `secondsAgos`
     /// @dev Reverts if `secondsAgos` > oldest observation
     /// @param self The stored oracle array
+    /// @param intermediate The intermediate observation in between min intervals. Always the most recent observation.
     /// @param time The current block.timestamp
     /// @param secondsAgos Each amount of time to look back, in seconds, at which point to return an observation
     /// @param tick The current tick
@@ -329,19 +368,20 @@ library Oracle {
     /// @param cardinality The number of populated elements in the oracle array
     /// @return tickCumulatives The tick * time elapsed since the pool was first initialized, as of each `secondsAgo`
     function observe(
-        Observation[65535] storage self,
+        Observation[MAX_CARDINALITY] storage self,
+        Observation memory intermediate,
         uint32 time,
         uint32[] memory secondsAgos,
         int24 tick,
-        uint16 index,
-        uint16 cardinality
+        uint32 index,
+        uint32 cardinality
     ) internal view returns (int56[] memory tickCumulatives) {
         unchecked {
             if (cardinality == 0) revert OracleCardinalityCannotBeZero();
 
             tickCumulatives = new int56[](secondsAgos.length);
             for (uint256 i = 0; i < secondsAgos.length; i++) {
-                tickCumulatives[i] = observeSingle(self, time, secondsAgos[i], tick, index, cardinality);
+                tickCumulatives[i] = observeSingle(self, intermediate, time, secondsAgos[i], tick, index, cardinality);
             }
         }
     }
