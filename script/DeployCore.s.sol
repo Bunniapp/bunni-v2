@@ -70,7 +70,17 @@ contract DeployCoreScript is CREATE3Script {
                     hookSalt,
                     bytes.concat(
                         type(BunniHook).creationCode,
-                        abi.encode(poolManager, hub, floodPlain, weth, zone, owner, hookFeesRecipient, hookFeesModifier)
+                        abi.encode(
+                            poolManager,
+                            hub,
+                            floodPlain,
+                            weth,
+                            zone,
+                            owner,
+                            hookFeesRecipient,
+                            hookFeesModifier,
+                            oracleMinInterval
+                        )
                     )
                 )
             )

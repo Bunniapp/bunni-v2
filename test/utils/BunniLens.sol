@@ -2,6 +2,8 @@
 pragma solidity ^0.8.19;
 
 import "../../src/BunniHook.sol";
+import "../../src/lib/VaultMath.sol";
+import {LiquidityAmounts} from "../../src/lib/LiquidityAmounts.sol";
 
 contract BunniLens {
     using SafeCastLib for *;
