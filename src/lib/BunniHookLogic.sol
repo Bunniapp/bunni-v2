@@ -53,14 +53,12 @@ library BunniHookLogic {
     }
 
     function afterInitialize(
+        IBunniHook.HookStorage storage s,
         address caller,
         PoolKey calldata key,
         uint160 sqrtPriceX96,
         int24 tick,
         bytes calldata hookData,
-        mapping(PoolId => IBunniHook.Slot0) storage slot0s,
-        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) storage _observations,
-        mapping(PoolId => IBunniHook.ObservationState) storage _states,
         IBunniHub hub,
         uint32 oracleMinInterval
     ) external {
@@ -68,7 +66,7 @@ library BunniHookLogic {
         PoolId id = key.toId();
 
         // initialize slot0
-        slot0s[id] = IBunniHook.Slot0({
+        s.slot0s[id] = IBunniHook.Slot0({
             sqrtPriceX96: sqrtPriceX96,
             tick: tick,
             lastSwapTimestamp: uint32(block.timestamp),
@@ -85,35 +83,29 @@ library BunniHookLogic {
             maxTwapSecondsAgo = uint32(
                 FixedPointMathLib.max(FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo), rebalanceTwapSecondsAgo)
             );
-            (_states[id].intermediateObservation, _states[id].cardinality, _states[id].cardinalityNext) =
-                _observations[id].initialize(uint32(block.timestamp - maxTwapSecondsAgo), tick);
+            (s.states[id].intermediateObservation, s.states[id].cardinality, s.states[id].cardinalityNext) =
+                s.observations[id].initialize(uint32(block.timestamp - maxTwapSecondsAgo), tick);
         }
 
         // increase cardinality target based on maxTwapSecondsAgo
         uint32 cardinalityNext = (maxTwapSecondsAgo + (oracleMinInterval >> 1)) / oracleMinInterval + 1; // round up + 1
         if (cardinalityNext > 1) {
-            uint32 cardinalityNextNew = _observations[id].grow(1, cardinalityNext);
-            _states[id].cardinalityNext = cardinalityNextNew;
+            uint32 cardinalityNextNew = s.observations[id].grow(1, cardinalityNext);
+            s.states[id].cardinalityNext = cardinalityNextNew;
         }
     }
 
     function beforeSwap(
+        IBunniHook.HookStorage storage s,
+        Env calldata env,
         address sender,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        mapping(PoolId => IBunniHook.Slot0) storage slot0s,
-        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) storage _observations,
-        mapping(PoolId => IBunniHook.ObservationState) storage _states,
-        mapping(PoolId => IBunniHook.VaultSharePrices) storage vaultSharePricesAtLastSwap,
-        mapping(PoolId => bytes32) storage ldfStates,
-        mapping(PoolId => uint256) storage _rebalanceOrderDeadline,
-        mapping(PoolId => bytes32) storage _rebalanceOrderHash,
-        mapping(PoolId => bytes32) storage _rebalanceOrderHookArgsHash,
-        Env calldata env
+        IPoolManager.SwapParams calldata params
     ) external returns (bool useAmAmmFee, address amAmmManager, Currency amAmmFeeCurrency, uint256 amAmmFeeAmount) {
+        // ensure swap makes sense
         PoolId id = key.toId();
-        IBunniHook.Slot0 memory slot0 = slot0s[id];
-        (uint160 sqrtPriceX96, int24 currentTick) = (slot0.sqrtPriceX96, slot0.tick);
+        IBunniHook.Slot0 memory slot0 = s.slot0s[id];
+        uint160 sqrtPriceX96 = slot0.sqrtPriceX96;
         if (
             sqrtPriceX96 == 0
                 || (
@@ -128,119 +120,66 @@ library BunniHookLogic {
             revert IBunniHook.BunniHook__InvalidSwap();
         }
 
-        // get current tick token balances
+        // get pool state
         PoolState memory bunniState = env.hub.poolState(id);
-        (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
-        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
 
         // decode hook params
         DecodedHookParams memory p = _decodeParams(bunniState.hookParams);
 
-        // update am-AMM state
-        uint24 amAmmSwapFee;
-        bool amAmmEnableSurgeFee;
-        if (p.amAmmEnabled) {
-            bytes7 payload;
-            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBid(id);
-            (amAmmManager, payload) = (topBid.manager, topBid.payload);
-            uint24 swapFee0For1;
-            uint24 swapFee1For0;
-            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(payload);
-            amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
-        }
-
-        // get pool token balances
-        (uint256 reserveBalance0, uint256 reserveBalance1) = (
-            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
-        );
-        (uint256 balance0, uint256 balance1) =
-            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
-        bool shouldSurge;
-
-        if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
-            // compute share prices
-            IBunniHook.VaultSharePrices memory sharePrices = IBunniHook.VaultSharePrices({
-                initialized: true,
-                sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
-                sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
-            });
-
-            // compare with share prices at last swap to see if we need to apply the surge fee
-            IBunniHook.VaultSharePrices memory prevSharePrices = vaultSharePricesAtLastSwap[id];
-            if (
-                prevSharePrices.initialized
-                    && (
-                        dist(sharePrices.sharePrice0, prevSharePrices.sharePrice0)
-                            >= prevSharePrices.sharePrice0 / p.vaultSurgeThreshold0
-                            || dist(sharePrices.sharePrice1, prevSharePrices.sharePrice1)
-                                >= prevSharePrices.sharePrice1 / p.vaultSurgeThreshold1
-                    )
-            ) {
-                // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
-                shouldSurge = true;
-            }
-
-            // update share prices at last swap
-            if (
-                !prevSharePrices.initialized || sharePrices.sharePrice0 != prevSharePrices.sharePrice0
-                    || sharePrices.sharePrice1 != prevSharePrices.sharePrice1
-            ) {
-                vaultSharePricesAtLastSwap[id] = sharePrices;
-            }
-        }
-
-        bool useTwap = bunniState.twapSecondsAgo != 0;
-
-        int24 arithmeticMeanTick;
-        int24 feeMeanTick;
-
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
+        // which doesn't change the result but gives us updated index and cardinality
         (Oracle.Observation memory updatedIntermediate, uint32 updatedIndex, uint32 updatedCardinality) =
-            _updateOracle(id, currentTick, _observations, _states, env.oracleMinInterval);
+            _updateOracle(s, id, slot0.tick, env.oracleMinInterval);
 
-        // (optional) get TWAP value
-        if (useTwap) {
+        // get TWAP values
+        int24 arithmeticMeanTick;
+        int24 feeMeanTick;
+        if (bunniState.twapSecondsAgo != 0) {
             // need to use TWAP
             // compute TWAP value
             arithmeticMeanTick = _getTwap(
-                id,
-                currentTick,
-                bunniState.twapSecondsAgo,
-                updatedIntermediate,
-                updatedIndex,
-                updatedCardinality,
-                _observations
+                s, id, slot0.tick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
             );
         }
         if (!p.amAmmEnabled && p.feeMin != p.feeMax && p.feeQuadraticMultiplier != 0) {
             // fee calculation needs TWAP
-            feeMeanTick = _getTwap(
-                id,
-                currentTick,
-                p.feeTwapSecondsAgo,
-                updatedIntermediate,
-                updatedIndex,
-                updatedCardinality,
-                _observations
-            );
+            feeMeanTick =
+                _getTwap(s, id, slot0.tick, p.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality);
         }
 
-        // get densities
-        bytes32 ldfState = bunniState.statefulLdf ? ldfStates[id] : bytes32(0);
+        // query the LDF to get densities
+        (int24 roundedTick, int24 nextRoundedTick) = roundTick(slot0.tick, key.tickSpacing);
+        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
+            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+        bytes32 ldfState = bunniState.statefulLdf ? s.ldfStates[id] : bytes32(0);
         (
             uint256 liquidityDensityOfRoundedTickX96,
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96,
             bytes32 newLdfState,
-            bool shouldSurgeLDF
+            bool shouldSurge
         ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, currentTick, useTwap, bunniState.ldfParams, ldfState
+            key,
+            roundedTick,
+            arithmeticMeanTick,
+            slot0.tick,
+            bunniState.twapSecondsAgo != 0,
+            bunniState.ldfParams,
+            ldfState
         );
-        shouldSurge = shouldSurge || shouldSurgeLDF;
-        if (bunniState.statefulLdf) ldfStates[id] = newLdfState;
+        if (bunniState.statefulLdf) s.ldfStates[id] = newLdfState;
+
+        // check surge based on vault share prices
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
+            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+        shouldSurge = shouldSurge || _shouldSurgeFromVaults(s, id, bunniState, p, reserveBalance0, reserveBalance1);
+
+        // compute total token balances
+        (uint256 balance0, uint256 balance1) =
+            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // compute total liquidity
         uint256 totalLiquidity;
@@ -283,14 +222,14 @@ library BunniHookLogic {
             density0RightOfRoundedTickX96: density0RightOfRoundedTickX96,
             density1LeftOfRoundedTickX96: density1LeftOfRoundedTickX96,
             sqrtPriceX96: sqrtPriceX96,
-            currentTick: currentTick,
+            currentTick: slot0.tick,
             roundedTickSqrtRatio: roundedTickSqrtRatio,
             nextRoundedTickSqrtRatio: nextRoundedTickSqrtRatio,
             balance0: balance0,
             balance1: balance1,
             liquidityDensityFunction: bunniState.liquidityDensityFunction,
             arithmeticMeanTick: arithmeticMeanTick,
-            useTwap: useTwap,
+            useTwap: bunniState.twapSecondsAgo != 0,
             ldfParams: bunniState.ldfParams,
             ldfState: ldfState,
             params: params
@@ -319,20 +258,31 @@ library BunniHookLogic {
                     : uint32(block.timestamp);
             }
         }
-        slot0s[id] = IBunniHook.Slot0({
+        s.slot0s[id] = IBunniHook.Slot0({
             sqrtPriceX96: updatedSqrtPriceX96,
             tick: updatedTick,
             lastSwapTimestamp: uint32(block.timestamp),
             lastSurgeTimestamp: lastSurgeTimestamp
         });
 
-        (Currency inputToken, Currency outputToken) =
-            params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        // update am-AMM state
+        uint24 amAmmSwapFee;
+        bool amAmmEnableSurgeFee;
+        if (p.amAmmEnabled) {
+            bytes7 payload;
+            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBid(id);
+            (amAmmManager, payload) = (topBid.manager, topBid.payload);
+            uint24 swapFee0For1;
+            uint24 swapFee1For0;
+            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(payload);
+            amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
+        }
 
         // charge swap fee
+        (Currency inputToken, Currency outputToken) =
+            params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         uint24 swapFee;
         uint256 swapFeeAmount;
-        uint256 hookFeesAmount;
         bool exactIn = params.amountSpecified >= 0;
         useAmAmmFee = p.amAmmEnabled && amAmmManager != address(0);
         if (useAmAmmFee) {
@@ -343,22 +293,11 @@ library BunniHookLogic {
                     FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, p.surgeFee, p.surgeFeeHalfLife))
                 )
                 : amAmmSwapFee;
-
-            if (exactIn) {
-                swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
-                (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
-            } else {
-                // increase input amount
-                // need to modify fee rate to maintain the same average price as exactIn case
-                // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
-                swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-                (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
-            }
         } else {
             // use default dynamic fee model
             swapFee = _getFee(
                 updatedSqrtPriceX96,
-                arithmeticMeanTick,
+                feeMeanTick,
                 lastSurgeTimestamp,
                 p.feeMin,
                 p.feeMax,
@@ -366,30 +305,44 @@ library BunniHookLogic {
                 p.surgeFee,
                 p.surgeFeeHalfLife
             );
-
-            if (exactIn) {
-                // deduct swap fee from output
-                swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
-            } else {
-                // increase input amount
-                // need to modify fee rate to maintain the same average price as exactIn case
-                // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
-                swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-            }
         }
-
-        {
-            // take hook fees from swap fee
-            uint96 hookFeesModifier = env._hookFeesModifier;
-            hookFeesAmount = swapFeeAmount.mulDivUp(hookFeesModifier, WAD);
-            swapFeeAmount -= hookFeesAmount;
-        }
-
-        // modify input/output amount with fees
+        uint256 hookFeesAmount;
+        uint256 hookHandleSwapInputAmount;
+        uint256 hookHandleSwapOutoutAmount;
         if (exactIn) {
+            // decrease output amount
+            swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+            if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
+
+            // take hook fees from swap fee
+            hookFeesAmount = swapFeeAmount.mulDivUp(env._hookFeesModifier, WAD);
+            swapFeeAmount -= hookFeesAmount;
+
+            // modify output amount with fees
             outputAmount -= swapFeeAmount + hookFeesAmount;
+
+            // if am-AMM is used, the swap fee needs to be taken from BunniHub, else it stays in BunniHub with the LPs
+            (hookHandleSwapInputAmount, hookHandleSwapOutoutAmount) = (
+                inputAmount, useAmAmmFee ? outputAmount + swapFeeAmount + hookFeesAmount : outputAmount + hookFeesAmount
+            );
         } else {
+            // increase input amount
+            // need to modify fee rate to maintain the same average price as exactIn case
+            // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
+            swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
+            if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
+
+            // take hook fees from swap fee
+            hookFeesAmount = swapFeeAmount.mulDivUp(env._hookFeesModifier, WAD);
+            swapFeeAmount -= hookFeesAmount;
+
+            // modify input amount with fees
             inputAmount += swapFeeAmount + hookFeesAmount;
+
+            // if am-AMM is not used, the swap fee needs to be sent to BunniHub to the LPs, else it stays in BunniHook with the am-AMM manager
+            (hookHandleSwapInputAmount, hookHandleSwapOutoutAmount) = (
+                useAmAmmFee ? inputAmount - swapFeeAmount - hookFeesAmount : inputAmount - hookFeesAmount, outputAmount
+            );
         }
 
         // take input by minting claim tokens to hook
@@ -399,23 +352,7 @@ library BunniHookLogic {
         // - pull input claim tokens from hook
         // - push output tokens to pool manager and mint claim tokens to hook
         // - update raw token balances
-        if (exactIn) {
-            env.hub.hookHandleSwap(
-                key,
-                params.zeroForOne,
-                inputAmount,
-                // if am-AMM is used, the swap fee needs to be taken from BunniHub, else it stays in BunniHub with the LPs
-                useAmAmmFee ? outputAmount + swapFeeAmount + hookFeesAmount : outputAmount + hookFeesAmount
-            );
-        } else {
-            env.hub.hookHandleSwap(
-                key,
-                params.zeroForOne,
-                // if am-AMM is not used, the swap fee needs to be sent to BunniHub to the LPs, else it stays in BunniHook with the am-AMM manager
-                useAmAmmFee ? inputAmount - swapFeeAmount - hookFeesAmount : inputAmount - hookFeesAmount,
-                outputAmount
-            );
-        }
+        env.hub.hookHandleSwap(key, params.zeroForOne, hookHandleSwapInputAmount, hookHandleSwapOutoutAmount);
 
         // burn output claim tokens
         env.poolManager.burn(address(this), outputToken.toId(), outputAmount);
@@ -439,30 +376,68 @@ library BunniHookLogic {
         // - rebalanceThreshold != 0, i.e. rebalancing is enabled
         // - shouldSurge == true, since tokens can only go out of balance due to shifting or vault returns
         // - the deadline of the last rebalance order has passed
-        if (p.rebalanceThreshold != 0 && shouldSurge && block.timestamp > _rebalanceOrderDeadline[id]) {
+        if (p.rebalanceThreshold != 0 && shouldSurge && block.timestamp > s.rebalanceOrderDeadline[id]) {
             _rebalance(
+                s,
+                env,
                 RebalanceInput({
                     id: id,
                     key: key,
                     updatedTick: updatedTick,
                     updatedSqrtPriceX96: updatedSqrtPriceX96,
                     arithmeticMeanTick: arithmeticMeanTick,
-                    useTwap: useTwap,
+                    useTwap: bunniState.twapSecondsAgo != 0,
                     newLdfState: newLdfState,
-                    rebalanceThreshold: p.rebalanceThreshold,
-                    rebalanceMaxSlippage: p.rebalanceMaxSlippage,
-                    rebalanceTwapSecondsAgo: p.rebalanceTwapSecondsAgo,
-                    rebalanceOrderTTL: p.rebalanceOrderTTL,
+                    p: p,
                     updatedIntermediate: updatedIntermediate,
                     updatedIndex: updatedIndex,
                     updatedCardinality: updatedCardinality
-                }),
-                _observations,
-                _rebalanceOrderHash,
-                _rebalanceOrderDeadline,
-                _rebalanceOrderHookArgsHash,
-                env
+                })
             );
+        }
+    }
+
+    function _shouldSurgeFromVaults(
+        IBunniHook.HookStorage storage s,
+        PoolId id,
+        PoolState memory bunniState,
+        DecodedHookParams memory p,
+        uint256 reserveBalance0,
+        uint256 reserveBalance1
+    ) private returns (bool shouldSurge) {
+        if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
+            // only surge if both vaults are set because otherwise total liquidity won't automatically increase
+            // so there's no risk of being sandwiched
+
+            // compute share prices
+            IBunniHook.VaultSharePrices memory sharePrices = IBunniHook.VaultSharePrices({
+                initialized: true,
+                sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
+                sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
+            });
+
+            // compare with share prices at last swap to see if we need to apply the surge fee
+            IBunniHook.VaultSharePrices memory prevSharePrices = s.vaultSharePricesAtLastSwap[id];
+            if (
+                prevSharePrices.initialized
+                    && (
+                        dist(sharePrices.sharePrice0, prevSharePrices.sharePrice0)
+                            >= prevSharePrices.sharePrice0 / p.vaultSurgeThreshold0
+                            || dist(sharePrices.sharePrice1, prevSharePrices.sharePrice1)
+                                >= prevSharePrices.sharePrice1 / p.vaultSurgeThreshold1
+                    )
+            ) {
+                // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
+                shouldSurge = true;
+            }
+
+            // update share prices at last swap
+            if (
+                !prevSharePrices.initialized || sharePrices.sharePrice0 != prevSharePrices.sharePrice0
+                    || sharePrices.sharePrice1 != prevSharePrices.sharePrice1
+            ) {
+                s.vaultSharePricesAtLastSwap[id] = sharePrices;
+            }
         }
     }
 
@@ -474,49 +449,25 @@ library BunniHookLogic {
         int24 arithmeticMeanTick;
         bool useTwap;
         bytes32 newLdfState;
-        uint16 rebalanceThreshold;
-        uint16 rebalanceMaxSlippage;
-        uint16 rebalanceTwapSecondsAgo;
-        uint16 rebalanceOrderTTL;
+        DecodedHookParams p;
         Oracle.Observation updatedIntermediate;
         uint32 updatedIndex;
         uint32 updatedCardinality;
     }
 
-    function _rebalance(
-        RebalanceInput memory input,
-        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) storage _observations,
-        mapping(PoolId => bytes32) storage _rebalanceOrderHash,
-        mapping(PoolId => uint256) storage _rebalanceOrderDeadline,
-        mapping(PoolId => bytes32) storage _rebalanceOrderHookArgsHash,
-        Env calldata env
-    ) internal {
+    function _rebalance(IBunniHook.HookStorage storage s, Env calldata env, RebalanceInput memory input) internal {
         // compute rebalance params
         (bool success, Currency inputToken, Currency outputToken, uint256 inputAmount, uint256 outputAmount) =
-            _computeRebalanceParams(input, _observations, env.hub);
+            _computeRebalanceParams(s, env, input);
         if (!success) return;
 
         // create rebalance order
         _createRebalanceOrder(
-            input.id,
-            input.key,
-            input.rebalanceOrderTTL,
-            inputToken,
-            outputToken,
-            inputAmount,
-            outputAmount,
-            _rebalanceOrderHash,
-            _rebalanceOrderDeadline,
-            _rebalanceOrderHookArgsHash,
-            env
+            s, env, input.id, input.key, input.p.rebalanceOrderTTL, inputToken, outputToken, inputAmount, outputAmount
         );
     }
 
-    function _computeRebalanceParams(
-        RebalanceInput memory input,
-        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) storage _observations,
-        IBunniHub hub
-    )
+    function _computeRebalanceParams(IBunniHook.HookStorage storage s, Env calldata env, RebalanceInput memory input)
         internal
         view
         returns (bool success, Currency inputToken, Currency outputToken, uint256 inputAmount, uint256 outputAmount)
@@ -525,7 +476,7 @@ library BunniHookLogic {
         // excessLiquidity is the minimum amount of liquidity that can be supported by the excess tokens
 
         // load fresh state
-        PoolState memory bunniState = hub.poolState(input.id);
+        PoolState memory bunniState = env.hub.poolState(input.id);
 
         // get fresh token balances
         (uint256 balance0, uint256 balance1) = (
@@ -621,21 +572,21 @@ library BunniHookLogic {
         }
 
         // should rebalance if excessLiquidity / totalLiquidity >= 1 / rebalanceThreshold
-        bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / input.rebalanceThreshold;
-        bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / input.rebalanceThreshold;
+        bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / input.p.rebalanceThreshold;
+        bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / input.p.rebalanceThreshold;
         if (!shouldRebalance0 && !shouldRebalance1) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
         // compute density of token0 and token1 after excess liquidity has been rebalanced
         // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
         {
             int24 rebalanceSpotPriceTick = _getTwap(
+                s,
                 input.id,
                 input.updatedTick,
-                input.rebalanceTwapSecondsAgo,
+                input.p.rebalanceTwapSecondsAgo,
                 input.updatedIntermediate,
                 input.updatedIndex,
-                input.updatedCardinality,
-                _observations
+                input.updatedCardinality
             );
             uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
             (int24 roundedTick, int24 nextRoundedTick) = roundTick(rebalanceSpotPriceTick, input.key.tickSpacing);
@@ -694,31 +645,29 @@ library BunniHookLogic {
                 return (false, inputToken, outputToken, inputAmount, outputAmount);
             } // should never happen
             inputAmount = balance0 - currentActiveBalance0 - targetAmount0;
-            outputAmount = targetAmount1.mulDivUp(1e5 - input.rebalanceMaxSlippage, 1e5);
+            outputAmount = targetAmount1.mulDivUp(1e5 - input.p.rebalanceMaxSlippage, 1e5);
         } else {
             (inputToken, outputToken) = (input.key.currency1, input.key.currency0);
             if (balance1 - currentActiveBalance1 < targetAmount1) {
                 return (false, inputToken, outputToken, inputAmount, outputAmount);
             } // should never happen
             inputAmount = balance1 - currentActiveBalance1 - targetAmount1;
-            outputAmount = targetAmount0.mulDivUp(1e5 - input.rebalanceMaxSlippage, 1e5);
+            outputAmount = targetAmount0.mulDivUp(1e5 - input.p.rebalanceMaxSlippage, 1e5);
         }
 
         success = true;
     }
 
     function _createRebalanceOrder(
+        IBunniHook.HookStorage storage s,
+        Env calldata env,
         PoolId id,
         PoolKey memory key,
         uint16 rebalanceOrderTTL,
         Currency inputToken,
         Currency outputToken,
         uint256 inputAmount,
-        uint256 outputAmount,
-        mapping(PoolId => bytes32) storage _rebalanceOrderHash,
-        mapping(PoolId => uint256) storage _rebalanceOrderDeadline,
-        mapping(PoolId => bytes32) storage _rebalanceOrderHookArgsHash,
-        Env calldata env
+        uint256 outputAmount
     ) internal {
         // create Flood order
         ERC20 inputERC20Token = inputToken.isNative() ? env.weth : ERC20(Currency.unwrap(inputToken));
@@ -761,9 +710,9 @@ library BunniHookLogic {
         });
 
         // record order for verification later
-        _rebalanceOrderHash[id] = _newOrderHash(order, env.permit2, env.floodPlain);
-        _rebalanceOrderDeadline[id] = order.deadline;
-        _rebalanceOrderHookArgsHash[id] = keccak256(abi.encode(hookArgs));
+        s.rebalanceOrderHash[id] = _newOrderHash(order, env);
+        s.rebalanceOrderDeadline[id] = order.deadline;
+        s.rebalanceOrderHookArgsHash[id] = keccak256(abi.encode(hookArgs));
 
         // approve input token to permit2
         if (inputERC20Token.allowance(address(this), env.permit2) < inputAmount) {
@@ -807,15 +756,15 @@ library BunniHookLogic {
     }
 
     function _getTwap(
+        IBunniHook.HookStorage storage s,
         PoolId id,
         int24 currentTick,
         uint32 twapSecondsAgo,
         Oracle.Observation memory updatedIntermediate,
         uint32 updatedIndex,
-        uint32 updatedCardinality,
-        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) storage _observations
+        uint32 updatedCardinality
     ) internal view returns (int24 arithmeticMeanTick) {
-        (int56 tickCumulative0, int56 tickCumulative1) = _observations[id].observeDouble(
+        (int56 tickCumulative0, int56 tickCumulative1) = s.observations[id].observeDouble(
             updatedIntermediate,
             uint32(block.timestamp),
             twapSecondsAgo,
@@ -828,18 +777,12 @@ library BunniHookLogic {
         arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 
-    function _updateOracle(
-        PoolId id,
-        int24 tick,
-        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) storage _observations,
-        mapping(PoolId => IBunniHook.ObservationState) storage _states,
-        uint32 oracleMinInterval
-    )
+    function _updateOracle(IBunniHook.HookStorage storage s, PoolId id, int24 tick, uint32 oracleMinInterval)
         internal
         returns (Oracle.Observation memory updatedIntermediate, uint32 updatedIndex, uint32 updatedCardinality)
     {
-        IBunniHook.ObservationState memory state = _states[id];
-        (updatedIntermediate, updatedIndex, updatedCardinality) = _observations[id].write(
+        IBunniHook.ObservationState memory state = s.states[id];
+        (updatedIntermediate, updatedIndex, updatedCardinality) = s.observations[id].write(
             state.intermediateObservation,
             state.index,
             uint32(block.timestamp),
@@ -848,23 +791,19 @@ library BunniHookLogic {
             state.cardinalityNext,
             oracleMinInterval
         );
-        (_states[id].intermediateObservation, _states[id].index, _states[id].cardinality) =
+        (s.states[id].intermediateObservation, s.states[id].index, s.states[id].cardinality) =
             (updatedIntermediate, updatedIndex, updatedCardinality);
     }
 
     /// @dev The hash that Permit2 uses when verifying the order's signature.
     /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
     /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
-    function _newOrderHash(IFloodPlain.Order memory order, address permit2, IFloodPlain floodPlain)
-        internal
-        view
-        returns (bytes32)
-    {
+    function _newOrderHash(IFloodPlain.Order memory order, Env calldata env) internal view returns (bytes32) {
         return keccak256(
             abi.encodePacked(
                 "\x19\x01",
-                IEIP712(permit2).DOMAIN_SEPARATOR(),
-                OrderHashMemory.hashAsWitness(order, address(floodPlain))
+                IEIP712(env.permit2).DOMAIN_SEPARATOR(),
+                OrderHashMemory.hashAsWitness(order, address(env.floodPlain))
             )
         );
     }

@@ -18,6 +18,7 @@ import "flood-contracts/src/interfaces/IFloodPlain.sol";
 import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 
 import "../lib/Structs.sol";
+import "../lib/Constants.sol";
 import {IOwnable} from "./IOwnable.sol";
 import {Oracle} from "../lib/Oracle.sol";
 import {IBunniHub} from "./IBunniHub.sol";
@@ -106,6 +107,19 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
 
     struct RebalanceOrderPostHookArgs {
         Currency currency;
+    }
+
+    struct HookStorage {
+        /// @notice The list of observations for a given pool ID
+        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) observations;
+        /// @notice The current observation array state for the given pool ID
+        mapping(PoolId => ObservationState) states;
+        mapping(PoolId id => bytes32) rebalanceOrderHash;
+        mapping(PoolId id => uint256) rebalanceOrderDeadline;
+        mapping(PoolId id => bytes32) rebalanceOrderHookArgsHash;
+        mapping(PoolId => VaultSharePrices) vaultSharePricesAtLastSwap;
+        mapping(PoolId => bytes32) ldfStates;
+        mapping(PoolId => Slot0) slot0s;
     }
 
     /// -----------------------------------------------------------------------

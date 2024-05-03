@@ -259,7 +259,7 @@ contract BunniQuoter is IBunniQuoter {
             // use default dynamic fee model
             swapFee = _getFee(
                 updatedSqrtPriceX96,
-                arithmeticMeanTick,
+                feeMeanTick,
                 lastSurgeTimestamp,
                 feeMin,
                 feeMax,

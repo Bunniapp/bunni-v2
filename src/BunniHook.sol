@@ -40,30 +40,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     IBunniHub internal immutable hub;
     address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
-
-    /// @notice The list of observations for a given pool ID
-    mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) internal _observations;
-
-    /// @notice The current observation array state for the given pool ID
-    mapping(PoolId => ObservationState) internal _states;
-
-    mapping(PoolId id => bytes32) internal _rebalanceOrderHash;
-    mapping(PoolId id => uint256) internal _rebalanceOrderDeadline;
-    mapping(PoolId id => bytes32) internal _rebalanceOrderHookArgsHash;
-
-    mapping(PoolId => VaultSharePrices) public vaultSharePricesAtLastSwap;
-    mapping(PoolId => bytes32) public ldfStates;
-    mapping(PoolId => Slot0) public slot0s;
-    mapping(PoolId => BoolOverride) public amAmmEnabledOverride;
-
-    BoolOverride public globalAmAmmEnabledOverride;
-    IZone public floodZone;
-
     uint32 public immutable oracleMinInterval;
+
+    HookStorage internal s;
+
+    mapping(PoolId => BoolOverride) public amAmmEnabledOverride;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
     uint96 internal _hookFeesModifier;
-
+    IZone public floodZone;
+    BoolOverride public globalAmAmmEnabledOverride;
     /// @notice The recipient of collected hook fees
     address internal _hookFeesRecipient;
 
@@ -108,7 +94,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     {
         // verify rebalance order
         PoolId id = abi.decode(signature, (PoolId));
-        if (_rebalanceOrderHash[id] == hash) {
+        if (s.rebalanceOrderHash[id] == hash) {
             return this.isValidSignature.selector;
         }
     }
@@ -125,10 +111,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     {
         PoolId id = key.toId();
 
-        ObservationState storage state = _states[id];
+        ObservationState storage state = s.states[id];
 
         cardinalityNextOld = state.cardinalityNext;
-        cardinalityNextNew = _observations[id].grow(cardinalityNextOld, cardinalityNext);
+        cardinalityNextNew = s.observations[id].grow(cardinalityNextOld, cardinalityNext);
         state.cardinalityNext = cardinalityNextNew;
     }
 
@@ -209,7 +195,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     function updateLdfState(PoolId id, bytes32 newState) external override {
         if (msg.sender != address(hub)) revert BunniHook__Unauthorized();
 
-        ldfStates[id] = newState;
+        s.ldfStates[id] = newState;
     }
 
     /// -----------------------------------------------------------------------
@@ -258,12 +244,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         override
         returns (Oracle.Observation memory observation)
     {
-        observation = _observations[key.toId()][index];
+        observation = s.observations[key.toId()][index];
     }
 
     /// @inheritdoc IBunniHook
     function getState(PoolKey calldata key) external view override returns (ObservationState memory state) {
-        state = _states[key.toId()];
+        state = s.states[key.toId()];
     }
 
     /// @inheritdoc IBunniHook
@@ -274,10 +260,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         returns (int56[] memory tickCumulatives)
     {
         PoolId id = key.toId();
-        ObservationState memory state = _states[id];
-        Slot0 memory slot0 = slot0s[id];
+        ObservationState memory state = s.states[id];
+        Slot0 memory slot0 = s.slot0s[id];
 
-        return _observations[id].observe(
+        return s.observations[id].observe(
             state.intermediateObservation,
             uint32(block.timestamp),
             secondsAgos,
@@ -313,6 +299,28 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return _amAmmEnabled(id);
     }
 
+    function ldfStates(PoolId id) external view returns (bytes32) {
+        return s.ldfStates[id];
+    }
+
+    function slot0s(PoolId id)
+        external
+        view
+        returns (uint160 sqrtPriceX96, int24 tick, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp)
+    {
+        Slot0 memory slot0 = s.slot0s[id];
+        return (slot0.sqrtPriceX96, slot0.tick, slot0.lastSwapTimestamp, slot0.lastSurgeTimestamp);
+    }
+
+    function vaultSharePricesAtLastSwap(PoolId id)
+        external
+        view
+        returns (bool initialized, uint120 sharePrice0, uint120 sharePrice1)
+    {
+        VaultSharePrices memory prices = s.vaultSharePricesAtLastSwap[id];
+        return (prices.initialized, prices.sharePrice0, prices.sharePrice1);
+    }
+
     /// -----------------------------------------------------------------------
     /// Hooks
     /// -----------------------------------------------------------------------
@@ -331,9 +339,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         int24 tick,
         bytes calldata hookData
     ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
-        BunniHookLogic.afterInitialize(
-            caller, key, sqrtPriceX96, tick, hookData, slot0s, _observations, _states, hub, oracleMinInterval
-        );
+        BunniHookLogic.afterInitialize(s, caller, key, sqrtPriceX96, tick, hookData, hub, oracleMinInterval);
         return BunniHook.afterInitialize.selector;
     }
 
@@ -358,17 +364,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     {
         (bool useAmAmmFee, address amAmmManager, Currency amAmmFeeCurrency, uint256 amAmmFeeAmount) = BunniHookLogic
             .beforeSwap(
-            sender,
-            key,
-            params,
-            slot0s,
-            _observations,
-            _states,
-            vaultSharePricesAtLastSwap,
-            ldfStates,
-            _rebalanceOrderDeadline,
-            _rebalanceOrderHash,
-            _rebalanceOrderHookArgsHash,
+            s,
             BunniHookLogic.Env({
                 _hookFeesModifier: _hookFeesModifier,
                 hub: hub,
@@ -378,7 +374,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 weth: weth,
                 permit2: permit2,
                 oracleMinInterval: oracleMinInterval
-            })
+            }),
+            sender,
+            key,
+            params
         );
 
         if (useAmAmmFee) {
@@ -400,7 +399,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
 
         // ensure args can be trusted
-        if (keccak256(abi.encode(hookArgs)) != _rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
+        if (keccak256(abi.encode(hookArgs)) != s.rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
             revert BunniHook__InvalidRebalanceOrderHookArgs();
         }
 
@@ -441,22 +440,22 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
 
         // ensure args can be trusted
-        if (keccak256(abi.encode(hookArgs)) != _rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
+        if (keccak256(abi.encode(hookArgs)) != s.rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
             revert BunniHook__InvalidRebalanceOrderHookArgs();
         }
 
         // invalidate the rebalance order hash
         // don't delete the deadline to maintain a min rebalance interval
         PoolId id = hookArgs.key.toId();
-        delete _rebalanceOrderHash[id];
-        delete _rebalanceOrderHookArgsHash[id];
+        delete s.rebalanceOrderHash[id];
+        delete s.rebalanceOrderHookArgsHash[id];
 
         // surge fee should be applied after the rebalance has been executed
         // since totalLiquidity will be increased
         // no need to check surgeFeeAutostartThreshold sincewe just increased the liquidity in this tx
         // so block.timestamp is the exact time when the surge should occur
-        slot0s[id].lastSwapTimestamp = uint32(block.timestamp);
-        slot0s[id].lastSurgeTimestamp = uint32(block.timestamp);
+        s.slot0s[id].lastSwapTimestamp = uint32(block.timestamp);
+        s.slot0s[id].lastSurgeTimestamp = uint32(block.timestamp);
 
         RebalanceOrderPostHookArgs calldata args = hookArgs.postHookArgs;
 
