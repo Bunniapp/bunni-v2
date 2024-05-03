@@ -95,7 +95,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     ERC4626WithFeeMock internal vault1WithFee;
     ERC4626WithFeeMock internal vaultWethWithFee;
     IBunniHub internal hub;
-    BunniHook internal constant bunniHook = BunniHook(
+    BunniHook internal bunniHook = BunniHook(
         payable(
             address(
                 uint160(
@@ -183,20 +183,42 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         zone = new BunniZone(address(this));
 
         // initialize bunni hook
-        deployCodeTo(
-            "BunniHook.sol",
-            abi.encode(
-                poolManager,
-                hub,
-                floodPlain,
-                weth,
-                zone,
-                address(this),
-                HOOK_FEES_RECIPIENT,
-                HOOK_SWAP_FEE,
-                ORACLE_MIN_INTERVAL
-            ),
-            address(bunniHook)
+        bytes32 hookSalt;
+        unchecked {
+            uint256 hookFlags = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
+                + Hooks.ACCESS_LOCK_FLAG + Hooks.NO_OP_FLAG;
+            bytes memory hookCreationCode = abi.encodePacked(
+                type(BunniHook).creationCode,
+                abi.encode(
+                    poolManager,
+                    hub,
+                    floodPlain,
+                    weth,
+                    zone,
+                    address(this),
+                    HOOK_FEES_RECIPIENT,
+                    HOOK_SWAP_FEE,
+                    ORACLE_MIN_INTERVAL
+                )
+            );
+            for (uint256 offset; offset < 100000; offset++) {
+                hookSalt = bytes32(offset);
+                address hookDeployed = computeAddress(address(this), hookSalt, hookCreationCode);
+                if (uint160((bytes20(hookDeployed) >> 148) << 148) == hookFlags && hookDeployed.code.length == 0) {
+                    break;
+                }
+            }
+        }
+        bunniHook = new BunniHook{salt: hookSalt}(
+            poolManager,
+            hub,
+            floodPlain,
+            weth,
+            zone,
+            address(this),
+            HOOK_FEES_RECIPIENT,
+            HOOK_SWAP_FEE,
+            ORACLE_MIN_INTERVAL
         );
         vm.label(address(bunniHook), "BunniHook");
 
@@ -2117,6 +2139,21 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 IEIP712(permit2).DOMAIN_SEPARATOR(),
                 OrderHashMemory.hashAsWitness(order, address(floodPlain))
             )
+        );
+    }
+
+    /// @notice Precompute a contract address deployed via CREATE2
+    /// @param deployer The address that will deploy the hook. In `forge test`, this will be the test contract `address(this)` or the pranking address
+    ///                 In `forge script`, this should be `0x4e59b44847b379578588920cA78FbF26c0B4956C` (CREATE2 Deployer Proxy)
+    /// @param salt The salt used to deploy the hook
+    /// @param creationCode The creation code of a hook contract
+    function computeAddress(address deployer, bytes32 salt, bytes memory creationCode)
+        public
+        pure
+        returns (address hookAddress)
+    {
+        return address(
+            uint160(uint256(keccak256(abi.encodePacked(bytes1(0xFF), deployer, salt, keccak256(creationCode)))))
         );
     }
 }

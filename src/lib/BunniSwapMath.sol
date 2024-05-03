@@ -39,7 +39,7 @@ library BunniSwapMath {
         bytes32 ldfState,
         IPoolManager.SwapParams memory params
     )
-        internal
+        external
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {
