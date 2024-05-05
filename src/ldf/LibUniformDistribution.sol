@@ -121,11 +121,14 @@ library LibUniformDistribution {
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = (totalLiquidity / length).toUint128();
 
+        uint160 sqrtRatioTickLower = tickLower.getSqrtRatioAtTick();
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtRatioAtTick();
         uint160 sqrtPrice =
             SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(sqrtRatioTickUpper, liquidity, cumulativeAmount0_, true);
+        if (sqrtPrice < sqrtRatioTickLower) {
+            return (false, 0);
+        }
         int24 tick = sqrtPrice.getTickAtSqrtRatio();
-        console2.log("recovered tick", tick);
         if (roundUp) {
             tick += tickSpacing - 1;
         }
@@ -153,11 +156,14 @@ library LibUniformDistribution {
         uint128 liquidity = (totalLiquidity / length).toUint128();
 
         uint160 sqrtRatioTickLower = tickLower.getSqrtRatioAtTick();
+        uint160 sqrtRatioTickUpper = tickUpper.getSqrtRatioAtTick();
         uint160 sqrtPrice = SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(
             sqrtRatioTickLower, liquidity, cumulativeAmount1_, true
         );
+        if (sqrtPrice > sqrtRatioTickUpper) {
+            return (false, 0);
+        }
         int24 tick = sqrtPrice.getTickAtSqrtRatio() - tickSpacing;
-        console2.log("recovered tick", tick);
         if (roundUp) {
             tick += tickSpacing - 1;
         }
