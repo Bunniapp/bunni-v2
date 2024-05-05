@@ -340,8 +340,6 @@ library LibGeometricDistribution {
             xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
         }
 
-        console2.log("xWad: %d", xWad);
-
         // get rounded tick from xWad
         success = true;
         roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
@@ -403,8 +401,6 @@ library LibGeometricDistribution {
             xWad = basePowXPlusOneX96.toInt256().lnQ96().sDivWad(lnBaseX96) - int256(WAD);
         }
 
-        console2.log("xWad: %d", xWad);
-
         // round xWad to reduce error
         // limits tick precision to 1e-6 of a rounded tick
         uint256 remainder = (xWad % 1e12).abs();
@@ -413,8 +409,6 @@ library LibGeometricDistribution {
         assembly {
             xWad := add(mul(mul(gt(remainder, 500000000000), 1000000000000), sub(mul(sgt(xWad, 0), 2), 1)), xWad) // round towards infinity if remainder > 0.5
         }
-
-        console2.log("xWad: %d", xWad);
 
         // get rounded tick from xWad
         success = true;

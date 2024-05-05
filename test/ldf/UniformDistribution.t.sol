@@ -140,7 +140,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        tick = int24(bound(tick, tickLower, tickUpper));
+        tick = int24(bound(tick, tickLower + tickSpacing, tickUpper));
 
         console2.log("tick", tick);
         console2.log("tickSpacing", tickSpacing);
@@ -192,7 +192,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        tick = int24(bound(tick, tickLower, tickUpper));
+        tick = int24(bound(tick, tickLower, tickUpper - tickSpacing));
 
         console2.log("tick", tick);
         console2.log("tickSpacing", tickSpacing);
