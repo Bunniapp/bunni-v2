@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.19;
 
-import {MAX_CARDINALITY} from "./Constants.sol";
+import {MAX_CARDINALITY} from "../base/Constants.sol";
 
 /// @title Oracle
 /// @notice Provides price data useful for a wide variety of system designs. Based on Uniswap's

@@ -9,7 +9,7 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../lib/ExpMath.sol";
-import "../lib/Constants.sol";
+import "../base/Constants.sol";
 import "./LibGeometricDistribution.sol";
 
 library LibDoubleGeometricDistribution {

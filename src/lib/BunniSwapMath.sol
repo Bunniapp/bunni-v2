@@ -11,7 +11,7 @@ import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./Math.sol";
-import "./Constants.sol";
+import "../base/Constants.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 

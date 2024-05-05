@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ERC20} from "../../src/lib/ERC20.sol";
+import {ERC20} from "../../src/base/ERC20.sol";
 
 contract ERC20Mock is ERC20 {
     function mint(address to, uint256 amount) public {

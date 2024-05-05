@@ -7,8 +7,13 @@ import {PoolId, PoolKey, BalanceDelta, Currency} from "@uniswap/v4-core/src/inte
 
 import {ERC4626} from "solady/tokens/ERC4626.sol";
 
+import "./Constants.sol";
+import {Oracle} from "../lib/Oracle.sol";
+import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
+
+/// @title Contains structs shared between multiple contracts
 
 struct PoolState {
     ILiquidityDensityFunction liquidityDensityFunction;
@@ -38,37 +43,7 @@ struct RawPoolState {
     uint256 rawBalance1;
 }
 
-struct HookHandleSwapCallbackInputData {
-    PoolKey key;
-    bool zeroForOne;
-    uint256 inputAmount;
-    uint256 outputAmount;
-}
-
-struct DepositCallbackInputData {
-    address user;
-    PoolKey poolKey;
-    uint256 msgValue;
-    uint256 rawAmount0;
-    uint256 rawAmount1;
-    uint256 tax0;
-    uint256 tax1;
-}
-
-struct WithdrawCallbackInputData {
-    address user;
-    PoolKey poolKey;
-    uint256 rawAmount0;
-    uint256 rawAmount1;
-}
-
-struct InitializePoolCallbackInputData {
-    PoolKey poolKey;
-    uint160 sqrtPriceX96;
-    uint24 twapSecondsAgo;
-    bytes32 hookParams;
-}
-
+/// @notice The decoded hook params for a given pool
 /// @member feeMin The minimum swap fee, 6 decimals
 /// @member feeMax The maximum swap fee (may be exceeded if surge fee is active), 6 decimals
 /// @member feeQuadraticMultiplier The quadratic multiplier for the dynamic swap fee formula, 6 decimals
@@ -104,6 +79,49 @@ struct DecodedHookParams {
     bool amAmmEnabled;
 }
 
+/// @notice Contains mappings used by both BunniHook and BunniLogic. Makes passing
+/// mappings to BunniHookLogic easier & cheaper.
+/// @member observations The list of observations for a given pool ID
+/// @member states The current TWAP oracle state for a given pool ID
+/// @member rebalanceOrderHash The hash of the currently active rebalance order
+/// @member rebalanceOrderDeadline The deadline for the currently active rebalance order
+/// @member rebalanceOrderHookArgsHash The hash of the hook args for the currently active rebalance order
+/// @member vaultSharePricesAtLastSwap The share prices of the vaults used by the pool at the last swap
+/// @member ldfStates The LDF state for a given pool ID
+/// @member slot0s The slot0 state for a given pool ID
+struct HookStorage {
+    mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) observations;
+    mapping(PoolId => IBunniHook.ObservationState) states;
+    mapping(PoolId id => bytes32) rebalanceOrderHash;
+    mapping(PoolId id => uint256) rebalanceOrderDeadline;
+    mapping(PoolId id => bytes32) rebalanceOrderHookArgsHash;
+    mapping(PoolId => VaultSharePrices) vaultSharePricesAtLastSwap;
+    mapping(PoolId => bytes32) ldfStates;
+    mapping(PoolId => Slot0) slot0s;
+}
+
+/// @notice The slot0 state of a given pool
+/// @member sqrtPriceX96 A Fixed point Q64.96 number representing the sqrt of the ratio of the two assets (currency1/currency0)
+/// @member tick The log base 1.0001 of the ratio of the two assets (currency1/currency0)
+/// @member lastSwapTimestamp The timestamp of the last swap (or rebalance execution)
+/// @member lastSurgeTimestamp The timestamp of the last surge
+struct Slot0 {
+    uint160 sqrtPriceX96;
+    int24 tick;
+    uint32 lastSwapTimestamp;
+    uint32 lastSurgeTimestamp;
+}
+
+/// @notice Tracks the share prices of vaults used by a pool using vaults for both currencies. Used for computing surges.
+/// @member initialized True if the share prices have been initialized
+/// @member sharePrice0 The underlying assets each share of vault0 represents, scaled by 1e18
+/// @member sharePrice1 The underlying assets each share of vault1 represents, scaled by 1e18
+struct VaultSharePrices {
+    bool initialized;
+    uint120 sharePrice0;
+    uint120 sharePrice1;
+}
+
 enum LockCallbackType {
     SWAP,
     DEPOSIT,
@@ -111,14 +129,33 @@ enum LockCallbackType {
     INITIALIZE_POOL
 }
 
-enum HookLockCallbackType {
-    BURN_AND_TAKE,
-    SETTLE_AND_MINT,
-    CLAIM_FEES
+struct HookHandleSwapCallbackInputData {
+    PoolKey key;
+    bool zeroForOne;
+    uint256 inputAmount;
+    uint256 outputAmount;
 }
 
-enum BoolOverride {
-    UNSET,
-    TRUE,
-    FALSE
+struct DepositCallbackInputData {
+    address user;
+    PoolKey poolKey;
+    uint256 msgValue;
+    uint256 rawAmount0;
+    uint256 rawAmount1;
+    uint256 tax0;
+    uint256 tax1;
+}
+
+struct WithdrawCallbackInputData {
+    address user;
+    PoolKey poolKey;
+    uint256 rawAmount0;
+    uint256 rawAmount1;
+}
+
+struct InitializePoolCallbackInputData {
+    PoolKey poolKey;
+    uint160 sqrtPriceX96;
+    uint24 twapSecondsAgo;
+    bytes32 hookParams;
 }

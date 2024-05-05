@@ -22,17 +22,20 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./Math.sol";
-import "./Structs.sol";
 import "./VaultMath.sol";
-import "./Constants.sol";
 import "./AmAmmPayload.sol";
-import "../interfaces/IBunniHook.sol";
+import "../base/Errors.sol";
+import "../base/Constants.sol";
+import "../base/SharedStructs.sol";
 import {Oracle} from "./Oracle.sol";
+import "../interfaces/IBunniHook.sol";
 import {IBunniHub} from "../interfaces/IBunniHub.sol";
 import {BunniSwapMath} from "./BunniSwapMath.sol";
 import {OrderHashMemory} from "./OrderHashMemory.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 
+/// @title BunniHookLogic
+/// @notice Split from BunniHook to reduce contract size below the Spurious Dragon limit
 library BunniHookLogic {
     using SafeCastLib for *;
     using SafeTransferLib for *;
@@ -41,8 +44,12 @@ library BunniHookLogic {
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
 
+    /// -----------------------------------------------------------------------
+    /// Structs
+    /// -----------------------------------------------------------------------
+
     struct Env {
-        uint96 _hookFeesModifier;
+        uint96 hookFeesModifier;
         IBunniHub hub;
         IPoolManager poolManager;
         IFloodPlain floodPlain;
@@ -52,8 +59,26 @@ library BunniHookLogic {
         uint32 oracleMinInterval;
     }
 
+    struct RebalanceInput {
+        PoolId id;
+        PoolKey key;
+        int24 updatedTick;
+        uint160 updatedSqrtPriceX96;
+        int24 arithmeticMeanTick;
+        bool useTwap;
+        bytes32 newLdfState;
+        DecodedHookParams p;
+        Oracle.Observation updatedIntermediate;
+        uint32 updatedIndex;
+        uint32 updatedCardinality;
+    }
+
+    /// -----------------------------------------------------------------------
+    /// External functions
+    /// -----------------------------------------------------------------------
+
     function afterInitialize(
-        IBunniHook.HookStorage storage s,
+        HookStorage storage s,
         address caller,
         PoolKey calldata key,
         uint160 sqrtPriceX96,
@@ -62,11 +87,11 @@ library BunniHookLogic {
         IBunniHub hub,
         uint32 oracleMinInterval
     ) external {
-        if (caller != address(hub)) revert IBunniHook.BunniHook__Unauthorized(); // prevents non-BunniHub contracts from initializing a pool using this hook
+        if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from initializing a pool using this hook
         PoolId id = key.toId();
 
         // initialize slot0
-        s.slot0s[id] = IBunniHook.Slot0({
+        s.slot0s[id] = Slot0({
             sqrtPriceX96: sqrtPriceX96,
             tick: tick,
             lastSwapTimestamp: uint32(block.timestamp),
@@ -96,7 +121,7 @@ library BunniHookLogic {
     }
 
     function beforeSwap(
-        IBunniHook.HookStorage storage s,
+        HookStorage storage s,
         Env calldata env,
         address sender,
         PoolKey calldata key,
@@ -104,7 +129,7 @@ library BunniHookLogic {
     ) external returns (bool useAmAmmFee, address amAmmManager, Currency amAmmFeeCurrency, uint256 amAmmFeeAmount) {
         // ensure swap makes sense
         PoolId id = key.toId();
-        IBunniHook.Slot0 memory slot0 = s.slot0s[id];
+        Slot0 memory slot0 = s.slot0s[id];
         uint160 sqrtPriceX96 = slot0.sqrtPriceX96;
         if (
             sqrtPriceX96 == 0
@@ -117,7 +142,7 @@ library BunniHookLogic {
                         && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_RATIO)
                 )
         ) {
-            revert IBunniHook.BunniHook__InvalidSwap();
+            revert BunniHook__InvalidSwap();
         }
 
         // get pool state
@@ -240,7 +265,7 @@ library BunniHookLogic {
             (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
         ) {
-            revert IBunniHook.BunniHook__InvalidSwap();
+            revert BunniHook__InvalidSwap();
         }
 
         // update slot0
@@ -258,7 +283,7 @@ library BunniHookLogic {
                     : uint32(block.timestamp);
             }
         }
-        s.slot0s[id] = IBunniHook.Slot0({
+        s.slot0s[id] = Slot0({
             sqrtPriceX96: updatedSqrtPriceX96,
             tick: updatedTick,
             lastSwapTimestamp: uint32(block.timestamp),
@@ -315,7 +340,7 @@ library BunniHookLogic {
             if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
 
             // take hook fees from swap fee
-            hookFeesAmount = swapFeeAmount.mulDivUp(env._hookFeesModifier, WAD);
+            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeesModifier, WAD);
             swapFeeAmount -= hookFeesAmount;
 
             // modify output amount with fees
@@ -333,7 +358,7 @@ library BunniHookLogic {
             if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
 
             // take hook fees from swap fee
-            hookFeesAmount = swapFeeAmount.mulDivUp(env._hookFeesModifier, WAD);
+            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeesModifier, WAD);
             swapFeeAmount -= hookFeesAmount;
 
             // modify input amount with fees
@@ -358,19 +383,17 @@ library BunniHookLogic {
         env.poolManager.burn(address(this), outputToken.toId(), outputAmount);
 
         // emit swap event
-        unchecked {
-            emit IBunniHook.Swap(
-                id,
-                sender,
-                params.zeroForOne,
-                inputAmount,
-                outputAmount,
-                updatedSqrtPriceX96,
-                updatedTick,
-                swapFee,
-                totalLiquidity
-            );
-        }
+        emit IBunniHook.Swap(
+            id,
+            sender,
+            params.zeroForOne,
+            inputAmount,
+            outputAmount,
+            updatedSqrtPriceX96,
+            updatedTick,
+            swapFee,
+            totalLiquidity
+        );
 
         // we should rebalance if:
         // - rebalanceThreshold != 0, i.e. rebalancing is enabled
@@ -397,8 +420,18 @@ library BunniHookLogic {
         }
     }
 
+    function decodeHookParams(bytes32 hookParams) external pure returns (DecodedHookParams memory p) {
+        return _decodeParams(hookParams);
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Internal utility functions
+    /// -----------------------------------------------------------------------
+
+    /// @dev Checks if the pool should surge based on the vault share price changes since the last swap.
+    /// Also updates vaultSharePricesAtLastSwap.
     function _shouldSurgeFromVaults(
-        IBunniHook.HookStorage storage s,
+        HookStorage storage s,
         PoolId id,
         PoolState memory bunniState,
         DecodedHookParams memory p,
@@ -410,14 +443,14 @@ library BunniHookLogic {
             // so there's no risk of being sandwiched
 
             // compute share prices
-            IBunniHook.VaultSharePrices memory sharePrices = IBunniHook.VaultSharePrices({
+            VaultSharePrices memory sharePrices = VaultSharePrices({
                 initialized: true,
                 sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
                 sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
             });
 
             // compare with share prices at last swap to see if we need to apply the surge fee
-            IBunniHook.VaultSharePrices memory prevSharePrices = s.vaultSharePricesAtLastSwap[id];
+            VaultSharePrices memory prevSharePrices = s.vaultSharePricesAtLastSwap[id];
             if (
                 prevSharePrices.initialized
                     && (
@@ -441,21 +474,8 @@ library BunniHookLogic {
         }
     }
 
-    struct RebalanceInput {
-        PoolId id;
-        PoolKey key;
-        int24 updatedTick;
-        uint160 updatedSqrtPriceX96;
-        int24 arithmeticMeanTick;
-        bool useTwap;
-        bytes32 newLdfState;
-        DecodedHookParams p;
-        Oracle.Observation updatedIntermediate;
-        uint32 updatedIndex;
-        uint32 updatedCardinality;
-    }
-
-    function _rebalance(IBunniHook.HookStorage storage s, Env calldata env, RebalanceInput memory input) internal {
+    /// @dev Creates a rebalance order on FloodPlain.
+    function _rebalance(HookStorage storage s, Env calldata env, RebalanceInput memory input) internal {
         // compute rebalance params
         (bool success, Currency inputToken, Currency outputToken, uint256 inputAmount, uint256 outputAmount) =
             _computeRebalanceParams(s, env, input);
@@ -467,7 +487,7 @@ library BunniHookLogic {
         );
     }
 
-    function _computeRebalanceParams(IBunniHook.HookStorage storage s, Env calldata env, RebalanceInput memory input)
+    function _computeRebalanceParams(HookStorage storage s, Env calldata env, RebalanceInput memory input)
         internal
         view
         returns (bool success, Currency inputToken, Currency outputToken, uint256 inputAmount, uint256 outputAmount)
@@ -659,7 +679,7 @@ library BunniHookLogic {
     }
 
     function _createRebalanceOrder(
-        IBunniHook.HookStorage storage s,
+        HookStorage storage s,
         Env calldata env,
         PoolId id,
         PoolKey memory key,
@@ -756,7 +776,7 @@ library BunniHookLogic {
     }
 
     function _getTwap(
-        IBunniHook.HookStorage storage s,
+        HookStorage storage s,
         PoolId id,
         int24 currentTick,
         uint32 twapSecondsAgo,
@@ -777,7 +797,7 @@ library BunniHookLogic {
         arithmeticMeanTick = int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 
-    function _updateOracle(IBunniHook.HookStorage storage s, PoolId id, int24 tick, uint32 oracleMinInterval)
+    function _updateOracle(HookStorage storage s, PoolId id, int24 tick, uint32 oracleMinInterval)
         internal
         returns (Oracle.Observation memory updatedIntermediate, uint32 updatedIndex, uint32 updatedCardinality)
     {
@@ -827,9 +847,5 @@ library BunniHookLogic {
         p.rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
         p.rebalanceOrderTTL = uint16(bytes2(hookParams << 232));
         p.amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
-    }
-
-    function decodeHookParams(bytes32 hookParams) external pure returns (DecodedHookParams memory p) {
-        return _decodeParams(hookParams);
     }
 }

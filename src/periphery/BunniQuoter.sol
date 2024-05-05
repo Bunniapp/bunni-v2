@@ -15,8 +15,8 @@ import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {IBunniQuoter} from "../interfaces/IBunniQuoter.sol";
 
 import "../lib/Math.sol";
-import "../lib/Structs.sol";
-import "../lib/Constants.sol";
+import "../base/SharedStructs.sol";
+import "../base/Constants.sol";
 import "../lib/VaultMath.sol";
 import "../lib/AmAmmPayload.sol";
 import "../lib/BunniSwapMath.sol";
@@ -119,7 +119,7 @@ contract BunniQuoter is IBunniQuoter {
 
         if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
             // compute share prices
-            IBunniHook.VaultSharePrices memory sharePrices = IBunniHook.VaultSharePrices({
+            VaultSharePrices memory sharePrices = VaultSharePrices({
                 initialized: true,
                 sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
                 sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()

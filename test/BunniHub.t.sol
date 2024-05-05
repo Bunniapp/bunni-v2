@@ -29,8 +29,8 @@ import {ERC4626} from "solady/tokens/ERC4626.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "../src/lib/Math.sol";
-import "../src/lib/Structs.sol";
 import "../src/ldf/ShiftMode.sol";
+import "../src/base/SharedStructs.sol";
 import {MockLDF} from "./mocks/MockLDF.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniZone} from "../src/BunniZone.sol";
@@ -59,6 +59,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint256;
+
+    enum HookLockCallbackType {
+        BURN_AND_TAKE,
+        SETTLE_AND_MINT,
+        CLAIM_FEES
+    }
 
     uint256 internal constant PRECISION = 10 ** 18;
     uint8 internal constant DECIMALS = 18;
@@ -1690,8 +1696,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_amAmmOverride(uint256 poolOverride_, uint256 globalOverride_, bool poolEnabled) external {
-        BoolOverride poolOverride = BoolOverride(uint8(bound(poolOverride_, 0, 2)));
-        BoolOverride globalOverride = BoolOverride(uint8(bound(globalOverride_, 0, 2)));
+        IBunniHook.BoolOverride poolOverride = IBunniHook.BoolOverride(uint8(bound(poolOverride_, 0, 2)));
+        IBunniHook.BoolOverride globalOverride = IBunniHook.BoolOverride(uint8(bound(globalOverride_, 0, 2)));
 
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
@@ -1725,9 +1731,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // verify amAmmEnabled
         bool expected;
-        if (poolOverride != BoolOverride.UNSET) expected = poolOverride == BoolOverride.TRUE;
-        else if (globalOverride != BoolOverride.UNSET) expected = globalOverride == BoolOverride.TRUE;
-        else expected = poolEnabled;
+        if (poolOverride != IBunniHook.BoolOverride.UNSET) {
+            expected = poolOverride == IBunniHook.BoolOverride.TRUE;
+        } else if (globalOverride != IBunniHook.BoolOverride.UNSET) {
+            expected = globalOverride == IBunniHook.BoolOverride.TRUE;
+        } else {
+            expected = poolEnabled;
+        }
         assertEq(bunniHook.getAmAmmEnabled(id), expected, "getAmAmmEnabled incorrect");
     }
 

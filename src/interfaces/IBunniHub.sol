@@ -13,28 +13,12 @@ import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallb
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC4626} from "solady/tokens/ERC4626.sol";
 
-import "../lib/Structs.sol";
+import "../base/SharedStructs.sol";
 import {IERC20} from "./IERC20.sol";
 import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {IPermit2Enabled} from "./IPermit2Enabled.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
-
-error BunniHub__ZeroInput();
-error BunniHub__PastDeadline();
-error BunniHub__Unauthorized();
-error BunniHub__LDFCannotBeZero();
-error BunniHub__MaxNonceReached();
-error BunniHub__SlippageTooHigh();
-error BunniHub__HookCannotBeZero();
-error BunniHub__ZeroSharesMinted();
-error BunniHub__InvalidLDFParams();
-error BunniHub__InvalidHookParams();
-error BunniHub__TokenTaxIncorrect();
-error BunniHub__VaultFeeIncorrect();
-error BunniHub__VaultAssetMismatch();
-error BunniHub__BunniTokenNotInitialized();
-error BunniHub__InvalidRawTokenRatioBounds();
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -215,6 +199,13 @@ interface IBunniHub is ILockCallback, IPermit2Enabled {
         external
         returns (IBunniToken token, PoolKey memory key);
 
+    /// @notice Called by the hook to execute a generalized swap from one token to the other. Also used during rebalancing.
+    /// @dev If the raw balance is insufficient, vault reserves will be automatically used.
+    /// Will update vault reserves if the raw/reserve ratio is outside of the bounds.
+    /// @param key The PoolKey of the Uniswap V4 pool
+    /// @param zeroForOne True if the swap is for token0->token1, false if token1->token0
+    /// @param inputAmount The amount of the input token to pull from the hook
+    /// @param outputAmount The amount of the output token to push to the hook
     function hookHandleSwap(PoolKey calldata key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount)
         external;
 

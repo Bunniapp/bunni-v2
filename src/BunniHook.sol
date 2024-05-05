@@ -12,49 +12,81 @@ import {AmAmm} from "biddog/AmAmm.sol";
 import "flood-contracts/src/interfaces/IZone.sol";
 import "flood-contracts/src/interfaces/IFloodPlain.sol";
 
+import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
+
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 import "./lib/Math.sol";
-import "./lib/Structs.sol";
-import "./lib/Constants.sol";
+import "./base/Errors.sol";
+import "./base/Constants.sol";
 import "./lib/AmAmmPayload.sol";
+import "./base/SharedStructs.sol";
 import "./interfaces/IBunniHook.sol";
 import {Oracle} from "./lib/Oracle.sol";
-import {Ownable} from "./lib/Ownable.sol";
-import {BaseHook} from "./lib/BaseHook.sol";
+import {Ownable} from "./base/Ownable.sol";
+import {BaseHook} from "./base/BaseHook.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {BunniSwapMath} from "./lib/BunniSwapMath.sol";
 import {BunniHookLogic} from "./lib/BunniHookLogic.sol";
-import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
+import {ReentrancyGuard} from "./base/ReentrancyGuard.sol";
 
-/// @notice Bunni Hook
+/// @title BunniHook
+/// @author zefram.eth
+/// @notice Uniswap v4 hook responsible for handling swaps on Bunni. Implements auto-rebalancing
+/// executed via FloodPlain. Uses am-AMM to recapture LVR & MEV.
 contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
+    /// -----------------------------------------------------------------------
+    /// Library usage
+    /// -----------------------------------------------------------------------
+
     using SafeTransferLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
 
+    /// -----------------------------------------------------------------------
+    /// Immutable args
+    /// -----------------------------------------------------------------------
+
     WETH internal immutable weth;
     IBunniHub internal immutable hub;
     address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
+
+    /// @inheritdoc IBunniHook
     uint32 public immutable oracleMinInterval;
 
+    /// -----------------------------------------------------------------------
+    /// Storage variables
+    /// -----------------------------------------------------------------------
+
+    /// @dev Contains mappings used by both BunniHook and BunniLogic. Makes passing
+    /// mappings to BunniHookLogic easier & cheaper.
     HookStorage internal s;
 
+    /// @inheritdoc IBunniHook
     mapping(PoolId => BoolOverride) public amAmmEnabledOverride;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
     uint96 internal _hookFeesModifier;
+
+    /// @inheritdoc IBunniHook
     IZone public floodZone;
+
+    /// @inheritdoc IBunniHook
     BoolOverride public globalAmAmmEnabledOverride;
+
     /// @notice The recipient of collected hook fees
     address internal _hookFeesRecipient;
 
+    /// -----------------------------------------------------------------------
+    /// Constructor
+    /// -----------------------------------------------------------------------
+
     constructor(
-        IPoolManager _poolManager,
+        IPoolManager poolManager_,
         IBunniHub hub_,
         IFloodPlain floodPlain_,
         WETH weth_,
@@ -63,7 +95,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         address hookFeesRecipient_,
         uint96 hookFeesModifier_,
         uint32 oracleMinInterval_
-    ) BaseHook(_poolManager) {
+    ) BaseHook(poolManager_) {
         hub = hub_;
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
@@ -73,7 +105,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         _hookFeesModifier = hookFeesModifier_;
         _hookFeesRecipient = hookFeesRecipient_;
         _initializeOwner(owner_);
-        _poolManager.setOperator(address(hub_), true);
+        poolManager_.setOperator(address(hub_), true);
 
         emit SetHookFeesParams(hookFeesModifier_, hookFeesRecipient_);
     }
@@ -82,10 +114,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// EIP-1271 compliance
     /// -----------------------------------------------------------------------
 
-    /// @dev Should return whether the signature provided is valid for the provided data
-    /// @param hash      Hash of the data to be signed
-    /// @param signature Signature byte array associated with _data
-    /// @return magicValue The bytes4 magic value 0x1626ba7e
+    /// @inheritdoc IERC1271
     function isValidSignature(bytes32 hash, bytes memory signature)
         external
         view
@@ -93,7 +122,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         returns (bytes4 magicValue)
     {
         // verify rebalance order
-        PoolId id = abi.decode(signature, (PoolId));
+        PoolId id = abi.decode(signature, (PoolId)); // we use the signature field to store the pool id
         if (s.rebalanceOrderHash[id] == hash) {
             return this.isValidSignature.selector;
         }
@@ -124,6 +153,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Uniswap lock callback
     /// -----------------------------------------------------------------------
 
+    enum HookLockCallbackType {
+        BURN_AND_TAKE,
+        SETTLE_AND_MINT,
+        CLAIM_FEES
+    }
+
     /// @inheritdoc ILockCallback
     function lockAcquired(address lockCaller, bytes calldata data)
         external
@@ -146,6 +181,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return bytes("");
     }
 
+    /// @dev Burns PoolManager claim tokens and takes the underlying tokens from PoolManager.
+    /// Used while executing rebalance orders.
     function _burnAndTake(address lockCaller, bytes memory callbackData) internal {
         if (lockCaller != address(this)) revert BunniHook__Unauthorized();
 
@@ -157,6 +194,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         poolManager.take(currency, address(this), amount);
     }
 
+    /// @dev Settles tokens sent to PoolManager and mints the corresponding claim tokens.
+    /// Used while executing rebalance orders.
     function _settleAndMint(address lockCaller, bytes memory callbackData) internal {
         if (lockCaller != address(this)) revert BunniHook__Unauthorized();
 
@@ -168,6 +207,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         poolManager.mint(address(this), currency.toId(), paid);
     }
 
+    /// @dev Claims protocol fees earned and sends it to the recipient.
     function _claimFees(address lockCaller, bytes memory callbackData) internal {
         if (lockCaller != owner()) revert BunniHook__Unauthorized();
 
@@ -299,10 +339,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return _amAmmEnabled(id);
     }
 
+    /// @inheritdoc IBunniHook
     function ldfStates(PoolId id) external view returns (bytes32) {
         return s.ldfStates[id];
     }
 
+    /// @inheritdoc IBunniHook
     function slot0s(PoolId id)
         external
         view
@@ -312,6 +354,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return (slot0.sqrtPriceX96, slot0.tick, slot0.lastSwapTimestamp, slot0.lastSurgeTimestamp);
     }
 
+    /// @inheritdoc IBunniHook
     function vaultSharePricesAtLastSwap(PoolId id)
         external
         view
@@ -366,11 +409,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             .beforeSwap(
             s,
             BunniHookLogic.Env({
-                _hookFeesModifier: _hookFeesModifier,
+                hookFeesModifier: _hookFeesModifier,
+                floodZone: floodZone,
                 hub: hub,
                 poolManager: poolManager,
                 floodPlain: floodPlain,
-                floodZone: floodZone,
                 weth: weth,
                 permit2: permit2,
                 oracleMinInterval: oracleMinInterval
@@ -380,6 +423,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             params
         );
 
+        // accrue swap fee to the am-AMM manager if present
         if (useAmAmmFee) {
             _accrueFees(amAmmManager, amAmmFeeCurrency, amAmmFeeAmount);
         }
@@ -452,7 +496,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // surge fee should be applied after the rebalance has been executed
         // since totalLiquidity will be increased
-        // no need to check surgeFeeAutostartThreshold sincewe just increased the liquidity in this tx
+        // no need to check surgeFeeAutostartThreshold since we just increased the liquidity in this tx
         // so block.timestamp is the exact time when the surge should occur
         s.slot0s[id].lastSwapTimestamp = uint32(block.timestamp);
         s.slot0s[id].lastSurgeTimestamp = uint32(block.timestamp);

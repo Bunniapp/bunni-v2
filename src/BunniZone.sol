@@ -10,7 +10,7 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
 
-import {Ownable} from "./lib/Ownable.sol";
+import {Ownable} from "./base/Ownable.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
 import {IBunniZone} from "./interfaces/IBunniZone.sol";
 

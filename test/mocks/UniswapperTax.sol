@@ -10,7 +10,7 @@ import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
-import "../../src/lib/Constants.sol";
+import "../../src/base/Constants.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 
 contract UniswapperTax is ILockCallback {

@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ERC20} from "../../src/lib/ERC20.sol";
+import {ERC20} from "../../src/base/ERC20.sol";
 
 contract ERC20TaxMock is ERC20 {
     /// @dev `keccak256(bytes("Transfer(address,address,uint256)"))`.

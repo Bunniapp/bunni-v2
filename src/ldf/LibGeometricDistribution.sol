@@ -11,7 +11,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../lib/ExpMath.sol";
-import "../lib/Constants.sol";
+import "../base/Constants.sol";
 
 library LibGeometricDistribution {
     using TickMath for int24;

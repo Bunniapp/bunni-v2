@@ -6,7 +6,7 @@ import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
-import "./Constants.sol";
+import "../base/Constants.sol";
 
 using FixedPointMathLib for int256;
 using FixedPointMathLib for uint256;

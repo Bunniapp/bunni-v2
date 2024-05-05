@@ -17,25 +17,18 @@ import "flood-contracts/src/interfaces/IFloodPlain.sol";
 
 import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 
-import "../lib/Structs.sol";
-import "../lib/Constants.sol";
+import "../base/Constants.sol";
+import "../base/SharedStructs.sol";
 import {IOwnable} from "./IOwnable.sol";
 import {Oracle} from "../lib/Oracle.sol";
 import {IBunniHub} from "./IBunniHub.sol";
 import {IBaseHook} from "./IBaseHook.sol";
 
+/// @title BunniHook
+/// @author zefram.eth
+/// @notice Uniswap v4 hook responsible for handling swaps on Bunni. Implements auto-rebalancing
+/// executed via FloodPlain. Uses am-AMM to recapture LVR & MEV.
 interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, IERC1271, IAmAmm {
-    /// -----------------------------------------------------------------------
-    /// Errors
-    /// -----------------------------------------------------------------------
-
-    error BunniHook__InvalidSwap();
-    error BunniHook__Unauthorized();
-    error BunniHook__NoAddLiquidity();
-    error BunniHook__InvalidLockCallbackType();
-    error BunniHook__PrehookPostConditionFailed();
-    error BunniHook__InvalidRebalanceOrderHookArgs();
-
     /// -----------------------------------------------------------------------
     /// Events
     /// -----------------------------------------------------------------------
@@ -67,9 +60,16 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     event SetGlobalAmAmmEnabledOverride(BoolOverride indexed boolOverride);
 
     /// -----------------------------------------------------------------------
-    /// Structs
+    /// Structs and enums
     /// -----------------------------------------------------------------------
 
+    enum BoolOverride {
+        UNSET,
+        TRUE,
+        FALSE
+    }
+
+    /// @notice The state of a TWAP oracle for a given pool
     /// @member index The index of the last written observation for the pool
     /// @member cardinality The cardinality of the observations array for the pool
     /// @member cardinalityNext The cardinality target of the observations array for the pool, which will replace cardinality when enough observations are written
@@ -81,45 +81,29 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
         Oracle.Observation intermediateObservation;
     }
 
-    struct Slot0 {
-        uint160 sqrtPriceX96;
-        int24 tick;
-        uint32 lastSwapTimestamp;
-        uint32 lastSurgeTimestamp;
-    }
-
-    struct VaultSharePrices {
-        bool initialized;
-        uint120 sharePrice0;
-        uint120 sharePrice1;
-    }
-
+    /// @notice The arguments passed to the rebalance order prehook and posthook.
+    /// @dev The hash of the hook args is used for validation in the prehook and posthook.
+    /// @member key The pool key of the pool being rebalanced
+    /// @member preHookArgs The prehook arguments
+    /// @member postHookArgs The posthook arguments
     struct RebalanceOrderHookArgs {
         PoolKey key;
         RebalanceOrderPreHookArgs preHookArgs;
         RebalanceOrderPostHookArgs postHookArgs;
     }
 
+    /// @notice The arguments passed to the rebalance order prehook.
+    /// @member currency The currency to take from BunniHub and sell via the rebalance order
+    /// @member amount The amount of currency to take from BunniHub and sell via the rebalance order
     struct RebalanceOrderPreHookArgs {
         Currency currency;
         uint256 amount;
     }
 
+    /// @notice The arguments passed to the rebalance order posthook.
+    /// @member currency The currency to receive from the rebalance order and give to BunniHub
     struct RebalanceOrderPostHookArgs {
         Currency currency;
-    }
-
-    struct HookStorage {
-        /// @notice The list of observations for a given pool ID
-        mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) observations;
-        /// @notice The current observation array state for the given pool ID
-        mapping(PoolId => ObservationState) states;
-        mapping(PoolId id => bytes32) rebalanceOrderHash;
-        mapping(PoolId id => uint256) rebalanceOrderDeadline;
-        mapping(PoolId id => bytes32) rebalanceOrderHookArgsHash;
-        mapping(PoolId => VaultSharePrices) vaultSharePricesAtLastSwap;
-        mapping(PoolId => bytes32) ldfStates;
-        mapping(PoolId => Slot0) slot0s;
     }
 
     /// -----------------------------------------------------------------------
@@ -157,26 +141,45 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     /// @return isValid True if the hook params are valid
     function isValidParams(bytes32 hookParams) external view returns (bool);
 
+    /// @notice The LDF state of a given pool. Used for evaluating the LDF.
+    /// @param id The pool id
+    /// @return The LDF state
     function ldfStates(PoolId id) external view returns (bytes32);
 
+    /// @notice The slot0 state of a given pool
+    /// @param id The pool id
+    /// @return sqrtPriceX96
+    /// @return tick The tick of the pool
+    /// @return lastSwapTimestamp The timestamp of the last swap
+    /// @return lastSurgeTimestamp The timestamp of the last surge
     function slot0s(PoolId id)
         external
         view
         returns (uint160 sqrtPriceX96, int24 tick, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp);
 
+    /// @notice The share prices of the vaults used by the pool at the last swap
+    /// @param id The pool id
+    /// @return initialized True if the share prices have been initialized
+    /// @return sharePrice0 The underlying assets each share of vault0 represents, scaled by 1e18
+    /// @return sharePrice1 The underlying assets each share of vault1 represents, scaled by 1e18
     function vaultSharePricesAtLastSwap(PoolId id)
         external
         view
         returns (bool initialized, uint120 sharePrice0, uint120 sharePrice1);
 
+    /// @notice The FloodZone contract used in rebalance orders.
     function floodZone() external view returns (IZone);
 
+    /// @notice The poolwise amAmmEnabled override. Top precedence.
     function amAmmEnabledOverride(PoolId id) external view returns (BoolOverride);
 
+    /// @notice Enables/disables am-AMM globally. Takes precedence over amAmmEnabled in hookParams, overriden by amAmmEnabledOverride.
     function globalAmAmmEnabledOverride() external view returns (BoolOverride);
 
+    /// @notice Whether am-AMM is enabled for the given pool.
     function getAmAmmEnabled(PoolId id) external view returns (bool);
 
+    /// @notice The minimum interval between the TWAP oracle observations.
     function oracleMinInterval() external view returns (uint32);
 
     /// -----------------------------------------------------------------------

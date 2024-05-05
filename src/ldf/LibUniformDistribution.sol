@@ -9,7 +9,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
 import "../lib/Math.sol";
-import "../lib/Constants.sol";
+import "../base/Constants.sol";
 
 library LibUniformDistribution {
     using TickMath for int24;

@@ -25,9 +25,10 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./Math.sol";
-import "./Structs.sol";
 import "./VaultMath.sol";
-import "./Constants.sol";
+import "../base/Errors.sol";
+import "../base/Constants.sol";
+import "../base/SharedStructs.sol";
 import "../interfaces/IBunniHub.sol";
 import {BunniToken} from "../BunniToken.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";

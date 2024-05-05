@@ -4,7 +4,8 @@ pragma solidity ^0.8.15;
 
 import {Clone} from "clones-with-immutable-args/Clone.sol";
 
-import {ERC20} from "./lib/ERC20.sol";
+import "./base/Errors.sol";
+import {ERC20} from "./base/ERC20.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
@@ -13,8 +14,6 @@ import {IBunniToken} from "./interfaces/IBunniToken.sol";
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
 contract BunniToken is IBunniToken, ERC20, Clone {
-    error BunniToken__NotBunniHub();
-
     function hub() public pure override returns (IBunniHub) {
         return IBunniHub(_getArgAddress(0));
     }

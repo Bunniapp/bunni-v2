@@ -8,6 +8,7 @@ import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
 
 import {WETH} from "solady/tokens/WETH.sol";
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
@@ -16,14 +17,15 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
-import "./lib/Structs.sol";
+import "./base/Errors.sol";
 import "./lib/VaultMath.sol";
-import "./lib/Constants.sol";
+import "./base/Constants.sol";
+import "./base/SharedStructs.sol";
 import "./interfaces/IBunniHub.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {BunniHubLogic} from "./lib/BunniHubLogic.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
-import {Permit2Enabled} from "./lib/Permit2Enabled.sol";
+import {Permit2Enabled} from "./base/Permit2Enabled.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 
@@ -183,6 +185,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// Uniswap callback
     /// -----------------------------------------------------------------------
 
+    /// @inheritdoc ILockCallback
     function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
         // verify sender
         if (msg.sender != address(poolManager) || lockCaller != address(this)) revert BunniHub__Unauthorized();
@@ -203,10 +206,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         // fallback
         return bytes("");
     }
-
-    /// -----------------------------------------------------------
-    /// Internal functions
-    /// -----------------------------------------------------------
 
     function _hookHandleSwapLockCallback(HookHandleSwapCallbackInputData memory data) internal {
         (PoolKey memory key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount) =
@@ -360,6 +359,10 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     function _initializePoolLockCallback(InitializePoolCallbackInputData memory data) internal {
         poolManager.initialize(data.poolKey, data.sqrtPriceX96, abi.encode(data.twapSecondsAgo, data.hookParams));
     }
+
+    /// -----------------------------------------------------------------------
+    /// Internal utilities
+    /// -----------------------------------------------------------------------
 
     /// @dev Deposits/withdraws tokens from a vault via claim tokens.
     /// @param rawBalanceChange The amount to deposit/withdraw. Positive for withdraw, negative for deposit.
