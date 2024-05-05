@@ -295,7 +295,7 @@ library BunniHookLogic {
         bool amAmmEnableSurgeFee;
         if (p.amAmmEnabled) {
             bytes7 payload;
-            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBid(id);
+            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBidWrite(id);
             (amAmmManager, payload) = (topBid.manager, topBid.payload);
             uint24 swapFee0For1;
             uint24 swapFee1For0;
