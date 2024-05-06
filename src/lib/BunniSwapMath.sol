@@ -100,7 +100,7 @@ library BunniSwapMath {
             ((input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
         // initialize input and output amounts based on initial info
-        bool exactIn = amountSpecified >= 0;
+        bool exactIn = amountSpecified > 0;
         inputAmount = exactIn ? uint256(amountSpecified) : 0;
         outputAmount = exactIn ? 0 : uint256(-amountSpecified);
 
@@ -251,9 +251,14 @@ library BunniSwapMath {
                 currentActiveBalance0 < updatedActiveBalance0 ? 0 : currentActiveBalance0 - updatedActiveBalance0
             );
 
-        if (exactIn && inputAmount == uint256(amountSpecified) + 1) {
+        if (exactIn && inputAmount > uint256(amountSpecified)) {
             // exact input swap where the input amount exceeds the amount specified
-            (inputAmount, outputAmount) = (uint256(amountSpecified), outputAmount - 1);
+            // if the delta is small enough, we simply do a 1-for-1 reduction in outputAmount
+            // to ensure the swap succeeds
+            uint256 delta = inputAmount - uint256(amountSpecified);
+            if (delta <= 10) {
+                (inputAmount, outputAmount) = (uint256(amountSpecified), outputAmount - delta);
+            }
         }
     }
 

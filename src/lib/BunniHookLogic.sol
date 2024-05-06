@@ -129,6 +129,7 @@ library BunniHookLogic {
         IPoolManager.SwapParams calldata params
     ) external returns (bool useAmAmmFee, address amAmmManager, Currency amAmmFeeCurrency, uint256 amAmmFeeAmount) {
         // ensure swap makes sense
+        if (params.amountSpecified == 0) return (false, address(0), Currency.wrap(address(0)), 0);
         PoolId id = key.toId();
         Slot0 memory slot0 = s.slot0s[id];
         uint160 sqrtPriceX96 = slot0.sqrtPriceX96;
@@ -275,7 +276,7 @@ library BunniHookLogic {
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         uint24 swapFee;
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified >= 0;
+        bool exactIn = params.amountSpecified > 0;
         useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (

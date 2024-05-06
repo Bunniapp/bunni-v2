@@ -178,7 +178,7 @@ contract BunniQuoter is IBunniQuoter {
 
         // charge swap fee
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified >= 0;
+        bool exactIn = params.amountSpecified > 0;
         bool useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (
