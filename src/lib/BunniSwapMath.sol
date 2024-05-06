@@ -45,27 +45,28 @@ library BunniSwapMath {
     /// @return updatedTick The updated tick after the swap
     /// @return inputAmount The input amount of the swap
     /// @return outputAmount The output amount of the swap
-    function computeSwap(BunniComputeSwapInput memory input, uint256 balance0, uint256 balance1)
+    function computeSwap(BunniComputeSwapInput calldata input, uint256 balance0, uint256 balance1)
         external
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {
         uint256 outputTokenBalance = input.swapParams.zeroForOne ? balance1 : balance0;
-        if (input.swapParams.amountSpecified < 0 && uint256(-input.swapParams.amountSpecified) > outputTokenBalance) {
+        int256 amountSpecified = input.swapParams.amountSpecified;
+        if (amountSpecified < 0 && uint256(-amountSpecified) > outputTokenBalance) {
             // exact output swap where the requested output amount exceeds the output token balance
             // change swap to an exact output swap where the output amount is the output token balance
-            input.swapParams.amountSpecified = -outputTokenBalance.toInt256();
+            amountSpecified = -outputTokenBalance.toInt256();
         }
 
         // compute first pass result
-        (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = _computeSwap(input);
+        (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = _computeSwap(input, amountSpecified);
 
         // ensure that the output amount is lte the output token balance
         if (outputAmount > outputTokenBalance) {
             // exactly output the output token's balance
             // need to recompute swap
-            input.swapParams.amountSpecified = -outputTokenBalance.toInt256();
-            (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = _computeSwap(input);
+            amountSpecified = -outputTokenBalance.toInt256();
+            (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = _computeSwap(input, amountSpecified);
 
             if (outputAmount > outputTokenBalance) {
                 // somehow the output amount is still greater than the balance due to rounding errors
@@ -75,7 +76,7 @@ library BunniSwapMath {
         }
     }
 
-    function _computeSwap(BunniComputeSwapInput memory input)
+    function _computeSwap(BunniComputeSwapInput calldata input, int256 amountSpecified)
         private
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
@@ -99,9 +100,9 @@ library BunniSwapMath {
             ((input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
         // initialize input and output amounts based on initial info
-        bool exactIn = input.swapParams.amountSpecified >= 0;
-        inputAmount = exactIn ? uint256(input.swapParams.amountSpecified) : 0;
-        outputAmount = exactIn ? 0 : uint256(-input.swapParams.amountSpecified);
+        bool exactIn = amountSpecified >= 0;
+        inputAmount = exactIn ? uint256(amountSpecified) : 0;
+        outputAmount = exactIn ? 0 : uint256(-amountSpecified);
 
         // handle the special case when we don't cross rounded ticks
         {
@@ -250,9 +251,9 @@ library BunniSwapMath {
                 currentActiveBalance0 < updatedActiveBalance0 ? 0 : currentActiveBalance0 - updatedActiveBalance0
             );
 
-        if (exactIn && inputAmount == uint256(input.swapParams.amountSpecified) + 1) {
+        if (exactIn && inputAmount == uint256(amountSpecified) + 1) {
             // exact input swap where the input amount exceeds the amount specified
-            (inputAmount, outputAmount) = (uint256(input.swapParams.amountSpecified), outputAmount - 1);
+            (inputAmount, outputAmount) = (uint256(amountSpecified), outputAmount - 1);
         }
     }
 
