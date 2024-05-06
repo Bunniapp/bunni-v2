@@ -15,11 +15,12 @@ import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {IBunniQuoter} from "../interfaces/IBunniQuoter.sol";
 
 import "../lib/Math.sol";
-import "../base/SharedStructs.sol";
-import "../base/Constants.sol";
 import "../lib/VaultMath.sol";
+import "../base/Constants.sol";
 import "../lib/AmAmmPayload.sol";
 import "../lib/BunniSwapMath.sol";
+import "../base/SharedStructs.sol";
+import {BunniHookLogic} from "../lib/BunniHookLogic.sol";
 import {LiquidityAmounts} from "../lib/LiquidityAmounts.sol";
 
 contract BunniQuoter is IBunniQuoter {
@@ -53,6 +54,7 @@ contract BunniQuoter is IBunniQuoter {
             uint256 totalLiquidity
         )
     {
+        // ensure swap makes sense
         PoolId id = key.toId();
         IBunniHook hook = IBunniHook(address(key.hooks));
         (uint160 sqrtPriceX96, int24 currentTick, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp) = hook.slot0s(id);
@@ -70,44 +72,19 @@ contract BunniQuoter is IBunniQuoter {
             return (false, 0, 0, 0, 0, 0, 0);
         }
 
-        // get current tick token balances
+        // get pool state
         PoolState memory bunniState = hub.poolState(id);
-        (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, key.tickSpacing);
-        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
 
         // decode hook params
-        (
-            uint24 feeMin,
-            uint24 feeMax,
-            uint24 feeQuadraticMultiplier,
-            uint24 feeTwapSecondsAgo,
-            uint24 surgeFee,
-            uint16 surgeFeeHalfLife,
-            uint16 surgeFeeAutostartThreshold,
-            uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1,
-            ,
-            ,
-            ,
-            ,
-            bool amAmmEnabled
-        ) = _decodeParams(bunniState.hookParams);
+        DecodedHookParams memory hookParams = BunniHookLogic.decodeHookParams(bunniState.hookParams);
 
-        // use read-only version of am-AMM
-        address amAmmManager;
-        uint24 amAmmSwapFee;
-        bool amAmmEnableSurgeFee;
-        if (amAmmEnabled) {
-            IAmAmm.Bid memory topBid = IAmAmm(address(key.hooks)).getTopBid(id);
-            amAmmManager = topBid.manager;
-            uint24 swapFee0For1;
-            uint24 swapFee1For0;
-            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(topBid.payload);
-            amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
-        }
+        // get TWAP values
+        int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0 ? _getTwap(key, bunniState.twapSecondsAgo) : int24(0);
+        int24 feeMeanTick = (
+            !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
+        ) ? _getTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
 
-        // get pool token balances
+        // compute total token balances
         (uint256 reserveBalance0, uint256 reserveBalance1) = (
             getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
             getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
@@ -115,110 +92,52 @@ contract BunniQuoter is IBunniQuoter {
         (uint256 balance0, uint256 balance1) =
             (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
-        bool shouldSurge;
-
-        if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
-            // compute share prices
-            VaultSharePrices memory sharePrices = VaultSharePrices({
-                initialized: true,
-                sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
-                sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
-            });
-
-            // compare with share prices at last swap to see if we need to apply the surge fee
-            (bool initialized, uint120 prevSharePrice0, uint120 prevSharePrice1) = hook.vaultSharePricesAtLastSwap(id);
-            if (
-                initialized
-                    && (
-                        dist(sharePrices.sharePrice0, prevSharePrice0) >= prevSharePrice0 / vaultSurgeThreshold0
-                            || dist(sharePrices.sharePrice1, prevSharePrice1) >= prevSharePrice1 / vaultSurgeThreshold1
-                    )
-            ) {
-                // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
-                shouldSurge = true;
-            }
-        }
-
-        bool useTwap = bunniState.twapSecondsAgo != 0;
-
-        int24 arithmeticMeanTick;
-        int24 feeMeanTick;
-
-        // (optional) get TWAP value
-        if (useTwap) {
-            // need to use TWAP
-            // compute TWAP value
-            arithmeticMeanTick = _getTwap(key, bunniState.twapSecondsAgo);
-        }
-
-        if (feeMin != feeMax && feeQuadraticMultiplier != 0) {
-            // fee calculation needs TWAP
-            feeMeanTick = _getTwap(key, feeTwapSecondsAgo);
-        }
-
-        // get densities
+        // query the LDF to get total liquidity and token densities
         bytes32 ldfState = bunniState.statefulLdf ? hook.ldfStates(id) : bytes32(0);
         (
+            uint256 totalLiquidity_,
+            uint256 totalDensity0X96,
+            uint256 totalDensity1X96,
             uint256 liquidityDensityOfRoundedTickX96,
-            uint256 density0RightOfRoundedTickX96,
-            uint256 density1LeftOfRoundedTickX96,
             ,
-            bool shouldSurgeLDF
-        ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, currentTick, useTwap, bunniState.ldfParams, ldfState
-        );
-        shouldSurge = shouldSurge || shouldSurgeLDF;
+            bool shouldSurge
+        ) = queryLDF({
+            key: key,
+            sqrtPriceX96: sqrtPriceX96,
+            tick: currentTick,
+            arithmeticMeanTick: arithmeticMeanTick,
+            useTwap: bunniState.twapSecondsAgo != 0,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: ldfState,
+            balance0: balance0,
+            balance1: balance1
+        });
+        totalLiquidity = totalLiquidity_;
 
-        // compute total liquidity
-        {
-            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                .getAmountsForLiquidity(
-                sqrtPriceX96,
-                roundedTickSqrtRatio,
-                nextRoundedTickSqrtRatio,
-                uint128(liquidityDensityOfRoundedTickX96),
-                false
-            );
-            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-            uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
-            uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
-
-            // Strategy: If one of the two liquidity estimates is 0, use the other one;
-            // if both are non-zero, use the minimum of the two.
-            // We must take the minimum because if the total liquidity we use is higher than
-            // the min of the two estimates, then it's possible to extract a profit by
-            // buying and immediately selling assuming the swap fee is non-zero. This happens
-            // because the swap fee is added to the pool's balance, which can increase the total
-            // liquidity estimate.
-            if (totalLiquidityEstimate0 == 0) {
-                totalLiquidity = totalLiquidityEstimate1;
-            } else if (totalLiquidityEstimate1 == 0) {
-                totalLiquidity = totalLiquidityEstimate0;
-            } else {
-                totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
-            }
-        }
+        // check surge based on vault share prices
+        shouldSurge =
+            shouldSurge || _shouldSurgeFromVaults(id, hook, bunniState, hookParams, reserveBalance0, reserveBalance1);
 
         // compute swap result
         (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = BunniSwapMath.computeSwap({
-            key: key,
-            totalLiquidity: totalLiquidity,
-            liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
-            density0RightOfRoundedTickX96: density0RightOfRoundedTickX96,
-            density1LeftOfRoundedTickX96: density1LeftOfRoundedTickX96,
-            sqrtPriceX96: sqrtPriceX96,
-            currentTick: currentTick,
-            roundedTickSqrtRatio: roundedTickSqrtRatio,
-            nextRoundedTickSqrtRatio: nextRoundedTickSqrtRatio,
+            input: BunniSwapMath.BunniComputeSwapInput({
+                key: key,
+                totalLiquidity: totalLiquidity,
+                liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
+                totalDensity0X96: totalDensity0X96,
+                totalDensity1X96: totalDensity1X96,
+                sqrtPriceX96: sqrtPriceX96,
+                currentTick: currentTick,
+                liquidityDensityFunction: bunniState.liquidityDensityFunction,
+                arithmeticMeanTick: arithmeticMeanTick,
+                useTwap: bunniState.twapSecondsAgo != 0,
+                ldfParams: bunniState.ldfParams,
+                ldfState: ldfState,
+                swapParams: params
+            }),
             balance0: balance0,
-            balance1: balance1,
-            liquidityDensityFunction: bunniState.liquidityDensityFunction,
-            arithmeticMeanTick: arithmeticMeanTick,
-            useTwap: useTwap,
-            ldfParams: bunniState.ldfParams,
-            ldfState: ldfState,
-            params: params
+            balance1: balance1
         });
 
         // ensure swap never moves price in the opposite direction
@@ -237,38 +156,50 @@ contract BunniQuoter is IBunniQuoter {
                 // if more than `surgeFeeAutostartThreshold` seconds has passed since the last swap,
                 // we pretend that the surge started at `lastSwapTimestamp + surgeFeeAutostartThreshold`
                 // so that the pool never gets stuck with a high fee
-                lastSurgeTimestamp = timeSinceLastSwap >= surgeFeeAutostartThreshold
-                    ? lastSwapTimestamp + surgeFeeAutostartThreshold
+                lastSurgeTimestamp = timeSinceLastSwap >= hookParams.surgeFeeAutostartThreshold
+                    ? lastSwapTimestamp + hookParams.surgeFeeAutostartThreshold
                     : uint32(block.timestamp);
             }
+        }
+
+        // get am-AMM state
+        uint24 amAmmSwapFee;
+        bool amAmmEnableSurgeFee;
+        address amAmmManager;
+        if (hookParams.amAmmEnabled) {
+            bytes7 payload;
+            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBid(id);
+            (amAmmManager, payload) = (topBid.manager, topBid.payload);
+            uint24 swapFee0For1;
+            uint24 swapFee1For0;
+            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(payload);
+            amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
         }
 
         // charge swap fee
         uint256 swapFeeAmount;
         bool exactIn = params.amountSpecified >= 0;
-        bool useAmAmmFee = amAmmEnabled && amAmmManager != address(0);
-        if (useAmAmmFee) {
-            // give swap fee to am-AMM manager
-            // apply surge fee if manager enabled it
-            swapFee = amAmmEnableSurgeFee
-                ? uint24(
-                    FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, surgeFee, surgeFeeHalfLife))
-                )
-                : amAmmSwapFee;
-        } else {
-            // use default dynamic fee model
-            swapFee = _getFee(
+        bool useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
+        swapFee = useAmAmmFee
+            ? (
+                amAmmEnableSurgeFee
+                    ? uint24(
+                        FixedPointMathLib.max(
+                            amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFee, hookParams.surgeFeeHalfLife)
+                        )
+                    )
+                    : amAmmSwapFee
+            )
+            : _getFee(
                 updatedSqrtPriceX96,
                 feeMeanTick,
                 lastSurgeTimestamp,
-                feeMin,
-                feeMax,
-                feeQuadraticMultiplier,
-                surgeFee,
-                surgeFeeHalfLife
+                hookParams.feeMin,
+                hookParams.feeMax,
+                hookParams.feeQuadraticMultiplier,
+                hookParams.surgeFee,
+                hookParams.surgeFeeHalfLife
             );
-        }
-
         if (exactIn) {
             swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
             outputAmount -= swapFeeAmount;
@@ -626,5 +557,38 @@ contract BunniQuoter is IBunniQuoter {
             uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);
             return uint24(FixedPointMathLib.max(fee, FixedPointMathLib.min(feeMin + quadraticTerm, feeMax)));
         }
+    }
+
+    /// @dev Checks if the pool should surge based on the vault share price changes since the last swap.
+    function _shouldSurgeFromVaults(
+        PoolId id,
+        IBunniHook hook,
+        PoolState memory bunniState,
+        DecodedHookParams memory hookParams,
+        uint256 reserveBalance0,
+        uint256 reserveBalance1
+    ) private view returns (bool shouldSurge) {
+        // only surge if both vaults are set because otherwise total liquidity won't automatically increase
+        // so there's no risk of being sandwiched
+        if (address(bunniState.vault0) == address(0) && address(bunniState.vault1) == address(0)) return false;
+
+        // compute share prices
+        VaultSharePrices memory sharePrices = VaultSharePrices({
+            initialized: true,
+            sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
+            sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
+        });
+
+        // compare with share prices at last swap to see if we need to apply the surge fee
+        // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
+        (bool prevSharePricesInitialized, uint120 prevSharePrice0, uint120 prevSharePrice1) =
+            hook.vaultSharePricesAtLastSwap(id);
+        return (
+            prevSharePricesInitialized
+                && (
+                    dist(sharePrices.sharePrice0, prevSharePrice0) >= prevSharePrice0 / hookParams.vaultSurgeThreshold0
+                        || dist(sharePrices.sharePrice1, prevSharePrice1) >= prevSharePrice1 / hookParams.vaultSurgeThreshold1
+                )
+        );
     }
 }

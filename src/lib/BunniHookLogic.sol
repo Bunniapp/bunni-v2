@@ -29,8 +29,9 @@ import "../base/Constants.sol";
 import "../base/SharedStructs.sol";
 import {Oracle} from "./Oracle.sol";
 import "../interfaces/IBunniHook.sol";
-import {IBunniHub} from "../interfaces/IBunniHub.sol";
+import {queryLDF} from "./QueryLDF.sol";
 import {BunniSwapMath} from "./BunniSwapMath.sol";
+import {IBunniHub} from "../interfaces/IBunniHub.sol";
 import {OrderHashMemory} from "./OrderHashMemory.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 
@@ -67,7 +68,7 @@ library BunniHookLogic {
         int24 arithmeticMeanTick;
         bool useTwap;
         bytes32 newLdfState;
-        DecodedHookParams p;
+        DecodedHookParams hookParams;
         Oracle.Observation updatedIntermediate;
         uint32 updatedIndex;
         uint32 updatedCardinality;
@@ -149,7 +150,7 @@ library BunniHookLogic {
         PoolState memory bunniState = env.hub.poolState(id);
 
         // decode hook params
-        DecodedHookParams memory p = _decodeParams(bunniState.hookParams);
+        DecodedHookParams memory hookParams = _decodeParams(bunniState.hookParams);
 
         // update TWAP oracle
         // do it before we fetch the arithmeticMeanTick
@@ -158,106 +159,72 @@ library BunniHookLogic {
             _updateOracle(s, id, slot0.tick, env.oracleMinInterval);
 
         // get TWAP values
-        int24 arithmeticMeanTick;
-        int24 feeMeanTick;
-        if (bunniState.twapSecondsAgo != 0) {
-            // need to use TWAP
-            // compute TWAP value
-            arithmeticMeanTick = _getTwap(
-                s, id, slot0.tick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
-            );
-        }
-        if (!p.amAmmEnabled && p.feeMin != p.feeMax && p.feeQuadraticMultiplier != 0) {
-            // fee calculation needs TWAP
-            feeMeanTick =
-                _getTwap(s, id, slot0.tick, p.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality);
-        }
+        int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0
+            ? _getTwap(s, id, slot0.tick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality)
+            : int24(0);
+        int24 feeMeanTick = (
+            !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
+        )
+            ? _getTwap(
+                s, id, slot0.tick, hookParams.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
+            )
+            : int24(0);
 
-        // query the LDF to get densities
-        (int24 roundedTick, int24 nextRoundedTick) = roundTick(slot0.tick, key.tickSpacing);
-        (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
-        bytes32 ldfState = bunniState.statefulLdf ? s.ldfStates[id] : bytes32(0);
-        (
-            uint256 liquidityDensityOfRoundedTickX96,
-            uint256 density0RightOfRoundedTickX96,
-            uint256 density1LeftOfRoundedTickX96,
-            bytes32 newLdfState,
-            bool shouldSurge
-        ) = bunniState.liquidityDensityFunction.query(
-            key,
-            roundedTick,
-            arithmeticMeanTick,
-            slot0.tick,
-            bunniState.twapSecondsAgo != 0,
-            bunniState.ldfParams,
-            ldfState
-        );
-        if (bunniState.statefulLdf) s.ldfStates[id] = newLdfState;
-
-        // check surge based on vault share prices
+        // compute total token balances
         (uint256 reserveBalance0, uint256 reserveBalance1) = (
             getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
             getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
-        shouldSurge = shouldSurge || _shouldSurgeFromVaults(s, id, bunniState, p, reserveBalance0, reserveBalance1);
-
-        // compute total token balances
         (uint256 balance0, uint256 balance1) =
             (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
-        // compute total liquidity
-        uint256 totalLiquidity;
-        {
-            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                .getAmountsForLiquidity(
-                sqrtPriceX96,
-                roundedTickSqrtRatio,
-                nextRoundedTickSqrtRatio,
-                uint128(liquidityDensityOfRoundedTickX96),
-                false
-            );
-            uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-            uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-            uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
-            uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
+        // query the LDF to get total liquidity and token densities
+        bytes32 ldfState = bunniState.statefulLdf ? s.ldfStates[id] : bytes32(0);
+        (
+            uint256 totalLiquidity,
+            uint256 totalDensity0X96,
+            uint256 totalDensity1X96,
+            uint256 liquidityDensityOfRoundedTickX96,
+            bytes32 newLdfState,
+            bool shouldSurge
+        ) = queryLDF({
+            key: key,
+            sqrtPriceX96: sqrtPriceX96,
+            tick: slot0.tick,
+            arithmeticMeanTick: arithmeticMeanTick,
+            useTwap: bunniState.twapSecondsAgo != 0,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: ldfState,
+            balance0: balance0,
+            balance1: balance1
+        });
+        if (bunniState.statefulLdf) s.ldfStates[id] = newLdfState;
 
-            // Strategy: If one of the two liquidity estimates is 0, use the other one;
-            // if both are non-zero, use the minimum of the two.
-            // We must take the minimum because if the total liquidity we use is higher than
-            // the min of the two estimates, then it's possible to extract a profit by
-            // buying and immediately selling assuming the swap fee is non-zero. This happens
-            // because the swap fee is added to the pool's balance, which can increase the total
-            // liquidity estimate.
-            if (totalLiquidityEstimate0 == 0) {
-                totalLiquidity = totalLiquidityEstimate1;
-            } else if (totalLiquidityEstimate1 == 0) {
-                totalLiquidity = totalLiquidityEstimate0;
-            } else {
-                totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
-            }
-        }
+        // check surge based on vault share prices
+        shouldSurge =
+            shouldSurge || _shouldSurgeFromVaults(s, id, bunniState, hookParams, reserveBalance0, reserveBalance1);
 
         // compute swap result
         (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount) = BunniSwapMath
             .computeSwap({
-            key: key,
-            totalLiquidity: totalLiquidity,
-            liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
-            density0RightOfRoundedTickX96: density0RightOfRoundedTickX96,
-            density1LeftOfRoundedTickX96: density1LeftOfRoundedTickX96,
-            sqrtPriceX96: sqrtPriceX96,
-            currentTick: slot0.tick,
-            roundedTickSqrtRatio: roundedTickSqrtRatio,
-            nextRoundedTickSqrtRatio: nextRoundedTickSqrtRatio,
+            input: BunniSwapMath.BunniComputeSwapInput({
+                key: key,
+                totalLiquidity: totalLiquidity,
+                liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
+                totalDensity0X96: totalDensity0X96,
+                totalDensity1X96: totalDensity1X96,
+                sqrtPriceX96: sqrtPriceX96,
+                currentTick: slot0.tick,
+                liquidityDensityFunction: bunniState.liquidityDensityFunction,
+                arithmeticMeanTick: arithmeticMeanTick,
+                useTwap: bunniState.twapSecondsAgo != 0,
+                ldfParams: bunniState.ldfParams,
+                ldfState: ldfState,
+                swapParams: params
+            }),
             balance0: balance0,
-            balance1: balance1,
-            liquidityDensityFunction: bunniState.liquidityDensityFunction,
-            arithmeticMeanTick: arithmeticMeanTick,
-            useTwap: bunniState.twapSecondsAgo != 0,
-            ldfParams: bunniState.ldfParams,
-            ldfState: ldfState,
-            params: params
+            balance1: balance1
         });
 
         // ensure swap never moves price in the opposite direction
@@ -278,8 +245,8 @@ library BunniHookLogic {
                 // if more than `surgeFeeAutostartThreshold` seconds has passed since the last swap,
                 // we pretend that the surge started at `slot0.lastSwapTimestamp + surgeFeeAutostartThreshold`
                 // so that the pool never gets stuck with a high fee
-                lastSurgeTimestamp = timeSinceLastSwap >= p.surgeFeeAutostartThreshold
-                    ? slot0.lastSwapTimestamp + p.surgeFeeAutostartThreshold
+                lastSurgeTimestamp = timeSinceLastSwap >= hookParams.surgeFeeAutostartThreshold
+                    ? slot0.lastSwapTimestamp + hookParams.surgeFeeAutostartThreshold
                     : uint32(block.timestamp);
             }
         }
@@ -293,7 +260,7 @@ library BunniHookLogic {
         // update am-AMM state
         uint24 amAmmSwapFee;
         bool amAmmEnableSurgeFee;
-        if (p.amAmmEnabled) {
+        if (hookParams.amAmmEnabled) {
             bytes7 payload;
             IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBidWrite(id);
             (amAmmManager, payload) = (topBid.manager, topBid.payload);
@@ -309,28 +276,27 @@ library BunniHookLogic {
         uint24 swapFee;
         uint256 swapFeeAmount;
         bool exactIn = params.amountSpecified >= 0;
-        useAmAmmFee = p.amAmmEnabled && amAmmManager != address(0);
-        if (useAmAmmFee) {
-            // give swap fee to am-AMM manager
-            // apply surge fee if manager enabled it
-            swapFee = amAmmEnableSurgeFee
-                ? uint24(
-                    FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, p.surgeFee, p.surgeFeeHalfLife))
-                )
-                : amAmmSwapFee;
-        } else {
-            // use default dynamic fee model
-            swapFee = _getFee(
+        useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
+        swapFee = useAmAmmFee
+            ? (
+                amAmmEnableSurgeFee
+                    ? uint24(
+                        FixedPointMathLib.max(
+                            amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFee, hookParams.surgeFeeHalfLife)
+                        )
+                    )
+                    : amAmmSwapFee
+            )
+            : _getFee(
                 updatedSqrtPriceX96,
                 feeMeanTick,
                 lastSurgeTimestamp,
-                p.feeMin,
-                p.feeMax,
-                p.feeQuadraticMultiplier,
-                p.surgeFee,
-                p.surgeFeeHalfLife
+                hookParams.feeMin,
+                hookParams.feeMax,
+                hookParams.feeQuadraticMultiplier,
+                hookParams.surgeFee,
+                hookParams.surgeFeeHalfLife
             );
-        }
         uint256 hookFeesAmount;
         uint256 hookHandleSwapInputAmount;
         uint256 hookHandleSwapOutoutAmount;
@@ -399,7 +365,7 @@ library BunniHookLogic {
         // - rebalanceThreshold != 0, i.e. rebalancing is enabled
         // - shouldSurge == true, since tokens can only go out of balance due to shifting or vault returns
         // - the deadline of the last rebalance order has passed
-        if (p.rebalanceThreshold != 0 && shouldSurge && block.timestamp > s.rebalanceOrderDeadline[id]) {
+        if (hookParams.rebalanceThreshold != 0 && shouldSurge && block.timestamp > s.rebalanceOrderDeadline[id]) {
             _rebalance(
                 s,
                 env,
@@ -411,7 +377,7 @@ library BunniHookLogic {
                     arithmeticMeanTick: arithmeticMeanTick,
                     useTwap: bunniState.twapSecondsAgo != 0,
                     newLdfState: newLdfState,
-                    p: p,
+                    hookParams: hookParams,
                     updatedIntermediate: updatedIntermediate,
                     updatedIndex: updatedIndex,
                     updatedCardinality: updatedCardinality
@@ -434,7 +400,7 @@ library BunniHookLogic {
         HookStorage storage s,
         PoolId id,
         PoolState memory bunniState,
-        DecodedHookParams memory p,
+        DecodedHookParams memory hookParams,
         uint256 reserveBalance0,
         uint256 reserveBalance1
     ) private returns (bool shouldSurge) {
@@ -455,9 +421,9 @@ library BunniHookLogic {
                 prevSharePrices.initialized
                     && (
                         dist(sharePrices.sharePrice0, prevSharePrices.sharePrice0)
-                            >= prevSharePrices.sharePrice0 / p.vaultSurgeThreshold0
+                            >= prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
                             || dist(sharePrices.sharePrice1, prevSharePrices.sharePrice1)
-                                >= prevSharePrices.sharePrice1 / p.vaultSurgeThreshold1
+                                >= prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
                     )
             ) {
                 // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
@@ -483,7 +449,15 @@ library BunniHookLogic {
 
         // create rebalance order
         _createRebalanceOrder(
-            s, env, input.id, input.key, input.p.rebalanceOrderTTL, inputToken, outputToken, inputAmount, outputAmount
+            s,
+            env,
+            input.id,
+            input.key,
+            input.hookParams.rebalanceOrderTTL,
+            inputToken,
+            outputToken,
+            inputAmount,
+            outputAmount
         );
     }
 
@@ -504,176 +478,114 @@ library BunniHookLogic {
             bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
 
-        // compute total liquidity
-        uint256 totalLiquidity;
-        uint256 currentActiveBalance0;
-        uint256 currentActiveBalance1;
-        uint256 excessLiquidity0;
-        uint256 excessLiquidity1;
-        uint256 totalDensity0X96;
-        uint256 totalDensity1X96;
-        {
-            (int24 roundedTick, int24 nextRoundedTick) = roundTick(input.updatedTick, input.key.tickSpacing);
-            (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-                (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
-            (
-                uint256 liquidityDensityOfRoundedTickX96,
-                uint256 density0RightOfRoundedTickX96,
-                uint256 density1LeftOfRoundedTickX96,
-                ,
-            ) = bunniState.liquidityDensityFunction.query(
-                input.key,
-                roundedTick,
-                input.arithmeticMeanTick,
-                input.updatedTick,
-                input.useTwap,
-                bunniState.ldfParams,
-                input.newLdfState
-            );
-            {
-                (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                    .getAmountsForLiquidity(
-                    input.updatedSqrtPriceX96,
-                    roundedTickSqrtRatio,
-                    nextRoundedTickSqrtRatio,
-                    uint128(liquidityDensityOfRoundedTickX96),
-                    false
-                );
-                totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-                totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-                uint256 totalLiquidityEstimate0 = totalDensity0X96 == 0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
-                uint256 totalLiquidityEstimate1 = totalDensity1X96 == 0 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
-                if (totalLiquidityEstimate0 == 0) {
-                    totalLiquidity = totalLiquidityEstimate1;
-                } else if (totalLiquidityEstimate1 == 0) {
-                    totalLiquidity = totalLiquidityEstimate0;
-                } else {
-                    totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
-                }
-            }
+        // compute total liquidity and densities
+        (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+            key: input.key,
+            sqrtPriceX96: input.updatedSqrtPriceX96,
+            tick: input.updatedTick,
+            arithmeticMeanTick: input.arithmeticMeanTick,
+            useTwap: input.useTwap,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: input.newLdfState,
+            balance0: balance0,
+            balance1: balance1
+        });
 
-            // compute active balance, which is the balance implied by the total liquidity & the LDF
-            (currentActiveBalance0, currentActiveBalance1) =
-                ((totalDensity0X96 * totalLiquidity) >> 96, (totalDensity1X96 * totalLiquidity) >> 96);
+        // compute active balance, which is the balance implied by the total liquidity & the LDF
+        (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
+            (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
 
-            // compute excess liquidity if there's any
-            (int24 minUsableTick, int24 maxUsableTick) = (
-                TickMath.minUsableTick(input.key.tickSpacing),
-                TickMath.maxUsableTick(input.key.tickSpacing) - input.key.tickSpacing
-            );
-            excessLiquidity0 = balance0 > currentActiveBalance0
-                ? (balance0 - currentActiveBalance0).divWad(
-                    bunniState.liquidityDensityFunction.cumulativeAmount0(
-                        input.key,
-                        minUsableTick,
-                        WAD,
-                        input.arithmeticMeanTick,
-                        input.updatedTick,
-                        input.useTwap,
-                        bunniState.ldfParams,
-                        input.newLdfState
-                    )
+        // compute excess liquidity if there's any
+        (int24 minUsableTick, int24 maxUsableTick) = (
+            TickMath.minUsableTick(input.key.tickSpacing),
+            TickMath.maxUsableTick(input.key.tickSpacing) - input.key.tickSpacing
+        );
+        uint256 excessLiquidity0 = balance0 > currentActiveBalance0
+            ? (balance0 - currentActiveBalance0).divWad(
+                bunniState.liquidityDensityFunction.cumulativeAmount0(
+                    input.key,
+                    minUsableTick,
+                    WAD,
+                    input.arithmeticMeanTick,
+                    input.updatedTick,
+                    input.useTwap,
+                    bunniState.ldfParams,
+                    input.newLdfState
                 )
-                : 0;
-            excessLiquidity1 = balance1 > currentActiveBalance1
-                ? (balance1 - currentActiveBalance1).divWad(
-                    bunniState.liquidityDensityFunction.cumulativeAmount1(
-                        input.key,
-                        maxUsableTick,
-                        WAD,
-                        input.arithmeticMeanTick,
-                        input.updatedTick,
-                        input.useTwap,
-                        bunniState.ldfParams,
-                        input.newLdfState
-                    )
+            )
+            : 0;
+        uint256 excessLiquidity1 = balance1 > currentActiveBalance1
+            ? (balance1 - currentActiveBalance1).divWad(
+                bunniState.liquidityDensityFunction.cumulativeAmount1(
+                    input.key,
+                    maxUsableTick,
+                    WAD,
+                    input.arithmeticMeanTick,
+                    input.updatedTick,
+                    input.useTwap,
+                    bunniState.ldfParams,
+                    input.newLdfState
                 )
-                : 0;
-        }
+            )
+            : 0;
 
         // should rebalance if excessLiquidity / totalLiquidity >= 1 / rebalanceThreshold
-        bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / input.p.rebalanceThreshold;
-        bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / input.p.rebalanceThreshold;
+        bool shouldRebalance0 =
+            excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / input.hookParams.rebalanceThreshold;
+        bool shouldRebalance1 =
+            excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / input.hookParams.rebalanceThreshold;
         if (!shouldRebalance0 && !shouldRebalance1) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
-        // compute density of token0 and token1 after excess liquidity has been rebalanced
+        // compute target token densities of the excess liquidity after rebalancing
         // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
-        {
-            int24 rebalanceSpotPriceTick = _getTwap(
-                s,
-                input.id,
-                input.updatedTick,
-                input.p.rebalanceTwapSecondsAgo,
-                input.updatedIntermediate,
-                input.updatedIndex,
-                input.updatedCardinality
-            );
-            uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
-            (int24 roundedTick, int24 nextRoundedTick) = roundTick(rebalanceSpotPriceTick, input.key.tickSpacing);
-            (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-                (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
-            (
-                uint256 liquidityDensityOfRoundedTickX96,
-                uint256 density0RightOfRoundedTickX96,
-                uint256 density1LeftOfRoundedTickX96,
-                ,
-            ) = bunniState.liquidityDensityFunction.query(
-                input.key,
-                roundedTick,
-                input.arithmeticMeanTick,
-                rebalanceSpotPriceTick,
-                input.useTwap,
-                bunniState.ldfParams,
-                input.newLdfState
-            );
-            (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                .getAmountsForLiquidity(
-                rebalanceSpotPriceSqrtRatioX96,
-                roundedTickSqrtRatio,
-                nextRoundedTickSqrtRatio,
-                uint128(liquidityDensityOfRoundedTickX96),
-                false
-            );
-            totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-            totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-        }
+        int24 rebalanceSpotPriceTick = _getTwap(
+            s,
+            input.id,
+            input.updatedTick,
+            input.hookParams.rebalanceTwapSecondsAgo,
+            input.updatedIntermediate,
+            input.updatedIndex,
+            input.updatedCardinality
+        );
+        uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
+        // reusing totalDensity0X96 and totalDensity1X96 to store the token densities of the excess liquidity
+        // after rebalancing
+        (, totalDensity0X96, totalDensity1X96,,,) = queryLDF({
+            key: input.key,
+            sqrtPriceX96: rebalanceSpotPriceSqrtRatioX96,
+            tick: rebalanceSpotPriceTick,
+            arithmeticMeanTick: input.arithmeticMeanTick,
+            useTwap: input.useTwap,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: input.newLdfState,
+            balance0: 0,
+            balance1: 0
+        });
 
-        // decide which token will be rebalanced (i.e. sold into the other token)
-        bool willRebalanceToken0;
-        if (shouldRebalance0 && shouldRebalance1) {
-            // edge case where both tokens have excess liquidity
-            // likely one token has actual excess liquidity, the other token has negligible excess liquidity from rounding errors
-            // rebalance the token for which excessLiquidity is larger
-            willRebalanceToken0 = excessLiquidity0 > excessLiquidity1;
-        } else if (shouldRebalance0) {
-            // rebalance token0
-            willRebalanceToken0 = true;
-        } else if (shouldRebalance1) {
-            // rebalance token1
-            willRebalanceToken0 = false;
-        }
+        // decide which token will be rebalanced (i.e., sold into the other token)
+        bool willRebalanceToken0 = shouldRebalance0 && (!shouldRebalance1 || excessLiquidity0 > excessLiquidity1);
 
         // compute target amounts (i.e. the token amounts of the excess liquidity)
         uint256 excessLiquidity = willRebalanceToken0 ? excessLiquidity0 : excessLiquidity1;
         uint256 targetAmount0 = excessLiquidity.fullMulDiv(totalDensity0X96, Q96);
         uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
 
-        // determin input & output
-        if (willRebalanceToken0) {
-            (inputToken, outputToken) = (input.key.currency0, input.key.currency1);
-            if (balance0 - currentActiveBalance0 < targetAmount0) {
-                return (false, inputToken, outputToken, inputAmount, outputAmount);
-            } // should never happen
-            inputAmount = balance0 - currentActiveBalance0 - targetAmount0;
-            outputAmount = targetAmount1.mulDivUp(1e5 - input.p.rebalanceMaxSlippage, 1e5);
-        } else {
-            (inputToken, outputToken) = (input.key.currency1, input.key.currency0);
-            if (balance1 - currentActiveBalance1 < targetAmount1) {
-                return (false, inputToken, outputToken, inputAmount, outputAmount);
-            } // should never happen
-            inputAmount = balance1 - currentActiveBalance1 - targetAmount1;
-            outputAmount = targetAmount0.mulDivUp(1e5 - input.p.rebalanceMaxSlippage, 1e5);
+        // determine input & output
+        (inputToken, outputToken) = willRebalanceToken0
+            ? (input.key.currency0, input.key.currency1)
+            : (input.key.currency1, input.key.currency0);
+        uint256 inputTokenExcessBalance =
+            willRebalanceToken0 ? balance0 - currentActiveBalance0 : balance1 - currentActiveBalance1;
+        uint256 inputTokenTarget = willRebalanceToken0 ? targetAmount0 : targetAmount1;
+        uint256 outputTokenTarget = willRebalanceToken0 ? targetAmount1 : targetAmount0;
+        if (inputTokenExcessBalance < inputTokenTarget) {
+            // should never happen
+            return (false, inputToken, outputToken, inputAmount, outputAmount);
         }
+        inputAmount = inputTokenExcessBalance - inputTokenTarget;
+        outputAmount = outputTokenTarget.mulDivUp(1e5 - input.hookParams.rebalanceMaxSlippage, 1e5);
 
         success = true;
     }
