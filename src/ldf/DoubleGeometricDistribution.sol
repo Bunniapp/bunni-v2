@@ -7,9 +7,14 @@ import "./ShiftMode.sol";
 import {LibDoubleGeometricDistribution} from "./LibDoubleGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
+/// @title DoubleGeometricDistribution
+/// @author zefram.eth
+/// @notice Juxtaposition of two geometric distributions, useful for stable pairs and bid-ask distributions.
+/// Should not be used in production when TWAP is enabled, since the price can go out of the range.
 contract DoubleGeometricDistribution is ILiquidityDensityFunction {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
 
+    /// @inheritdoc ILiquidityDensityFunction
     function query(
         PoolKey calldata key,
         int24 roundedTick,
@@ -53,6 +58,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         newLdfState = _encodeState(minTick);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function computeSwap(
         PoolKey calldata key,
         uint256 inverseCumulativeAmountInput,
@@ -101,6 +107,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         );
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
         external
         pure
@@ -110,6 +117,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
@@ -149,6 +157,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         );
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount1(
         PoolKey calldata key,
         int24 roundedTick,

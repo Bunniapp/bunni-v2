@@ -7,9 +7,15 @@ import "./ShiftMode.sol";
 import {LibGeometricDistribution} from "./LibGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
+/// @title GeometricDistribution
+/// @author zefram.eth
+/// @notice Geometric distribution over a range of rounded ticks. Core building block for many
+/// other LDFs. Can shift based on the TWAP tick. Can shift in only one direction or both directions.
+/// Should not be used in production when TWAP is enabled, since the price can go out of the range.
 contract GeometricDistribution is ILiquidityDensityFunction {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
 
+    /// @inheritdoc ILiquidityDensityFunction
     function query(
         PoolKey calldata key,
         int24 roundedTick,
@@ -43,6 +49,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         newLdfState = _encodeState(minTick);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function computeSwap(
         PoolKey calldata key,
         uint256 inverseCumulativeAmountInput,
@@ -79,6 +86,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         );
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
         external
         pure
@@ -88,6 +96,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
@@ -110,6 +119,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         );
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount1(
         PoolKey calldata key,
         int24 roundedTick,

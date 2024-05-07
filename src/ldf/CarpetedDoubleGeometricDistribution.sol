@@ -7,9 +7,14 @@ import "./ShiftMode.sol";
 import {LibCarpetedDoubleGeometricDistribution} from "./LibCarpetedDoubleGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
+/// @title CarpetedDoubleGeometricDistribution
+/// @author zefram.eth
+/// @notice Double geometric distribution with a "carpet" of uniform liquidity outside of the main range.
+/// Should be used in production when TWAP is enabled, since we always have some liquidity in all ticks.
 contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
 
+    /// @inheritdoc ILiquidityDensityFunction
     function query(
         PoolKey calldata key,
         int24 roundedTick,
@@ -43,6 +48,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         newLdfState = _encodeState(params.minTick);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function computeSwap(
         PoolKey calldata key,
         uint256 inverseCumulativeAmountInput,
@@ -72,6 +78,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         );
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
         external
         pure
@@ -81,6 +88,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         return LibCarpetedDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
@@ -103,6 +111,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         );
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount1(
         PoolKey calldata key,
         int24 roundedTick,

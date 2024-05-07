@@ -6,7 +6,12 @@ import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {LibUniformDistribution} from "./LibUniformDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
+/// @title UniformDistribution
+/// @author zefram.eth
+/// @notice Uniform distribution between two ticks, equivalent to a basic Uniswap v3 position.
+/// Has no shapeshifting features, it's here mostly for educational purposes. The most basic LDF.
 contract UniformDistribution is ILiquidityDensityFunction {
+    /// @inheritdoc ILiquidityDensityFunction
     function query(
         PoolKey calldata key,
         int24 roundedTick,
@@ -34,6 +39,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         shouldSurge = false;
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function computeSwap(
         PoolKey calldata key,
         uint256 inverseCumulativeAmountInput,
@@ -58,6 +64,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         );
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function isValidParams(int24 tickSpacing, uint24, /* twapSecondsAgo */ bytes32 ldfParams)
         external
         pure
@@ -67,6 +74,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         return LibUniformDistribution.isValidParams(tickSpacing, ldfParams);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
@@ -83,6 +91,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
             LibUniformDistribution.cumulativeAmount0(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
     }
 
+    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount1(
         PoolKey calldata key,
         int24 roundedTick,
