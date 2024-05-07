@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import "../../src/BunniHook.sol";
 import "../../src/lib/VaultMath.sol";
+import "../../src/types/PoolState.sol";
 import {LiquidityAmounts} from "../../src/lib/LiquidityAmounts.sol";
 
 contract BunniLens {

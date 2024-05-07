@@ -17,6 +17,7 @@ import "../base/SharedStructs.sol";
 import {IERC20} from "./IERC20.sol";
 import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
+import {PoolState} from "../types/PoolState.sol";
 import {IPermit2Enabled} from "./IPermit2Enabled.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 

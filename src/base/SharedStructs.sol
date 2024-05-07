@@ -3,44 +3,31 @@
 pragma solidity >=0.6.0;
 pragma abicoder v2;
 
-import {PoolId, PoolKey, BalanceDelta, Currency} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {PoolId, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import "./Constants.sol";
 import {Oracle} from "../lib/Oracle.sol";
+import {RawPoolState} from "../types/PoolState.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
 /// @title Contains structs shared between multiple contracts
 
-struct PoolState {
-    ILiquidityDensityFunction liquidityDensityFunction;
-    IBunniToken bunniToken;
-    uint24 twapSecondsAgo;
-    bytes32 ldfParams;
-    bytes32 hookParams;
-    ERC4626 vault0;
-    ERC4626 vault1;
-    bool statefulLdf;
-    uint24 minRawTokenRatio0;
-    uint24 targetRawTokenRatio0;
-    uint24 maxRawTokenRatio0;
-    uint24 minRawTokenRatio1;
-    uint24 targetRawTokenRatio1;
-    uint24 maxRawTokenRatio1;
-    bool amAmmEnabled;
-    uint256 rawBalance0;
-    uint256 rawBalance1;
-    uint256 reserve0;
-    uint256 reserve1;
-}
-
-struct RawPoolState {
-    address immutableParamsPointer;
-    uint256 rawBalance0;
-    uint256 rawBalance1;
+/// @notice THe storage of BunniHub
+/// @member poolState The state of a given pool
+/// @member reserve0 The vault share tokens owned in vault0
+/// @member reserve1 The vault share tokens owned in vault1
+/// @member nonce The nonce for a given bunniSubspace
+/// @member poolIdOfBunniToken The pool ID of a given BunniToken
+struct HubStorage {
+    mapping(PoolId poolId => RawPoolState) poolState;
+    mapping(PoolId poolId => uint256) reserve0;
+    mapping(PoolId poolId => uint256) reserve1;
+    mapping(bytes32 bunniSubspace => uint24) nonce;
+    mapping(IBunniToken bunniToken => PoolId) poolIdOfBunniToken;
 }
 
 /// @notice The decoded hook params for a given pool

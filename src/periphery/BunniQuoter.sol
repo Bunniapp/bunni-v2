@@ -17,6 +17,7 @@ import {IBunniQuoter} from "../interfaces/IBunniQuoter.sol";
 import "../lib/Math.sol";
 import "../lib/VaultMath.sol";
 import "../base/Constants.sol";
+import "../types/PoolState.sol";
 import "../lib/AmAmmPayload.sol";
 import "../lib/BunniSwapMath.sol";
 import "../base/SharedStructs.sol";
@@ -239,11 +240,11 @@ contract BunniQuoter is IBunniQuoter {
         amount0 = depositReturnData.amount0;
         amount1 = depositReturnData.amount1;
 
-        (uint256 rawAmount0, uint256 depositAmount0) = address(state.vault0) != address(0)
-            ? (amount0 - depositReturnData.depositAmount0, depositReturnData.depositAmount0.mulWad(WAD - params.vaultFee0))
+        (uint256 rawAmount0, uint256 reserveAmount0) = address(state.vault0) != address(0)
+            ? (amount0 - depositReturnData.reserveAmount0, depositReturnData.reserveAmount0.mulWad(WAD - params.vaultFee0))
             : (amount0, 0);
-        (uint256 rawAmount1, uint256 depositAmount1) = address(state.vault1) != address(0)
-            ? (amount1 - depositReturnData.depositAmount1, depositReturnData.depositAmount1.mulWad(WAD - params.vaultFee1))
+        (uint256 rawAmount1, uint256 reserveAmount1) = address(state.vault1) != address(0)
+            ? (amount1 - depositReturnData.reserveAmount1, depositReturnData.reserveAmount1.mulWad(WAD - params.vaultFee1))
             : (amount1, 0);
 
         // compute shares
@@ -256,10 +257,10 @@ contract BunniQuoter is IBunniQuoter {
             shares = FixedPointMathLib.min(
                 depositReturnData.balance0 == 0
                     ? type(uint256).max
-                    : existingShareSupply.mulDiv(rawAmount0 + depositAmount0, depositReturnData.balance0),
+                    : existingShareSupply.mulDiv(rawAmount0 + reserveAmount0, depositReturnData.balance0),
                 depositReturnData.balance1 == 0
                     ? type(uint256).max
-                    : existingShareSupply.mulDiv(rawAmount1 + depositAmount1, depositReturnData.balance1)
+                    : existingShareSupply.mulDiv(rawAmount1 + reserveAmount1, depositReturnData.balance1)
             );
         }
     }
@@ -300,20 +301,12 @@ contract BunniQuoter is IBunniQuoter {
     }
 
     struct DepositLogicReturnData {
-        uint256 depositAmount0;
-        uint256 depositAmount1;
+        uint256 reserveAmount0;
+        uint256 reserveAmount1;
         uint256 amount0;
         uint256 amount1;
         uint256 balance0;
         uint256 balance1;
-    }
-
-    struct DepositLogicVariables {
-        uint160 roundedTickSqrtRatio;
-        uint160 nextRoundedTickSqrtRatio;
-        uint256 reserveBalance0;
-        uint256 reserveBalance1;
-        int24 arithmeticMeanTick;
     }
 
     /// @dev Separated to avoid stack too deep error
@@ -322,16 +315,14 @@ contract BunniQuoter is IBunniQuoter {
         view
         returns (DepositLogicReturnData memory returnData)
     {
-        DepositLogicVariables memory vars;
-
         // query existing assets
         // assets = urrent tick tokens + reserve tokens + pool credits
-        (vars.reserveBalance0, vars.reserveBalance1) = (
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
             getReservesInUnderlying(inputData.state.reserve0, inputData.state.vault0),
             getReservesInUnderlying(inputData.state.reserve1, inputData.state.vault1)
         );
         (returnData.balance0, returnData.balance1) =
-            (inputData.state.rawBalance0 + vars.reserveBalance0, inputData.state.rawBalance1 + vars.reserveBalance1);
+            (inputData.state.rawBalance0 + reserveBalance0, inputData.state.rawBalance1 + reserveBalance1);
 
         // update TWAP oracle and optionally observe
         bool requiresLDF = returnData.balance0 == 0 && returnData.balance1 == 0;
@@ -339,70 +330,28 @@ contract BunniQuoter is IBunniQuoter {
         if (requiresLDF) {
             // use LDF to initialize token proportions
 
-            (int24 roundedTick, int24 nextRoundedTick) =
-                roundTick(inputData.currentTick, inputData.params.poolKey.tickSpacing);
-            (vars.roundedTickSqrtRatio, vars.nextRoundedTickSqrtRatio) =
-                (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
-
-            IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
-
             // compute density
             bool useTwap = inputData.state.twapSecondsAgo != 0;
-            if (useTwap) {
-                vars.arithmeticMeanTick = _getTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo);
-            }
+            int24 arithmeticMeanTick =
+                useTwap ? _getTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo) : int24(0);
+            IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
             bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
-            (
-                uint256 liquidityDensityOfRoundedTickX96,
-                uint256 density0RightOfRoundedTickX96,
-                uint256 density1LeftOfRoundedTickX96,
-                ,
-            ) = inputData.state.liquidityDensityFunction.query(
-                inputData.params.poolKey,
-                roundedTick,
-                vars.arithmeticMeanTick,
-                inputData.currentTick,
-                useTwap,
-                inputData.state.ldfParams,
-                ldfState
-            );
+            (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+                key: inputData.params.poolKey,
+                sqrtPriceX96: inputData.sqrtPriceX96,
+                tick: inputData.currentTick,
+                arithmeticMeanTick: arithmeticMeanTick,
+                useTwap: useTwap,
+                ldf: inputData.state.liquidityDensityFunction,
+                ldfParams: inputData.state.ldfParams,
+                ldfState: ldfState,
+                balance0: inputData.params.amount0Desired, // use amount0Desired since we're initializing liquidity
+                balance1: inputData.params.amount1Desired // use amount1Desired since we're initializing liquidity
+            });
 
-            // compute how much liquidity we'd get from the desired token amounts
-            uint256 totalLiquidity;
-            {
-                (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
-                    .getAmountsForLiquidity(
-                    inputData.sqrtPriceX96,
-                    vars.roundedTickSqrtRatio,
-                    vars.nextRoundedTickSqrtRatio,
-                    uint128(liquidityDensityOfRoundedTickX96),
-                    false
-                );
-                uint256 totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
-                uint256 totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
-                uint256 totalLiquidityEstimate0 =
-                    totalDensity0X96 == 0 ? 0 : inputData.params.amount0Desired.mulDiv(Q96, totalDensity0X96);
-                uint256 totalLiquidityEstimate1 =
-                    totalDensity1X96 == 0 ? 0 : inputData.params.amount1Desired.mulDiv(Q96, totalDensity1X96);
-                if (totalLiquidityEstimate0 == 0) {
-                    totalLiquidity = totalLiquidityEstimate1;
-                } else if (totalLiquidityEstimate1 == 0) {
-                    totalLiquidity = totalLiquidityEstimate0;
-                } else {
-                    totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
-                }
-            }
-            // totalLiquidity could exceed uint128 so .toUint128() is used
-            uint128 addedLiquidity = ((totalLiquidity * liquidityDensityOfRoundedTickX96) >> 96).toUint128();
-
-            // compute total token amounts
-            (uint256 addedLiquidityAmount0, uint256 addedLiquidityAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-                inputData.sqrtPriceX96, vars.roundedTickSqrtRatio, vars.nextRoundedTickSqrtRatio, addedLiquidity, true
-            );
-            (returnData.amount0, returnData.amount1) = (
-                addedLiquidityAmount0 + totalLiquidity.mulDivUp(density0RightOfRoundedTickX96, Q96),
-                addedLiquidityAmount1 + totalLiquidity.mulDivUp(density1LeftOfRoundedTickX96, Q96)
-            );
+            // compute token amounts to add
+            (returnData.amount0, returnData.amount1) =
+                (totalLiquidity.mulDivUp(totalDensity0X96, Q96), totalLiquidity.mulDivUp(totalDensity1X96, Q96));
 
             // sanity check against desired amounts
             // the amounts can exceed the desired amounts due to math errors
@@ -431,7 +380,7 @@ contract BunniQuoter is IBunniQuoter {
             }
 
             // update token amounts to deposit into vaults
-            (returnData.depositAmount0, returnData.depositAmount1) = (
+            (returnData.reserveAmount0, returnData.reserveAmount1) = (
                 returnData.amount0
                     - returnData.amount0.mulDiv(inputData.state.targetRawTokenRatio0, RAW_TOKEN_RATIO_BASE),
                 returnData.amount1
@@ -440,26 +389,23 @@ contract BunniQuoter is IBunniQuoter {
         } else {
             // already initialized liquidity shape
             // simply add tokens at the current ratio
-            // need to update: depositAmount0, depositAmount1, amount0, amount1
+            // need to update: reserveAmount0, reserveAmount1, amount0, amount1
 
             // compute amount0 and amount1 such that the ratio is the same as the current ratio
-            returnData.amount0 = returnData.balance1 == 0
-                ? inputData.params.amount0Desired
-                : FixedPointMathLib.min(
-                    inputData.params.amount0Desired,
-                    inputData.params.amount1Desired.mulDiv(returnData.balance0, returnData.balance1)
-                );
-            returnData.amount1 = returnData.balance0 == 0
-                ? inputData.params.amount1Desired
-                : FixedPointMathLib.min(
-                    inputData.params.amount1Desired,
-                    inputData.params.amount0Desired.mulDiv(returnData.balance1, returnData.balance0)
-                );
+            uint256 amount0Desired = inputData.params.amount0Desired;
+            uint256 amount1Desired = inputData.params.amount1Desired;
+            uint256 balance0 = returnData.balance0;
+            uint256 balance1 = returnData.balance1;
 
-            returnData.depositAmount0 =
-                returnData.balance0 == 0 ? 0 : returnData.amount0.mulDiv(vars.reserveBalance0, returnData.balance0);
-            returnData.depositAmount1 =
-                returnData.balance1 == 0 ? 0 : returnData.amount1.mulDiv(vars.reserveBalance1, returnData.balance1);
+            returnData.amount0 = balance1 == 0
+                ? amount0Desired
+                : FixedPointMathLib.min(amount0Desired, amount1Desired.mulDiv(balance0, balance1));
+            returnData.amount1 = balance0 == 0
+                ? amount1Desired
+                : FixedPointMathLib.min(amount1Desired, amount0Desired.mulDiv(balance1, balance0));
+
+            returnData.reserveAmount0 = balance0 == 0 ? 0 : returnData.amount0.mulDiv(reserveBalance0, balance0);
+            returnData.reserveAmount1 = balance1 == 0 ? 0 : returnData.amount1.mulDiv(reserveBalance1, balance1);
         }
     }
 

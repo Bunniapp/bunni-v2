@@ -28,6 +28,7 @@ import {IBunniHook} from "./interfaces/IBunniHook.sol";
 import {Permit2Enabled} from "./base/Permit2Enabled.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
+import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 
 /// @title BunniHub
 /// @author zefram.eth
@@ -52,15 +53,8 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// Storage variables
     /// -----------------------------------------------------------
 
-    mapping(PoolId poolId => RawPoolState) internal _poolState;
-    mapping(PoolId poolId => uint256) internal _reserve0;
-    mapping(PoolId poolId => uint256) internal _reserve1;
-
-    /// @inheritdoc IBunniHub
-    mapping(bytes32 bunniSubspace => uint24) public override nonce;
-
-    /// @inheritdoc IBunniHub
-    mapping(IBunniToken bunniToken => PoolId) public override poolIdOfBunniToken;
+    /// @dev The storage content of BunniHub. Useful for passing storage to BunniHubLogic.
+    HubStorage internal s;
 
     /// -----------------------------------------------------------
     /// Modifiers
@@ -97,7 +91,16 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         checkDeadline(params.deadline)
         returns (uint256 shares, uint256 amount0, uint256 amount1)
     {
-        return BunniHubLogic.deposit(params, poolManager, weth, permit2, _poolState, _reserve0, _reserve1);
+        return BunniHubLogic.deposit(
+            s,
+            BunniHubLogic.Env({
+                weth: weth,
+                permit2: permit2,
+                poolManager: poolManager,
+                bunniTokenImplementation: bunniTokenImplementation
+            }),
+            params
+        );
     }
 
     /// @inheritdoc IBunniHub
@@ -109,7 +112,16 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         checkDeadline(params.deadline)
         returns (uint256 amount0, uint256 amount1)
     {
-        return BunniHubLogic.withdraw(params, poolManager, weth, _poolState, _reserve0, _reserve1);
+        return BunniHubLogic.withdraw(
+            s,
+            BunniHubLogic.Env({
+                weth: weth,
+                permit2: permit2,
+                poolManager: poolManager,
+                bunniTokenImplementation: bunniTokenImplementation
+            }),
+            params
+        );
     }
 
     /// @inheritdoc IBunniHub
@@ -120,7 +132,14 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         returns (IBunniToken token, PoolKey memory key)
     {
         return BunniHubLogic.deployBunniToken(
-            params, bunniTokenImplementation, poolManager, _poolState, nonce, poolIdOfBunniToken, weth
+            s,
+            BunniHubLogic.Env({
+                weth: weth,
+                permit2: permit2,
+                poolManager: poolManager,
+                bunniTokenImplementation: bunniTokenImplementation
+            }),
+            params
         );
     }
 
@@ -156,12 +175,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
     /// @inheritdoc IBunniHub
     function poolState(PoolId poolId) external view returns (PoolState memory) {
-        return _getPoolState(poolId);
+        return getPoolState(s, poolId);
     }
 
     /// @inheritdoc IBunniHub
     function poolParams(PoolId poolId) external view returns (PoolState memory) {
-        return _getPoolParams(_poolState[poolId].immutableParamsPointer);
+        return getPoolParams(s.poolState[poolId].immutableParamsPointer);
     }
 
     /// @inheritdoc IBunniHub
@@ -176,9 +195,19 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
     /// @inheritdoc IBunniHub
     function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1) {
-        PoolState memory state = _getPoolState(poolId);
+        PoolState memory state = getPoolState(s, poolId);
         balance0 = state.rawBalance0 + getReservesInUnderlying(state.reserve0, state.vault0);
         balance1 = state.rawBalance1 + getReservesInUnderlying(state.reserve1, state.vault1);
+    }
+
+    /// @inheritdoc IBunniHub
+    function nonce(bytes32 bunniSubspace) external view override returns (uint24) {
+        return s.nonce[bunniSubspace];
+    }
+
+    /// @inheritdoc IBunniHub
+    function poolIdOfBunniToken(IBunniToken bunniToken) external view override returns (PoolId) {
+        return s.poolIdOfBunniToken[bunniToken];
     }
 
     /// -----------------------------------------------------------------------
@@ -213,7 +242,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
         // load state
         PoolId poolId = key.toId();
-        PoolState memory state = _getPoolState(poolId);
+        PoolState memory state = getPoolState(s, poolId);
         (Currency inputToken, Currency outputToken) =
             zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         (uint256 initialReserve0, uint256 initialReserve1) = (state.reserve0, state.reserve1);
@@ -269,13 +298,13 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
 
         // update state
-        _poolState[poolId].rawBalance0 = state.rawBalance0;
-        _poolState[poolId].rawBalance1 = state.rawBalance1;
+        s.poolState[poolId].rawBalance0 = state.rawBalance0;
+        s.poolState[poolId].rawBalance1 = state.rawBalance1;
         if (address(state.vault0) != address(0) && initialReserve0 != state.reserve0) {
-            _reserve0[poolId] = state.reserve0;
+            s.reserve0[poolId] = state.reserve0;
         }
         if (address(state.vault1) != address(0) && initialReserve1 != state.reserve1) {
-            _reserve1[poolId] = state.reserve1;
+            s.reserve1[poolId] = state.reserve1;
         }
     }
 
@@ -298,7 +327,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             }
 
             poolManager.mint(address(this), key.currency0.toId(), paid0);
-            _poolState[poolId].rawBalance0 += paid0;
+            s.poolState[poolId].rawBalance0 += paid0;
         }
         if (rawAmount1 != 0) {
             key.currency1.safeTransferFromPermit2(
@@ -312,7 +341,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             }
 
             poolManager.mint(address(this), key.currency1.toId(), paid1);
-            _poolState[poolId].rawBalance1 += paid1;
+            s.poolState[poolId].rawBalance1 += paid1;
         }
         return abi.encode(paid0, paid1);
     }
@@ -323,12 +352,12 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
         PoolId poolId = key.toId();
         if (rawAmount0 != 0) {
-            _poolState[poolId].rawBalance0 -= rawAmount0;
+            s.poolState[poolId].rawBalance0 -= rawAmount0;
             poolManager.burn(address(this), key.currency0.toId(), rawAmount0);
             poolManager.take(key.currency0, recipient, rawAmount0);
         }
         if (rawAmount1 != 0) {
-            _poolState[poolId].rawBalance1 -= rawAmount1;
+            s.poolState[poolId].rawBalance1 -= rawAmount1;
             poolManager.burn(address(this), key.currency1.toId(), rawAmount1);
             poolManager.take(key.currency1, recipient, rawAmount1);
         }
@@ -435,145 +464,18 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
     }
 
-    function _getPoolParams(address ptr) internal view returns (PoolState memory state) {
-        // read params via SSLOAD2
-        bytes memory immutableParams = ptr.read();
-        {
-            ILiquidityDensityFunction liquidityDensityFunction;
-            assembly ("memory-safe") {
-                liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
-            }
-            state.liquidityDensityFunction = liquidityDensityFunction;
-        }
-
-        {
-            IBunniToken bunniToken;
-            assembly ("memory-safe") {
-                bunniToken := shr(96, mload(add(immutableParams, 52)))
-            }
-            state.bunniToken = bunniToken;
-        }
-
-        {
-            uint24 twapSecondsAgo;
-            assembly ("memory-safe") {
-                twapSecondsAgo := shr(232, mload(add(immutableParams, 72)))
-            }
-            state.twapSecondsAgo = twapSecondsAgo;
-        }
-
-        {
-            bytes32 ldfParams;
-            assembly ("memory-safe") {
-                ldfParams := mload(add(immutableParams, 75))
-            }
-            state.ldfParams = ldfParams;
-        }
-
-        {
-            bytes32 hookParams_;
-            assembly ("memory-safe") {
-                hookParams_ := mload(add(immutableParams, 107))
-            }
-            state.hookParams = hookParams_;
-        }
-
-        {
-            ERC4626 vault0;
-            assembly ("memory-safe") {
-                vault0 := shr(96, mload(add(immutableParams, 139)))
-            }
-            state.vault0 = vault0;
-        }
-
-        {
-            ERC4626 vault1;
-            assembly ("memory-safe") {
-                vault1 := shr(96, mload(add(immutableParams, 159)))
-            }
-            state.vault1 = vault1;
-        }
-
-        {
-            bool statefulLdf;
-            assembly ("memory-safe") {
-                statefulLdf := shr(248, mload(add(immutableParams, 179)))
-            }
-            state.statefulLdf = statefulLdf;
-        }
-
-        {
-            uint24 minRawTokenRatio0;
-            assembly ("memory-safe") {
-                minRawTokenRatio0 := shr(232, mload(add(immutableParams, 180)))
-            }
-            state.minRawTokenRatio0 = minRawTokenRatio0;
-        }
-
-        {
-            uint24 targetRawTokenRatio0;
-            assembly ("memory-safe") {
-                targetRawTokenRatio0 := shr(232, mload(add(immutableParams, 183)))
-            }
-            state.targetRawTokenRatio0 = targetRawTokenRatio0;
-        }
-
-        {
-            uint24 maxRawTokenRatio0;
-            assembly ("memory-safe") {
-                maxRawTokenRatio0 := shr(232, mload(add(immutableParams, 186)))
-            }
-            state.maxRawTokenRatio0 = maxRawTokenRatio0;
-        }
-
-        {
-            uint24 minRawTokenRatio1;
-            assembly ("memory-safe") {
-                minRawTokenRatio1 := shr(232, mload(add(immutableParams, 189)))
-            }
-            state.minRawTokenRatio1 = minRawTokenRatio1;
-        }
-
-        {
-            uint24 targetRawTokenRatio1;
-            assembly ("memory-safe") {
-                targetRawTokenRatio1 := shr(232, mload(add(immutableParams, 192)))
-            }
-            state.targetRawTokenRatio1 = targetRawTokenRatio1;
-        }
-
-        {
-            uint24 maxRawTokenRatio1;
-            assembly ("memory-safe") {
-                maxRawTokenRatio1 := shr(232, mload(add(immutableParams, 195)))
-            }
-            state.maxRawTokenRatio1 = maxRawTokenRatio1;
-        }
-    }
-
     function _getBunniTokenOfPool(PoolId poolId) internal view returns (IBunniToken bunniToken) {
-        address ptr = _poolState[poolId].immutableParamsPointer;
+        address ptr = s.poolState[poolId].immutableParamsPointer;
         if (ptr == address(0)) return IBunniToken(address(0));
         bytes memory rawValue = ptr.read({start: 20, end: 40});
         bunniToken = IBunniToken(address(bytes20(rawValue)));
     }
 
     function _getHookParams(PoolId poolId) internal view returns (bytes32) {
-        address ptr = _poolState[poolId].immutableParamsPointer;
+        address ptr = s.poolState[poolId].immutableParamsPointer;
         if (ptr == address(0)) return bytes32(0);
         bytes memory rawValue = ptr.read({start: 75, end: 107});
         return bytes32(rawValue);
-    }
-
-    function _getPoolState(PoolId poolId) internal view returns (PoolState memory state) {
-        RawPoolState memory rawState = _poolState[poolId];
-        if (rawState.immutableParamsPointer == address(0)) revert BunniHub__BunniTokenNotInitialized();
-
-        state = _getPoolParams(rawState.immutableParamsPointer);
-        state.rawBalance0 = rawState.rawBalance0;
-        state.rawBalance1 = rawState.rawBalance1;
-        state.reserve0 = address(state.vault0) != address(0) ? _reserve0[poolId] : 0;
-        state.reserve1 = address(state.vault1) != address(0) ? _reserve1[poolId] : 0;
     }
 
     function _updateBalance(uint256 balance, int256 delta) internal pure returns (uint256) {
