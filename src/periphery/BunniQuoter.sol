@@ -16,6 +16,7 @@ import {IBunniQuoter} from "../interfaces/IBunniQuoter.sol";
 
 import "../lib/Math.sol";
 import "../lib/FeeMath.sol";
+import "../lib/QueryTWAP.sol";
 import "../lib/VaultMath.sol";
 import "../base/Constants.sol";
 import "../types/PoolState.sol";
@@ -81,10 +82,10 @@ contract BunniQuoter is IBunniQuoter {
         DecodedHookParams memory hookParams = BunniHookLogic.decodeHookParams(bunniState.hookParams);
 
         // get TWAP values
-        int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0 ? _getTwap(key, bunniState.twapSecondsAgo) : int24(0);
+        int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0 ? queryTwap(key, bunniState.twapSecondsAgo) : int24(0);
         int24 feeMeanTick = (
             !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
-        ) ? _getTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
+        ) ? queryTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
 
         // compute total token balances
         (uint256 reserveBalance0, uint256 reserveBalance1) = (
@@ -334,7 +335,7 @@ contract BunniQuoter is IBunniQuoter {
             // compute density
             bool useTwap = inputData.state.twapSecondsAgo != 0;
             int24 arithmeticMeanTick =
-                useTwap ? _getTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo) : int24(0);
+                useTwap ? queryTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo) : int24(0);
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
             bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
             (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
@@ -408,16 +409,6 @@ contract BunniQuoter is IBunniQuoter {
             returnData.reserveAmount0 = balance0 == 0 ? 0 : returnData.amount0.mulDiv(reserveBalance0, balance0);
             returnData.reserveAmount1 = balance1 == 0 ? 0 : returnData.amount1.mulDiv(reserveBalance1, balance1);
         }
-    }
-
-    function _getTwap(PoolKey memory poolKey, uint24 twapSecondsAgo) internal view returns (int24 arithmeticMeanTick) {
-        IBunniHook hook = IBunniHook(address(poolKey.hooks));
-        uint32[] memory secondsAgos = new uint32[](2);
-        secondsAgos[0] = twapSecondsAgo;
-        secondsAgos[1] = 0;
-        int56[] memory tickCumulatives = hook.observe(poolKey, secondsAgos);
-        int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-        return int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 
     /// @dev Checks if the pool should surge based on the vault share price changes since the last swap.
