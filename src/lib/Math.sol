@@ -64,19 +64,3 @@ function percentDelta(uint256 a, uint256 b) pure returns (uint256) {
     uint256 absDelta = dist(a, b);
     return FixedPointMathLib.divWad(absDelta, b);
 }
-
-function computeSurgeFee(uint32 lastSurgeTimestamp, uint24 surgeFee, uint16 surgeFeeHalfLife)
-    view
-    returns (uint24 fee)
-{
-    // compute surge fee
-    // surge fee gets applied after the LDF shifts (if it's dynamic)
-    unchecked {
-        uint256 timeSinceLastSurge = block.timestamp - lastSurgeTimestamp;
-        fee = uint24(
-            uint256(surgeFee).mulWadUp(
-                uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
-            )
-        );
-    }
-}

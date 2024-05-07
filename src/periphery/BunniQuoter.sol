@@ -15,6 +15,7 @@ import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {IBunniQuoter} from "../interfaces/IBunniQuoter.sol";
 
 import "../lib/Math.sol";
+import "../lib/FeeMath.sol";
 import "../lib/VaultMath.sol";
 import "../base/Constants.sol";
 import "../types/PoolState.sol";
@@ -191,7 +192,7 @@ contract BunniQuoter is IBunniQuoter {
                     )
                     : amAmmSwapFee
             )
-            : _getFee(
+            : computeDynamicSwapFee(
                 updatedSqrtPriceX96,
                 feeMeanTick,
                 lastSurgeTimestamp,
@@ -417,35 +418,6 @@ contract BunniQuoter is IBunniQuoter {
         int56[] memory tickCumulatives = hook.observe(poolKey, secondsAgos);
         int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
         return int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
-    }
-
-    function _getFee(
-        uint160 postSwapSqrtPriceX96,
-        int24 arithmeticMeanTick,
-        uint32 lastSurgeTimestamp,
-        uint24 feeMin,
-        uint24 feeMax,
-        uint24 feeQuadraticMultiplier,
-        uint24 surgeFee,
-        uint16 surgeFeeHalfLife
-    ) internal view returns (uint24 fee) {
-        // compute surge fee
-        // surge fee gets applied after the LDF shifts (if it's dynamic)
-        fee = computeSurgeFee(lastSurgeTimestamp, surgeFee, surgeFeeHalfLife);
-
-        // special case for fixed fee pools
-        if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));
-
-        uint256 ratio =
-            uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
-        if (ratio > MAX_SWAP_FEE_RATIO) ratio = MAX_SWAP_FEE_RATIO;
-        ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
-        uint256 delta = dist(ratio, SWAP_FEE_BASE);
-        // unchecked is safe since we're using uint256 to store the result and the return value is bounded in the range [feeMin, feeMax]
-        unchecked {
-            uint256 quadraticTerm = uint256(feeQuadraticMultiplier).mulDivUp(delta * delta, SWAP_FEE_BASE_SQUARED);
-            return uint24(FixedPointMathLib.max(fee, FixedPointMathLib.min(feeMin + quadraticTerm, feeMax)));
-        }
     }
 
     /// @dev Checks if the pool should surge based on the vault share price changes since the last swap.
