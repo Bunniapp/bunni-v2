@@ -332,13 +332,8 @@ library LibGeometricDistribution {
         }
 
         // round xWad to reduce error
-        // limits tick precision to 1e-6 of a rounded tick
-        int256 remainder = xWad % 1e12;
-        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 9 decimals
-        // if (remainder > 5e11) xWad += 1e12;
-        assembly {
-            xWad := add(mul(sgt(remainder, 500000000000), 1000000000000), xWad) // round up if remainder > 0.5
-        }
+        // limits tick precision to (ROUND_TICK_TOLERANCE / WAD) of a rounded tick
+        xWad = (xWad / ROUND_TICK_TOLERANCE) * ROUND_TICK_TOLERANCE; // clear small errors
 
         // get rounded tick from xWad
         success = true;
@@ -402,13 +397,8 @@ library LibGeometricDistribution {
         }
 
         // round xWad to reduce error
-        // limits tick precision to 1e-6 of a rounded tick
-        uint256 remainder = (xWad % 1e12).abs();
-        xWad = (xWad / 1e12) * 1e12; // clear everything beyond 6 decimals
-        // if (remainder > 5e11) xWad += 1e12;
-        assembly {
-            xWad := add(mul(mul(gt(remainder, 500000000000), 1000000000000), sub(mul(sgt(xWad, 0), 2), 1)), xWad) // round towards infinity if remainder > 0.5
-        }
+        // limits tick precision to (ROUND_TICK_TOLERANCE / WAD) of a rounded tick
+        xWad = (xWad / ROUND_TICK_TOLERANCE) * ROUND_TICK_TOLERANCE; // clear small errors
 
         // get rounded tick from xWad
         success = true;
@@ -507,15 +497,52 @@ library LibGeometricDistribution {
     ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
+            // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
+            // notice that the inverse tick is between two rounded ticks, and we round up to the rounded tick to the right
+            // e.g. go from 1.5 to 2
+            //       input
+            //      ├──────┤
+            // ┌──┬──┬──┬──┐
+            // │  │ █│██│██│
+            // │  │ █│██│██│
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //       │
+            //       ▼
+            //      rick
             (success, roundedTick) = inverseCumulativeAmount0(
                 inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
             );
             if (!success) return (false, 0, 0, 0);
 
             // compute the cumulative amount up to roundedTick
+            // below is an illustration of the cumulative amount at roundedTick
+            // notice that (input - cum) is the remainder of the swap that will be handled by Uniswap math
+            //         cum
+            //       ├─────┤
+            // ┌──┬──┬──┬──┐
+            // │  │ █│██│██│
+            // │  │ █│██│██│
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //       │
+            //       ▼
+            //      rick
             cumulativeAmount = cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96);
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
+            // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
+            // because we got rick by rounding up, the liquidity of (rick - tickSpacing) is used by the Uniswap math
+            //    liq
+            //    ├──┤
+            // ┌──┬──┬──┬──┐
+            // │  │ █│██│██│
+            // │  │ █│██│██│
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //    │
+            //    ▼
+            //   rick - tickSpacing
             swapLiquidity = (
                 (
                     liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96)
@@ -524,16 +551,52 @@ library LibGeometricDistribution {
             ).toUint128();
         } else {
             // compute roundedTick by inverting the cumulative amount
+            // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
+            // notice that the inverse tick is between two rounded ticks, and we round up to the rounded tick to the right
+            // e.g. go from 1.5 to 2
+            //  input
+            // ├──────┤
+            // ┌──┬──┬──┬──┐
+            // │██│██│█ │  │
+            // │██│██│█ │  │
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //       │
+            //       ▼
+            //      rick
             (success, roundedTick) = inverseCumulativeAmount1(
                 inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
             );
             if (!success) return (false, 0, 0, 0);
 
             // compute the cumulative amount up to roundedTick
+            // below is an illustration of the cumulative amount at roundedTick
+            // notice that (input - cum) is the remainder of the swap that will be handled by Uniswap math
+            //   cum
+            // ├─────┤
+            // ┌──┬──┬──┬──┐
+            // │██│██│█ │  │
+            // │██│██│█ │  │
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //    │
+            //    ▼
+            //   rick - tickSpacing
             cumulativeAmount =
                 cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
+            // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
+            //       liq
+            //       ├──┤
+            // ┌──┬──┬──┬──┐
+            // │██│██│█ │  │
+            // │██│██│█ │  │
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //       │
+            //       ▼
+            //      rick
             swapLiquidity = (
                 (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96
             ).toUint128();
