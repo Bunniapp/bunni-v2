@@ -409,63 +409,6 @@ contract BunniQuoter is IBunniQuoter {
         }
     }
 
-    /// @dev Decodes hookParams into params used by this hook
-    /// @param hookParams The hook params raw bytes32
-    /// @return feeMin The minimum swap fee, 6 decimals
-    /// @return feeMax The maximum swap fee (may be exceeded if surge fee is active), 6 decimals
-    /// @return feeQuadraticMultiplier The quadratic multiplier for the dynamic swap fee formula, 6 decimals
-    /// @return feeTwapSecondsAgo The time window for the TWAP used by the dynamic swap fee formula
-    /// @return surgeFee The max surge swap fee, 6 decimals
-    /// @return surgeFeeHalfLife The half-life of the surge fee in seconds. The surge fee decays exponentially, and the half-life is the time it takes for the surge fee to decay to half its value.
-    /// @return surgeFeeAutostartThreshold Time after a swap when the surge fee exponential decay autostarts, in seconds. The autostart avoids the pool being stuck on a high fee.
-    /// @return vaultSurgeThreshold0 The threshold for the vault0 share price change to trigger the surge fee. Only used if both vaults are set.
-    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
-    /// @return vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
-    ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
-    /// @return rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
-    ///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
-    ///         When set to 0, rebalancing is disabled.
-    /// @return rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals.
-    /// @return rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
-    /// @return rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
-    /// @return amAmmEnabled Whether the am-AMM is enabled for this pool
-    function _decodeParams(bytes32 hookParams)
-        internal
-        pure
-        returns (
-            uint24 feeMin,
-            uint24 feeMax,
-            uint24 feeQuadraticMultiplier,
-            uint24 feeTwapSecondsAgo,
-            uint24 surgeFee,
-            uint16 surgeFeeHalfLife,
-            uint16 surgeFeeAutostartThreshold,
-            uint16 vaultSurgeThreshold0,
-            uint16 vaultSurgeThreshold1,
-            uint16 rebalanceThreshold,
-            uint16 rebalanceMaxSlippage,
-            uint16 rebalanceTwapSecondsAgo,
-            uint16 rebalanceOrderTTL,
-            bool amAmmEnabled
-        )
-    {
-        // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
-        feeMin = uint24(bytes3(hookParams));
-        feeMax = uint24(bytes3(hookParams << 24));
-        feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
-        feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
-        surgeFee = uint24(bytes3(hookParams << 96));
-        surgeFeeHalfLife = uint16(bytes2(hookParams << 120));
-        surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
-        vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
-        vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
-        rebalanceThreshold = uint16(bytes2(hookParams << 184));
-        rebalanceMaxSlippage = uint16(bytes2(hookParams << 200));
-        rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
-        rebalanceOrderTTL = uint16(bytes2(hookParams << 232));
-        amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
-    }
-
     function _getTwap(PoolKey memory poolKey, uint24 twapSecondsAgo) internal view returns (int24 arithmeticMeanTick) {
         IBunniHook hook = IBunniHook(address(poolKey.hooks));
         uint32[] memory secondsAgos = new uint32[](2);

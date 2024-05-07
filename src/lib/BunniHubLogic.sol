@@ -31,6 +31,7 @@ import "../base/Constants.sol";
 import "../types/PoolState.sol";
 import "../base/SharedStructs.sol";
 import "../interfaces/IBunniHub.sol";
+import {BunniHub} from "../BunniHub.sol";
 import {queryLDF} from "../lib/QueryLDF.sol";
 import {BunniToken} from "../BunniToken.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
@@ -100,9 +101,9 @@ library BunniHubLogic {
             env.poolManager.lock(
                 address(this),
                 abi.encode(
-                    LockCallbackType.DEPOSIT,
+                    BunniHub.LockCallbackType.DEPOSIT,
                     abi.encode(
-                        DepositCallbackInputData({
+                        BunniHub.DepositCallbackInputData({
                             user: msgSender,
                             poolKey: params.poolKey,
                             msgValue: msg.value,
@@ -356,7 +357,9 @@ library BunniHubLogic {
         // withdraw raw tokens
         env.poolManager.lock(
             address(this),
-            abi.encode(LockCallbackType.WITHDRAW, abi.encode(params.recipient, params.poolKey, rawAmount0, rawAmount1))
+            abi.encode(
+                BunniHub.LockCallbackType.WITHDRAW, abi.encode(params.recipient, params.poolKey, rawAmount0, rawAmount1)
+            )
         );
 
         emit IBunniHub.Withdraw(msgSender, params.recipient, poolId, amount0, amount1, params.shares);
@@ -471,9 +474,11 @@ library BunniHubLogic {
         env.poolManager.lock(
             address(this),
             abi.encode(
-                LockCallbackType.INITIALIZE_POOL,
+                BunniHub.LockCallbackType.INITIALIZE_POOL,
                 abi.encode(
-                    InitializePoolCallbackInputData(key, params.sqrtPriceX96, params.twapSecondsAgo, params.hookParams)
+                    BunniHub.InitializePoolCallbackInputData(
+                        key, params.sqrtPriceX96, params.twapSecondsAgo, params.hookParams
+                    )
                 )
             )
         );

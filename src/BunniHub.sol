@@ -214,6 +214,44 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// Uniswap callback
     /// -----------------------------------------------------------------------
 
+    enum LockCallbackType {
+        SWAP,
+        DEPOSIT,
+        WITHDRAW,
+        INITIALIZE_POOL
+    }
+
+    struct HookHandleSwapCallbackInputData {
+        PoolKey key;
+        bool zeroForOne;
+        uint256 inputAmount;
+        uint256 outputAmount;
+    }
+
+    struct DepositCallbackInputData {
+        address user;
+        PoolKey poolKey;
+        uint256 msgValue;
+        uint256 rawAmount0;
+        uint256 rawAmount1;
+        uint256 tax0;
+        uint256 tax1;
+    }
+
+    struct WithdrawCallbackInputData {
+        address user;
+        PoolKey poolKey;
+        uint256 rawAmount0;
+        uint256 rawAmount1;
+    }
+
+    struct InitializePoolCallbackInputData {
+        PoolKey poolKey;
+        uint160 sqrtPriceX96;
+        uint24 twapSecondsAgo;
+        bytes32 hookParams;
+    }
+
     /// @inheritdoc ILockCallback
     function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
         // verify sender
