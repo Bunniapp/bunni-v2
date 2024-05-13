@@ -72,8 +72,9 @@ library BunniHubLogic {
         address msgSender = LibMulticaller.senderOrSigner();
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = getPoolState(s, poolId);
-
-        (uint160 sqrtPriceX96, int24 currentTick,,) = IBunniHook(address(params.poolKey.hooks)).slot0s(poolId);
+        IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
+        (uint160 sqrtPriceX96, int24 currentTick,,) = hook.slot0s(poolId);
+        hook.updateStateMachine(poolId); // trigger am-AMM state machine update to avoid sandwiching rent burns
 
         DepositLogicReturnData memory depositReturnData = _depositLogic(
             DepositLogicInputData({
@@ -306,6 +307,8 @@ library BunniHubLogic {
 
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = getPoolState(s, poolId);
+        IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
+        hook.updateStateMachine(poolId); // trigger am-AMM state machine update to avoid sandwiching rent burns
 
         /// -----------------------------------------------------------------------
         /// State updates
