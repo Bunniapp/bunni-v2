@@ -60,7 +60,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint256;
 
-    enum HookLockCallbackType {
+    enum HookUnlockCallbackType {
         BURN_AND_TAKE,
         SETTLE_AND_MINT,
         CLAIM_FEES
@@ -90,6 +90,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint16 internal constant REBALANCE_TWAP_SECONDS_AGO = 1 hours;
     uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
     uint32 internal constant ORACLE_MIN_INTERVAL = 1 hours;
+    uint256 internal constant HOOK_FLAGS = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+        + Hooks.BEFORE_SWAP_FLAG + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
 
     IPoolManager internal poolManager;
     ERC20Mock internal token0;
@@ -101,16 +103,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     ERC4626WithFeeMock internal vault1WithFee;
     ERC4626WithFeeMock internal vaultWethWithFee;
     IBunniHub internal hub;
-    BunniHook internal bunniHook = BunniHook(
-        payable(
-            address(
-                uint160(
-                    Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
-                        + Hooks.ACCESS_LOCK_FLAG + Hooks.NO_OP_FLAG
-                )
-            )
-        )
-    );
+    BunniHook internal bunniHook = BunniHook(payable(address(uint160(HOOK_FLAGS))));
     BunniQuoter internal quoter;
     ILiquidityDensityFunction internal ldf;
     Uniswapper internal swapper;
@@ -191,8 +184,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // initialize bunni hook
         bytes32 hookSalt;
         unchecked {
-            uint256 hookFlags = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
-                + Hooks.ACCESS_LOCK_FLAG + Hooks.NO_OP_FLAG;
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
                 abi.encode(
@@ -210,7 +201,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(offset);
                 address hookDeployed = computeAddress(address(this), hookSalt, hookCreationCode);
-                if (uint160((bytes20(hookDeployed) >> 148) << 148) == hookFlags && hookDeployed.code.length == 0) {
+                if (uint160((bytes20(hookDeployed) >> 146) << 146) == HOOK_FLAGS && hookDeployed.code.length == 0) {
                     break;
                 }
             }
@@ -462,8 +453,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(3)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(3)
         });
         _swap(key, params, value, snapLabel);
     }
@@ -491,8 +482,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(0)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(0)
         });
 
         for (uint256 i; i < numSwaps; i++) {
@@ -553,8 +544,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(-9)
         });
 
         _swap(key, params, value, snapLabel);
@@ -591,8 +582,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-19)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(-19)
         });
 
         _swap(key, params, value, snapLabel);
@@ -626,8 +617,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(9)
         });
 
         _swap(key, params, value, snapLabel);
@@ -656,8 +647,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(9)
         });
 
         for (uint256 i; i < numSwaps; i++) {
@@ -698,8 +689,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(19)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(19)
         });
 
         _swap(key, params, value, snapLabel);
@@ -734,8 +725,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(29)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(29)
         });
 
         _swap(key, params, value, snapLabel);
@@ -764,13 +755,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         uint256 inputAmount = PRECISION * 100;
         IPoolManager.SwapParams memory paramsZeroToOne = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(-9)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(-9)
         });
         IPoolManager.SwapParams memory paramsOneToZero = IPoolManager.SwapParams({
             zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(9)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(9)
         });
 
         // make swaps to accumulate fees
@@ -815,7 +806,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         currencies[0] = key.currency0;
         currencies[1] = key.currency1;
         snapStart(string.concat("collect protocol fees", snapLabel));
-        poolManager.lock(address(bunniHook), abi.encode(HookLockCallbackType.CLAIM_FEES, abi.encode(currencies)));
+        bunniHook.claimProtocolFees(currencies);
         snapEnd();
 
         // check balances
@@ -919,75 +910,10 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _mint(key.currency1, address(this), inputAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
-            amountSpecified: int256(inputAmount),
-            sqrtPriceLimitX96: TickMath.getSqrtRatioAtTick(100)
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(100)
         });
         _swap(key, params, 0, "");
-    }
-
-    function test_fuzz_swapZeroAmountDoesNothing(
-        bool zeroForOne,
-        bool useVault0,
-        bool useVault1,
-        uint32 alpha,
-        uint24 feeMin,
-        uint24 feeMax,
-        uint24 feeQuadraticMultiplier
-    ) external {
-        feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
-        alpha = uint32(bound(alpha, 1e3, 12e8));
-
-        GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            Currency.wrap(address(token0)),
-            Currency.wrap(address(token1)),
-            useVault0 ? vault0 : ERC4626(address(0)),
-            useVault1 ? vault1 : ERC4626(address(0)),
-            ldf_,
-            ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
-            )
-        );
-
-        // execute swap with zero amount
-        (Currency inputToken, Currency outputToken) =
-            zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: zeroForOne,
-            amountSpecified: int256(0),
-            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
-        });
-        uint256 inputAmount;
-        uint256 outputAmount;
-        (uint160 sqrtPriceX96, int24 tick,,) = bunniHook.slot0s(key.toId());
-        {
-            uint256 beforeInputTokenBalance = inputToken.balanceOfSelf();
-            uint256 beforeOutputTokenBalance = outputToken.balanceOfSelf();
-            _swap(key, params, 0, "");
-            inputAmount = beforeInputTokenBalance - inputToken.balanceOfSelf();
-            outputAmount = outputToken.balanceOfSelf() - beforeOutputTokenBalance;
-        }
-
-        assertEq(inputAmount, 0, "input amount not 0");
-        assertEq(outputAmount, 0, "output amount not 0");
-
-        (uint160 afterSqrtPriceX96, int24 afterTick,,) = bunniHook.slot0s(key.toId());
-        assertEq(afterSqrtPriceX96, sqrtPriceX96, "sqrtPriceX96 changed");
-        assertEq(afterTick, tick, "tick changed");
     }
 
     function test_fuzz_swapNoArb_exactIn(
@@ -1038,8 +964,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _mint(firstSwapInputToken, address(this), swapAmount * 2);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: zeroForOneFirstSwap,
-            amountSpecified: int256(swapAmount),
-            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 firstSwapInputAmount;
         uint256 firstSwapOutputAmount;
@@ -1060,8 +986,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // execute second swap
         params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOneFirstSwap,
-            amountSpecified: int256(firstSwapOutputAmount),
-            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(firstSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 secondSwapInputAmount;
         uint256 secondSwapOutputAmount;
@@ -1127,8 +1053,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             zeroForOneFirstSwap ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: zeroForOneFirstSwap,
-            amountSpecified: -int256(swapAmount),
-            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         (,,, uint256 firstSwapInputAmount, uint256 firstSwapOutputAmount,,) = quoter.quoteSwap(key, params);
         if (firstSwapOutputToken.balanceOf(address(poolManager)) >= swapAmount) {
@@ -1152,8 +1078,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // execute second swap
         params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOneFirstSwap,
-            amountSpecified: int256(firstSwapOutputAmount),
-            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(firstSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 secondSwapInputAmount;
         uint256 secondSwapOutputAmount;
@@ -1220,8 +1146,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _mint(firstSwapInputToken, address(this), swapAmount * 2);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: zeroForOneFirstSwap,
-            amountSpecified: int256(swapAmount),
-            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 firstSwapInputAmount;
         uint256 firstSwapOutputAmount;
@@ -1242,8 +1168,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // execute second swap
         params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOneFirstSwap,
-            amountSpecified: int256(firstSwapOutputAmount),
-            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(firstSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 secondSwapInputAmount;
         uint256 secondSwapOutputAmount;
@@ -1264,8 +1190,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // execute third swap
         params = IPoolManager.SwapParams({
             zeroForOne: zeroForOneFirstSwap,
-            amountSpecified: int256(secondSwapOutputAmount),
-            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(secondSwapOutputAmount),
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 thirdSwapInputAmount;
         uint256 thirdSwapOutputAmount;
@@ -1286,8 +1212,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // execute fourth swap
         params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOneFirstSwap,
-            amountSpecified: int256(thirdSwapOutputAmount),
-            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(thirdSwapOutputAmount),
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 fourthSwapInputAmount;
         uint256 fourthSwapOutputAmount;
@@ -1358,12 +1284,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _mint(firstSwapInputToken, address(this), swapAmount * 2);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: zeroForOneFirstSwap,
-            amountSpecified: int256(
+            amountSpecified: -int256(
                 Currency.unwrap(firstSwapInputToken) == address(tokenWithTax)
                     ? swapAmount * tokenWithTax.TAX_MULTIPLIER() / 100
                     : swapAmount
             ),
-            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 firstSwapInputAmount;
         uint256 firstSwapOutputAmount;
@@ -1371,8 +1297,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
             if (Currency.unwrap(firstSwapInputToken) == address(tokenWithTax)) {
-                bytes memory data = abi.encode(key, params, type(uint256).max, 0, TOKEN_TAX);
-                poolManager.lock(address(swapperWithTax), data);
+                swapperWithTax.swap(key, params, type(uint256).max, 0, TOKEN_TAX);
             } else {
                 _swap(key, params, 0, "");
             }
@@ -1389,14 +1314,14 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // execute second swap
         params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOneFirstSwap,
-            amountSpecified: int256(
+            amountSpecified: -int256(
                 int256(
                     Currency.unwrap(firstSwapOutputToken) == address(tokenWithTax)
                         ? firstSwapOutputAmount * tokenWithTax.TAX_MULTIPLIER() / 100
                         : firstSwapOutputAmount
                 )
             ),
-            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 secondSwapInputAmount;
         uint256 secondSwapOutputAmount;
@@ -1404,8 +1329,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
             if (Currency.unwrap(firstSwapOutputToken) == address(tokenWithTax)) {
-                bytes memory data = abi.encode(key, params, type(uint256).max, 0, TOKEN_TAX);
-                poolManager.lock(address(swapperWithTax), data);
+                swapperWithTax.swap(key, params, type(uint256).max, 0, TOKEN_TAX);
             } else {
                 _swap(key, params, 0, "");
             }
@@ -1465,8 +1389,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _mint(inputToken, address(this), swapAmount * 2);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: zeroForOne,
-            amountSpecified: int256(swapAmount),
-            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
 
         // quote swap
@@ -1479,8 +1403,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         {
             uint256 beforeInputTokenBalance = inputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = outputToken.balanceOfSelf();
-            bytes memory data = abi.encode(key, params, type(uint256).max, 0);
-            poolManager.lock(address(swapper), data);
+            swapper.swap(key, params, type(uint256).max, 0);
             actualInputAmount = beforeInputTokenBalance - inputToken.balanceOfSelf();
             actualOutputAmount = outputToken.balanceOfSelf() - beforeOutputTokenBalance;
         }
@@ -1611,8 +1534,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _mint(key.currency0, address(this), swapAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(swapAmount),
-            sqrtPriceLimitX96: TickMath.MIN_SQRT_RATIO + 1
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
         vm.recordLogs();
         _swap(key, params, 0, "");
@@ -1959,7 +1882,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 minRawTokenRatio1: 0.08e6,
                 targetRawTokenRatio1: 0.1e6,
                 maxRawTokenRatio1: 0.12e6,
-                sqrtPriceX96: TickMath.getSqrtRatioAtTick(4)
+                sqrtPriceX96: TickMath.getSqrtPriceAtTick(4)
             })
         );
 
@@ -2129,13 +2052,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         internal
     {
         Uniswapper swapper_ = swapper;
-        bytes memory data = abi.encode(key, params, type(uint256).max, 0);
         if (bytes(snapLabel).length > 0) {
             snapStart(snapLabel);
-            poolManager.lock{value: value}(address(swapper_), data);
+            swapper_.swap{value: value}(key, params, type(uint256).max, 0);
             snapEnd();
         } else {
-            poolManager.lock{value: value}(address(swapper_), data);
+            swapper_.swap{value: value}(key, params, type(uint256).max, 0);
         }
     }
 

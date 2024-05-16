@@ -2,9 +2,10 @@
 
 pragma solidity ^0.8.19;
 
+import "@uniswap/v4-core/src/types/PoolId.sol";
 import "@uniswap/v4-core/src/types/Currency.sol";
+import "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
@@ -130,9 +131,20 @@ library BunniHookLogic {
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params
-    ) external returns (bool useAmAmmFee, address amAmmManager, Currency amAmmFeeCurrency, uint256 amAmmFeeAmount) {
+    )
+        external
+        returns (
+            bool useAmAmmFee,
+            address amAmmManager,
+            Currency amAmmFeeCurrency,
+            uint256 amAmmFeeAmount,
+            BeforeSwapDelta beforeSwapDelta
+        )
+    {
         // ensure swap makes sense
-        if (params.amountSpecified == 0) return (false, address(0), Currency.wrap(address(0)), 0);
+        if (params.amountSpecified == 0) {
+            return (false, address(0), Currency.wrap(address(0)), 0, BeforeSwapDeltaLibrary.ZERO_DELTA);
+        }
         PoolId id = key.toId();
         Slot0 memory slot0 = s.slot0s[id];
         uint160 sqrtPriceX96 = slot0.sqrtPriceX96;
@@ -140,12 +152,12 @@ library BunniHookLogic {
             sqrtPriceX96 == 0
                 || (
                     params.zeroForOne
-                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_RATIO)
+                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE)
                 )
                 || (
                     !params.zeroForOne
-                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_RATIO)
-                )
+                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE)
+                ) || params.amountSpecified > type(int128).max || params.amountSpecified < type(int128).min
         ) {
             revert BunniHook__InvalidSwap();
         }
@@ -279,7 +291,7 @@ library BunniHookLogic {
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         uint24 swapFee;
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified > 0;
+        bool exactIn = params.amountSpecified < 0;
         useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (
@@ -316,6 +328,15 @@ library BunniHookLogic {
             // modify output amount with fees
             outputAmount -= swapFeeAmount + hookFeesAmount;
 
+            // return beforeSwapDelta
+            // take in max(amountSpecified, inputAmount) such that if amountSpecified is greater we just happily accept it
+            int256 actualInputAmount = FixedPointMathLib.max(-params.amountSpecified, inputAmount.toInt256());
+            inputAmount = uint256(actualInputAmount);
+            beforeSwapDelta = toBeforeSwapDelta({
+                deltaSpecified: actualInputAmount.toInt128(),
+                deltaUnspecified: -outputAmount.toInt256().toInt128()
+            });
+
             // if am-AMM is used, the swap fee needs to be taken from BunniHub, else it stays in BunniHub with the LPs
             (hookHandleSwapInputAmount, hookHandleSwapOutoutAmount) = (
                 inputAmount, useAmAmmFee ? outputAmount + swapFeeAmount + hookFeesAmount : outputAmount + hookFeesAmount
@@ -333,6 +354,15 @@ library BunniHookLogic {
 
             // modify input amount with fees
             inputAmount += swapFeeAmount + hookFeesAmount;
+
+            // return beforeSwapDelta
+            // give out min(amountSpecified, outputAmount) such that if amountSpecified is greater we only give outputAmount and let the tx revert
+            int256 actualOutputAmount = FixedPointMathLib.min(params.amountSpecified, outputAmount.toInt256());
+            outputAmount = uint256(actualOutputAmount);
+            beforeSwapDelta = toBeforeSwapDelta({
+                deltaSpecified: -actualOutputAmount.toInt128(),
+                deltaUnspecified: inputAmount.toInt256().toInt128()
+            });
 
             // if am-AMM is not used, the swap fee needs to be sent to BunniHub to the LPs, else it stays in BunniHook with the am-AMM manager
             (hookHandleSwapInputAmount, hookHandleSwapOutoutAmount) = (
@@ -552,7 +582,7 @@ library BunniHookLogic {
             input.updatedIndex,
             input.updatedCardinality
         );
-        uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtRatioAtTick(rebalanceSpotPriceTick);
+        uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtPriceAtTick(rebalanceSpotPriceTick);
         // reusing totalDensity0X96 and totalDensity1X96 to store the token densities of the excess liquidity
         // after rebalancing
         (, totalDensity0X96, totalDensity1X96,,,) = queryLDF({

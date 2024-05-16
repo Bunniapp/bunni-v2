@@ -31,7 +31,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
 
     function _setUpLDF() internal virtual;
 
-    function _test_liquidityDensity_sumUpToOne(int24 tickSpacing, bytes32 decodedLDFParams) internal {
+    function _test_liquidityDensity_sumUpToOne(int24 tickSpacing, bytes32 decodedLDFParams) internal view {
         uint256 cumulativeLiquidityDensity;
         (int24 minTick, int24 maxTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing) - tickSpacing);
@@ -49,7 +49,10 @@ abstract contract LiquidityDensityFunctionTest is Test {
         );
     }
 
-    function _test_query_cumulativeAmounts(int24 currentTick, int24 tickSpacing, bytes32 decodedLDFParams) internal {
+    function _test_query_cumulativeAmounts(int24 currentTick, int24 tickSpacing, bytes32 decodedLDFParams)
+        internal
+        view
+    {
         int24 roundedTick = roundTickSingle(currentTick, tickSpacing);
         PoolKey memory key;
         key.tickSpacing = tickSpacing;
@@ -97,8 +100,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         pure
         returns (uint256 amount0DensityX96)
     {
-        return (FixedPoint96.Q96 - (-tickSpacing).getSqrtRatioAtTick()).fullMulDiv(
-            FixedPoint96.Q96, (roundedTick).getSqrtRatioAtTick()
+        return (FixedPoint96.Q96 - (-tickSpacing).getSqrtPriceAtTick()).fullMulDiv(
+            FixedPoint96.Q96, (roundedTick).getSqrtPriceAtTick()
         );
     }
 
@@ -124,8 +127,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         pure
         returns (uint256 amount1DensityX96)
     {
-        return (tickSpacing.getSqrtRatioAtTick() - FixedPoint96.Q96).fullMulDiv(
-            (roundedTick).getSqrtRatioAtTick(), FixedPoint96.Q96
+        return (tickSpacing.getSqrtPriceAtTick() - FixedPoint96.Q96).fullMulDiv(
+            (roundedTick).getSqrtPriceAtTick(), FixedPoint96.Q96
         );
     }
 }

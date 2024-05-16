@@ -7,8 +7,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
-import {IDynamicFeeManager} from "@uniswap/v4-core/src/interfaces/IDynamicFeeManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
 
@@ -28,7 +27,7 @@ import {IBaseHook} from "./IBaseHook.sol";
 /// @author zefram.eth
 /// @notice Uniswap v4 hook responsible for handling swaps on Bunni. Implements auto-rebalancing
 /// executed via FloodPlain. Uses am-AMM to recapture LVR & MEV.
-interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, IERC1271, IAmAmm {
+interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// -----------------------------------------------------------------------
     /// Events
     /// -----------------------------------------------------------------------
@@ -207,6 +206,10 @@ interface IBunniHook is IBaseHook, IDynamicFeeManager, IOwnable, ILockCallback, 
     /// -----------------------------------------------------------------------
     /// Owner functions
     /// -----------------------------------------------------------------------
+
+    /// @notice Claim protocol fees for the given currency list. Only callable by the owner.
+    /// @param currencyList The list of currencies to claim fees for
+    function claimProtocolFees(Currency[] calldata currencyList) external;
 
     /// @notice Set the FloodZone contract address. Only callable by the owner.
     /// @param zone The new FloodZone contract address

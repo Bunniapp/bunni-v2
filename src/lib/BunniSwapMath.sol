@@ -52,10 +52,10 @@ library BunniSwapMath {
     {
         uint256 outputTokenBalance = input.swapParams.zeroForOne ? balance1 : balance0;
         int256 amountSpecified = input.swapParams.amountSpecified;
-        if (amountSpecified < 0 && uint256(-amountSpecified) > outputTokenBalance) {
+        if (amountSpecified > 0 && uint256(amountSpecified) > outputTokenBalance) {
             // exact output swap where the requested output amount exceeds the output token balance
             // change swap to an exact output swap where the output amount is the output token balance
-            amountSpecified = -outputTokenBalance.toInt256();
+            amountSpecified = outputTokenBalance.toInt256();
         }
 
         // compute first pass result
@@ -65,7 +65,7 @@ library BunniSwapMath {
         if (outputAmount > outputTokenBalance) {
             // exactly output the output token's balance
             // need to recompute swap
-            amountSpecified = -outputTokenBalance.toInt256();
+            amountSpecified = outputTokenBalance.toInt256();
             (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount) = _computeSwap(input, amountSpecified);
 
             if (outputAmount > outputTokenBalance) {
@@ -83,8 +83,8 @@ library BunniSwapMath {
     {
         // bound sqrtPriceLimit so that we never end up at an invalid rounded tick
         (uint160 minSqrtPrice, uint160 maxSqrtPrice) = (
-            TickMath.minUsableTick(input.key.tickSpacing).getSqrtRatioAtTick(),
-            TickMath.maxUsableTick(input.key.tickSpacing).getSqrtRatioAtTick()
+            TickMath.minUsableTick(input.key.tickSpacing).getSqrtPriceAtTick(),
+            TickMath.maxUsableTick(input.key.tickSpacing).getSqrtPriceAtTick()
         );
         uint160 sqrtPriceLimitX96 = input.swapParams.sqrtPriceLimitX96;
         if (
@@ -100,9 +100,9 @@ library BunniSwapMath {
             ((input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96).toUint128();
 
         // initialize input and output amounts based on initial info
-        bool exactIn = amountSpecified > 0;
-        inputAmount = exactIn ? uint256(amountSpecified) : 0;
-        outputAmount = exactIn ? 0 : uint256(-amountSpecified);
+        bool exactIn = amountSpecified < 0;
+        inputAmount = exactIn ? uint256(-amountSpecified) : 0;
+        outputAmount = exactIn ? 0 : uint256(amountSpecified);
 
         // handle the special case when we don't cross rounded ticks
         {
@@ -118,7 +118,7 @@ library BunniSwapMath {
             }
             (int24 roundedTick, int24 nextRoundedTick) = roundTick(input.currentTick, input.key.tickSpacing);
             (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-                (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+                (TickMath.getSqrtPriceAtTick(roundedTick), TickMath.getSqrtPriceAtTick(nextRoundedTick));
             if (
                 updatedRoundedTickLiquidity != 0
                     && (
@@ -153,7 +153,7 @@ library BunniSwapMath {
                     )
                     : inputAmount;
 
-                updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
+                updatedTick = TickMath.getTickAtSqrtPrice(updatedSqrtPriceX96);
 
                 // early return
                 return (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount);
@@ -199,7 +199,7 @@ library BunniSwapMath {
 
             if (success && swapLiquidity != 0) {
                 // use Uniswap math to compute updated sqrt price
-                uint160 startSqrtPriceX96 = TickMath.getSqrtRatioAtTick(updatedRoundedTick);
+                uint160 startSqrtPriceX96 = TickMath.getSqrtPriceAtTick(updatedRoundedTick);
                 updatedSqrtPriceX96 = SqrtPriceMath.getNextSqrtPriceFromInput(
                     startSqrtPriceX96,
                     swapLiquidity,
@@ -207,19 +207,19 @@ library BunniSwapMath {
                     exactIn == input.swapParams.zeroForOne
                 );
 
-                updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
+                updatedTick = TickMath.getTickAtSqrtPrice(updatedSqrtPriceX96);
             } else {
                 // liquidity is insufficient to handle all of the input/output tokens
                 (updatedTick, updatedSqrtPriceX96) = input.swapParams.zeroForOne
-                    ? (TickMath.MIN_TICK, TickMath.MIN_SQRT_RATIO)
-                    : (TickMath.MAX_TICK, TickMath.MAX_SQRT_RATIO);
+                    ? (TickMath.MIN_TICK, TickMath.MIN_SQRT_PRICE)
+                    : (TickMath.MAX_TICK, TickMath.MAX_SQRT_PRICE);
             }
 
             // bound sqrt price by limit
             updatedSqrtPriceX96 =
                 _boundSqrtPriceByLimit(updatedSqrtPriceX96, sqrtPriceLimitX96, input.swapParams.zeroForOne);
             if (updatedSqrtPriceX96 == sqrtPriceLimitX96) {
-                updatedTick = TickMath.getTickAtSqrtRatio(updatedSqrtPriceX96);
+                updatedTick = TickMath.getTickAtSqrtPrice(updatedSqrtPriceX96);
             }
         }
 
@@ -251,13 +251,13 @@ library BunniSwapMath {
                 currentActiveBalance0 < updatedActiveBalance0 ? 0 : currentActiveBalance0 - updatedActiveBalance0
             );
 
-        if (exactIn && inputAmount > uint256(amountSpecified)) {
+        if (exactIn && inputAmount > uint256(-amountSpecified)) {
             // exact input swap where the input amount exceeds the amount specified
             // if the delta is small enough, we simply do a 1-for-1 reduction in outputAmount
             // to ensure the swap succeeds
-            uint256 delta = inputAmount - uint256(amountSpecified);
+            uint256 delta = inputAmount - uint256(-amountSpecified);
             if (delta <= 10) {
-                (inputAmount, outputAmount) = (uint256(amountSpecified), outputAmount - delta);
+                (inputAmount, outputAmount) = (uint256(-amountSpecified), outputAmount - delta);
             }
         }
     }

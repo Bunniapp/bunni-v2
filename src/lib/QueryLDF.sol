@@ -55,7 +55,7 @@ function queryLDF(
 {
     (int24 roundedTick, int24 nextRoundedTick) = roundTick(tick, key.tickSpacing);
     (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-        (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+        (TickMath.getSqrtPriceAtTick(roundedTick), TickMath.getSqrtPriceAtTick(nextRoundedTick));
     uint256 density0RightOfRoundedTickX96;
     uint256 density1LeftOfRoundedTickX96;
     (

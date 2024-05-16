@@ -33,8 +33,8 @@ library LibUniformDistribution {
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = uint128(Q96 / length);
 
-        uint160 sqrtRatioTickLower = tickLower.getSqrtRatioAtTick();
-        uint160 sqrtRatioTickUpper = tickUpper.getSqrtRatioAtTick();
+        uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
+        uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
 
         // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
         if (roundedTick + tickSpacing >= tickUpper) {
@@ -45,7 +45,7 @@ library LibUniformDistribution {
                 SqrtPriceMath.getAmount0Delta(sqrtRatioTickLower, sqrtRatioTickUpper, liquidity, false);
         } else {
             cumulativeAmount0DensityX96 = SqrtPriceMath.getAmount0Delta(
-                (roundedTick + tickSpacing).getSqrtRatioAtTick(), sqrtRatioTickUpper, liquidity, false
+                (roundedTick + tickSpacing).getSqrtPriceAtTick(), sqrtRatioTickUpper, liquidity, false
             );
         }
 
@@ -58,7 +58,7 @@ library LibUniformDistribution {
                 SqrtPriceMath.getAmount1Delta(sqrtRatioTickLower, sqrtRatioTickUpper, liquidity, false);
         } else {
             cumulativeAmount1DensityX96 =
-                SqrtPriceMath.getAmount1Delta(sqrtRatioTickLower, roundedTick.getSqrtRatioAtTick(), liquidity, false);
+                SqrtPriceMath.getAmount1Delta(sqrtRatioTickLower, roundedTick.getSqrtPriceAtTick(), liquidity, false);
         }
     }
 
@@ -79,8 +79,8 @@ library LibUniformDistribution {
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = (totalLiquidity / length).toUint128();
-        uint160 sqrtRatioTickUpper = tickUpper.getSqrtRatioAtTick();
-        amount0 = SqrtPriceMath.getAmount0Delta(roundedTick.getSqrtRatioAtTick(), sqrtRatioTickUpper, liquidity, false);
+        uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
+        amount0 = SqrtPriceMath.getAmount0Delta(roundedTick.getSqrtPriceAtTick(), sqrtRatioTickUpper, liquidity, false);
     }
 
     /// @dev Computes the cumulative amount of token1 in the rounded ticks [tickLower, roundedTick].
@@ -100,9 +100,9 @@ library LibUniformDistribution {
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = (totalLiquidity / length).toUint128();
-        uint160 sqrtRatioTickLower = tickLower.getSqrtRatioAtTick();
+        uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
         amount1 = SqrtPriceMath.getAmount1Delta(
-            sqrtRatioTickLower, (roundedTick + tickSpacing).getSqrtRatioAtTick(), liquidity, false
+            sqrtRatioTickLower, (roundedTick + tickSpacing).getSqrtPriceAtTick(), liquidity, false
         );
     }
 
@@ -121,14 +121,14 @@ library LibUniformDistribution {
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = (totalLiquidity / length).toUint128();
 
-        uint160 sqrtRatioTickLower = tickLower.getSqrtRatioAtTick();
-        uint160 sqrtRatioTickUpper = tickUpper.getSqrtRatioAtTick();
+        uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
+        uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
         uint160 sqrtPrice =
             SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(sqrtRatioTickUpper, liquidity, cumulativeAmount0_, true);
         if (sqrtPrice < sqrtRatioTickLower) {
             return (false, 0);
         }
-        int24 tick = sqrtPrice.getTickAtSqrtRatio();
+        int24 tick = sqrtPrice.getTickAtSqrtPrice();
         if (roundUp) {
             tick += tickSpacing - 1;
         }
@@ -155,15 +155,15 @@ library LibUniformDistribution {
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = (totalLiquidity / length).toUint128();
 
-        uint160 sqrtRatioTickLower = tickLower.getSqrtRatioAtTick();
-        uint160 sqrtRatioTickUpper = tickUpper.getSqrtRatioAtTick();
+        uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
+        uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
         uint160 sqrtPrice = SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(
             sqrtRatioTickLower, liquidity, cumulativeAmount1_, true
         );
         if (sqrtPrice > sqrtRatioTickUpper) {
             return (false, 0);
         }
-        int24 tick = sqrtPrice.getTickAtSqrtRatio() - tickSpacing;
+        int24 tick = sqrtPrice.getTickAtSqrtPrice() - tickSpacing;
         if (roundUp) {
             tick += tickSpacing - 1;
         }
