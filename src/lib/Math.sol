@@ -41,6 +41,14 @@ function roundTickSingle(int24 currentTick, int24 tickSpacing) pure returns (int
     roundedTick = compressed * tickSpacing;
 }
 
+function getRoundedTickSqrtRatio(int24 currentTick, int24 tickSpacing)
+    pure
+    returns (uint160 roundedTickSqrtRatioX96, uint160 nextRoundedTickSqrtRatioX96)
+{
+    (int24 roundedTick, int24 nextRoundedTick) = roundTick(currentTick, tickSpacing);
+    return (TickMath.getSqrtPriceAtTick(roundedTick), TickMath.getSqrtPriceAtTick(nextRoundedTick));
+}
+
 function boundTick(int24 tick, int24 tickSpacing) pure returns (int24 boundedTick) {
     (int24 minTick, int24 maxTick) = (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
     return int24(FixedPointMathLib.clamp(tick, minTick, maxTick));
