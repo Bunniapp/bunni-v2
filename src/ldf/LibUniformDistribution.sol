@@ -206,7 +206,7 @@ library LibUniformDistribution {
         int24 tickSpacing,
         int24 tickLower,
         int24 tickUpper
-    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
+    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -256,9 +256,8 @@ library LibUniformDistribution {
             //    ▼
             //   rick - tickSpacing
             swapLiquidity = (
-                (liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, tickLower, tickUpper) * totalLiquidity)
-                    >> 96
-            ).toUint128();
+                liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, tickLower, tickUpper) * totalLiquidity
+            ) >> 96;
         } else {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -307,9 +306,7 @@ library LibUniformDistribution {
             //       │
             //       ▼
             //      rick
-            swapLiquidity = (
-                (liquidityDensityX96(roundedTick, tickSpacing, tickLower, tickUpper) * totalLiquidity) >> 96
-            ).toUint128();
+            swapLiquidity = (liquidityDensityX96(roundedTick, tickSpacing, tickLower, tickUpper) * totalLiquidity) >> 96;
         }
     }
 

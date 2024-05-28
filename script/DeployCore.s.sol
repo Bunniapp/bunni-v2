@@ -59,7 +59,8 @@ contract DeployCoreScript is CREATE3Script {
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(uint256(hookBaseSalt) + offset);
                 address hookDeployed = create3.getDeployed(deployer, hookSalt);
-                if (uint160((bytes20(hookDeployed) >> 146) << 146) == hookFlags && hookDeployed.code.length == 0) {
+                if (uint160(bytes20(hookDeployed)) & Hooks.ALL_HOOK_MASK == hookFlags && hookDeployed.code.length == 0)
+                {
                     break;
                 }
             }

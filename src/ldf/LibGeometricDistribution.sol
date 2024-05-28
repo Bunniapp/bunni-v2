@@ -494,7 +494,7 @@ library LibGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96
-    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
+    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -544,11 +544,8 @@ library LibGeometricDistribution {
             //    ▼
             //   rick - tickSpacing
             swapLiquidity = (
-                (
-                    liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96)
-                        * totalLiquidity
-                ) >> 96
-            ).toUint128();
+                liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96) * totalLiquidity
+            ) >> 96;
         } else {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -597,9 +594,8 @@ library LibGeometricDistribution {
             //       │
             //       ▼
             //      rick
-            swapLiquidity = (
-                (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96
-            ).toUint128();
+            swapLiquidity =
+                (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96;
         }
     }
 

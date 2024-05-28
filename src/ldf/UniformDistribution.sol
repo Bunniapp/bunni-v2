@@ -55,7 +55,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         external
         pure
         override
-        returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity)
+        returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         (int24 tickLower, int24 tickUpper) = LibUniformDistribution.decodeParams(ldfParams);
 

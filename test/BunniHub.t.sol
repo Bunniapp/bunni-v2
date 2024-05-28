@@ -201,7 +201,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(offset);
                 address hookDeployed = computeAddress(address(this), hookSalt, hookCreationCode);
-                if (uint160((bytes20(hookDeployed) >> 146) << 146) == HOOK_FLAGS && hookDeployed.code.length == 0) {
+                if (uint160(bytes20(hookDeployed)) & Hooks.ALL_HOOK_MASK == HOOK_FLAGS && hookDeployed.code.length == 0)
+                {
                     break;
                 }
             }

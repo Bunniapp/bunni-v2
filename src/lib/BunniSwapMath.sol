@@ -5,7 +5,6 @@ import {console2} from "forge-std/console2.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -13,6 +12,7 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import "./Math.sol";
 import "../base/Constants.sol";
 import {queryLDF} from "./QueryLDF.sol";
+import {SqrtPriceMath} from "./SqrtPriceMath.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
@@ -182,7 +182,7 @@ library BunniSwapMath {
                     : currentActiveBalance0 - (outputAmount = FixedPointMathLib.min(outputAmount, currentActiveBalance0));
             }
 
-            (bool success, int24 updatedRoundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) = input
+            (bool success, int24 updatedRoundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) = input
                 .liquidityDensityFunction
                 .computeSwap(
                 input.key,

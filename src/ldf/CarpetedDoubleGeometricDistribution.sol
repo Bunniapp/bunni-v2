@@ -64,7 +64,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         external
         pure
         override
-        returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity)
+        returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
             LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
