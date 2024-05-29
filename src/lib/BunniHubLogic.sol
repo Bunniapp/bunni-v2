@@ -441,7 +441,7 @@ library BunniHubLogic {
         key = PoolKey({
             currency0: params.currency0,
             currency1: params.currency1,
-            fee: uint24(0x800000) + nonce_, // top nibble is 1100 to enable dynamic fee & hook swap fee, bottom 20 bits are the nonce
+            fee: nonce_,
             tickSpacing: params.tickSpacing,
             hooks: IHooks(address(params.hooks))
         });

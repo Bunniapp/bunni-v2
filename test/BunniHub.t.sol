@@ -888,6 +888,16 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         );
     }
 
+    function test_deployMultiplePoolsInSameSubspace() external {
+        for (uint256 i; i < 10; i++) {
+            Currency currency0 = CurrencyLibrary.NATIVE;
+            Currency currency1 = Currency.wrap(address(token0));
+            (, PoolKey memory key) =
+                _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+            assertEq(key.fee, i, "nonce not increasing");
+        }
+    }
+
     function test_hookHasInsufficientTokens() external {
         MockLDF ldf_ = new MockLDF();
 
