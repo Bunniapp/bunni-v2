@@ -105,9 +105,7 @@ library BunniSwapMath {
         // handle the special case when we don't cross rounded ticks
         {
             // compute updated current tick liquidity
-            // totalLiquidity could exceed uint128 so .toUint128() is used
-            uint128 updatedRoundedTickLiquidity =
-                ((input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96).toUint128();
+            uint256 updatedRoundedTickLiquidity = (input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96;
 
             // compute the resulting sqrt price assuming no rounded tick is crossed
             uint160 naiveSwapNextSqrtPriceX96;
@@ -240,6 +238,11 @@ library BunniSwapMath {
             totalDensity0X96.fullMulDivUp(input.totalLiquidity, Q96),
             totalDensity1X96.fullMulDivUp(input.totalLiquidity, Q96)
         );
+
+        console2.log("currentActiveBalance0: %d", currentActiveBalance0);
+        console2.log("currentActiveBalance1: %d", currentActiveBalance1);
+        console2.log("updatedActiveBalance0: %d", updatedActiveBalance0);
+        console2.log("updatedActiveBalance1: %d", updatedActiveBalance1);
 
         (inputAmount, outputAmount) = zeroForOne
             ? (

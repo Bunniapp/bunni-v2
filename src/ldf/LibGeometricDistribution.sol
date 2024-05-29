@@ -343,6 +343,12 @@ library LibGeometricDistribution {
         if (roundedTick < minTick || roundedTick > minTick + length * tickSpacing) {
             return (false, 0);
         }
+
+        // ensure that roundedTick is not (minTick + length * tickSpacing) when cumulativeAmount0_ is non-zero and rounding down
+        // this can happen if the corresponding cumulative density is too small
+        if (!roundUp && roundedTick == minTick + length * tickSpacing && cumulativeAmount0_ != 0) {
+            return (true, minTick + (length - 1) * tickSpacing);
+        }
     }
 
     /// @dev Given a cumulativeAmount1, computes the rounded tick whose cumulativeAmount1 is closest to the input. Range is [tickLower - tickSpacing, tickUpper - tickSpacing].
@@ -407,6 +413,12 @@ library LibGeometricDistribution {
         // ensure roundedTick is within the valid range
         if (roundedTick < minTick - tickSpacing || roundedTick >= minTick + length * tickSpacing) {
             return (false, 0);
+        }
+
+        // ensure that roundedTick is not (minTick - tickSpacing) when cumulativeAmount1_ is non-zero and rounding up
+        // this can happen if the corresponding cumulative density is too small
+        if (roundUp && roundedTick == minTick - tickSpacing && cumulativeAmount1_ != 0) {
+            return (true, minTick);
         }
     }
 
