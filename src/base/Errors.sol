@@ -16,6 +16,7 @@ error BunniHub__InvalidHookParams();
 error BunniHub__TokenTaxIncorrect();
 error BunniHub__VaultFeeIncorrect();
 error BunniHub__VaultAssetMismatch();
+error BunniHub__MsgValueInsufficient();
 error BunniHub__BunniTokenNotInitialized();
 error BunniHub__InvalidRawTokenRatioBounds();
 
@@ -23,7 +24,6 @@ error BunniToken__NotBunniHub();
 
 error BunniHook__InvalidSwap();
 error BunniHook__Unauthorized();
-error BunniHook__NoAddLiquidity();
-error BunniHook__InvalidLockCallbackType();
+error BunniHook__InvalidHookFeeModifier();
 error BunniHook__PrehookPostConditionFailed();
 error BunniHook__InvalidRebalanceOrderHookArgs();

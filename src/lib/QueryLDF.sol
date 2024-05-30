@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.19;
 
+import "forge-std/console2.sol";
+
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
@@ -55,7 +57,7 @@ function queryLDF(
 {
     (int24 roundedTick, int24 nextRoundedTick) = roundTick(tick, key.tickSpacing);
     (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-        (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+        (TickMath.getSqrtPriceAtTick(roundedTick), TickMath.getSqrtPriceAtTick(nextRoundedTick));
     uint256 density0RightOfRoundedTickX96;
     uint256 density1LeftOfRoundedTickX96;
     (
@@ -75,6 +77,12 @@ function queryLDF(
         (balance0 == 0 || totalDensity0X96 == 0) ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
     uint256 totalLiquidityEstimate1 =
         (balance1 == 0 || totalDensity1X96 == 0) ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
+    console2.log("totalLiquidityEstimate0: %d", totalLiquidityEstimate0);
+    console2.log("totalLiquidityEstimate1: %d", totalLiquidityEstimate1);
+    console2.log("totalDensity0X96: %d", totalDensity0X96);
+    console2.log("totalDensity1X96: %d", totalDensity1X96);
+    console2.log("balance0: %d", balance0);
+    console2.log("balance1: %d", balance1);
     if (totalLiquidityEstimate0 == 0) {
         totalLiquidity = totalLiquidityEstimate1;
     } else if (totalLiquidityEstimate1 == 0) {

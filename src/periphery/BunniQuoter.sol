@@ -65,11 +65,11 @@ contract BunniQuoter is IBunniQuoter {
             sqrtPriceX96 == 0
                 || (
                     params.zeroForOne
-                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_RATIO)
+                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE)
                 )
                 || (
                     !params.zeroForOne
-                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_RATIO)
+                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE)
                 )
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
@@ -181,7 +181,7 @@ contract BunniQuoter is IBunniQuoter {
 
         // charge swap fee
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified > 0;
+        bool exactIn = params.amountSpecified < 0;
         bool useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (
@@ -206,12 +206,20 @@ contract BunniQuoter is IBunniQuoter {
         if (exactIn) {
             swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
             outputAmount -= swapFeeAmount;
+
+            // take in max(amountSpecified, inputAmount) such that if amountSpecified is greater we just happily accept it
+            int256 actualInputAmount = FixedPointMathLib.max(-params.amountSpecified, inputAmount.toInt256());
+            inputAmount = uint256(actualInputAmount);
         } else {
             // increase input amount
             // need to modify fee rate to maintain the same average price as exactIn case
             // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
             swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
             inputAmount += swapFeeAmount;
+
+            // give out min(amountSpecified, outputAmount) such that if amountSpecified is greater we only give outputAmount and let the tx revert
+            int256 actualOutputAmount = FixedPointMathLib.min(params.amountSpecified, outputAmount.toInt256());
+            outputAmount = uint256(actualOutputAmount);
         }
 
         // if we reached this point, the swap was successful

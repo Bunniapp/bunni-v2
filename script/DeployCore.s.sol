@@ -28,8 +28,7 @@ contract DeployCoreScript is CREATE3Script {
         address weth = vm.envAddress(string.concat("WETH_", block.chainid.toString()));
         address permit2 = vm.envAddress("PERMIT2");
         address owner = vm.envAddress(string.concat("OWNER_", block.chainid.toString()));
-        address hookFeesRecipient = vm.envAddress(string.concat("HOOK_FEES_RECIPIENT_", block.chainid.toString()));
-        uint96 hookFeesModifier = vm.envUint("HOOK_FEES_MODIFIER").toUint96();
+        uint88 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint88();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
         uint32 oracleMinInterval = vm.envUint("ORACLE_MIN_INTERVAL").toUint32();
 
@@ -55,11 +54,12 @@ contract DeployCoreScript is CREATE3Script {
         unchecked {
             bytes32 hookBaseSalt = getCreate3ContractSalt("BunniHook");
             uint256 hookFlags = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
-                + Hooks.ACCESS_LOCK_FLAG + Hooks.NO_OP_FLAG;
+                + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(uint256(hookBaseSalt) + offset);
                 address hookDeployed = create3.getDeployed(deployer, hookSalt);
-                if (uint160((bytes20(hookDeployed) >> 148) << 148) == hookFlags && hookDeployed.code.length == 0) {
+                if (uint160(bytes20(hookDeployed)) & Hooks.ALL_HOOK_MASK == hookFlags && hookDeployed.code.length == 0)
+                {
                     break;
                 }
             }
@@ -70,17 +70,7 @@ contract DeployCoreScript is CREATE3Script {
                     hookSalt,
                     bytes.concat(
                         type(BunniHook).creationCode,
-                        abi.encode(
-                            poolManager,
-                            hub,
-                            floodPlain,
-                            weth,
-                            zone,
-                            owner,
-                            hookFeesRecipient,
-                            hookFeesModifier,
-                            oracleMinInterval
-                        )
+                        abi.encode(poolManager, hub, floodPlain, weth, zone, owner, hookFeeModifier, oracleMinInterval)
                     )
                 )
             )

@@ -100,10 +100,9 @@ library BunniHubLogic {
             address(state.vault1) != address(0) ? amount1 - reserveAmount1 : amount1
         );
         (rawAmount0, rawAmount1) = abi.decode(
-            env.poolManager.lock(
-                address(this),
+            env.poolManager.unlock(
                 abi.encode(
-                    BunniHub.LockCallbackType.DEPOSIT,
+                    BunniHub.UnlockCallbackType.DEPOSIT,
                     abi.encode(
                         BunniHub.DepositCallbackInputData({
                             user: msgSender,
@@ -359,10 +358,10 @@ library BunniHubLogic {
         }
 
         // withdraw raw tokens
-        env.poolManager.lock(
-            address(this),
+        env.poolManager.unlock(
             abi.encode(
-                BunniHub.LockCallbackType.WITHDRAW, abi.encode(params.recipient, params.poolKey, rawAmount0, rawAmount1)
+                BunniHub.UnlockCallbackType.WITHDRAW,
+                abi.encode(params.recipient, params.poolKey, rawAmount0, rawAmount1)
             )
         );
 
@@ -442,9 +441,9 @@ library BunniHubLogic {
         key = PoolKey({
             currency0: params.currency0,
             currency1: params.currency1,
-            fee: uint24(0xC00000) + nonce_, // top nibble is 1100 to enable dynamic fee & hook swap fee, bottom 20 bits are the nonce
+            fee: nonce_,
             tickSpacing: params.tickSpacing,
-            hooks: params.hooks
+            hooks: IHooks(address(params.hooks))
         });
         PoolId poolId = key.toId();
         s.poolIdOfBunniToken[token] = poolId;
@@ -475,17 +474,7 @@ library BunniHubLogic {
         /// -----------------------------------------------------------------------
 
         // initialize Uniswap v4 pool
-        env.poolManager.lock(
-            address(this),
-            abi.encode(
-                BunniHub.LockCallbackType.INITIALIZE_POOL,
-                abi.encode(
-                    BunniHub.InitializePoolCallbackInputData(
-                        key, params.sqrtPriceX96, params.twapSecondsAgo, params.hookParams
-                    )
-                )
-            )
-        );
+        env.poolManager.initialize(key, params.sqrtPriceX96, abi.encode(params.twapSecondsAgo, params.hookParams));
 
         emit IBunniHub.NewBunni(token, poolId);
     }

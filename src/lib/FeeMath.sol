@@ -44,7 +44,7 @@ function computeDynamicSwapFee(
     // special case for fixed fee pools
     if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));
 
-    uint256 ratio = uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtRatioAtTick(arithmeticMeanTick));
+    uint256 ratio = uint256(postSwapSqrtPriceX96).mulDiv(SWAP_FEE_BASE, TickMath.getSqrtPriceAtTick(arithmeticMeanTick));
     if (ratio > MAX_SWAP_FEE_RATIO) ratio = MAX_SWAP_FEE_RATIO;
     ratio = ratio.mulDiv(ratio, SWAP_FEE_BASE); // square the sqrtPrice ratio to get the price ratio
     uint256 delta = dist(ratio, SWAP_FEE_BASE);

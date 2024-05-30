@@ -52,7 +52,7 @@ contract BunniLens {
 
         (int24 roundedTick, int24 nextRoundedTick) = roundTick(updatedTick, key.tickSpacing);
         (uint160 roundedTickSqrtRatio, uint160 nextRoundedTickSqrtRatio) =
-            (TickMath.getSqrtRatioAtTick(roundedTick), TickMath.getSqrtRatioAtTick(nextRoundedTick));
+            (TickMath.getSqrtPriceAtTick(roundedTick), TickMath.getSqrtPriceAtTick(nextRoundedTick));
         (
             uint256 liquidityDensityOfRoundedTickX96,
             uint256 density0RightOfRoundedTickX96,

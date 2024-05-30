@@ -312,7 +312,7 @@ library LibDoubleGeometricDistribution {
         uint256 alpha1X96,
         uint256 weight0,
         uint256 weight1
-    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
+    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -383,20 +383,18 @@ library LibDoubleGeometricDistribution {
             //    ▼
             //   rick - tickSpacing
             swapLiquidity = (
-                (
-                    liquidityDensityX96(
-                        roundedTick - tickSpacing,
-                        tickSpacing,
-                        minTick,
-                        length0,
-                        length1,
-                        alpha0X96,
-                        alpha1X96,
-                        weight0,
-                        weight1
-                    ) * totalLiquidity
-                ) >> 96
-            ).toUint128();
+                liquidityDensityX96(
+                    roundedTick - tickSpacing,
+                    tickSpacing,
+                    minTick,
+                    length0,
+                    length1,
+                    alpha0X96,
+                    alpha1X96,
+                    weight0,
+                    weight1
+                ) * totalLiquidity
+            ) >> 96;
         } else {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -466,12 +464,10 @@ library LibDoubleGeometricDistribution {
             //       ▼
             //      rick
             swapLiquidity = (
-                (
-                    liquidityDensityX96(
-                        roundedTick, tickSpacing, minTick, length0, length1, alpha0X96, alpha1X96, weight0, weight1
-                    ) * totalLiquidity
-                ) >> 96
-            ).toUint128();
+                liquidityDensityX96(
+                    roundedTick, tickSpacing, minTick, length0, length1, alpha0X96, alpha1X96, weight0, weight1
+                ) * totalLiquidity
+            ) >> 96;
         }
     }
 

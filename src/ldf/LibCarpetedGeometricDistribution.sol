@@ -299,7 +299,7 @@ library LibCarpetedGeometricDistribution {
         int24 length,
         uint256 alphaX96,
         uint256 weightMain
-    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint128 swapLiquidity) {
+    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -350,11 +350,9 @@ library LibCarpetedGeometricDistribution {
             //    ▼
             //   rick - tickSpacing
             swapLiquidity = (
-                (
-                    liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96, weightMain)
-                        * totalLiquidity
-                ) >> 96
-            ).toUint128();
+                liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96, weightMain)
+                    * totalLiquidity
+            ) >> 96;
         } else {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -405,9 +403,8 @@ library LibCarpetedGeometricDistribution {
             //       ▼
             //      rick
             swapLiquidity = (
-                (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96, weightMain) * totalLiquidity)
-                    >> 96
-            ).toUint128();
+                liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96, weightMain) * totalLiquidity
+            ) >> 96;
         }
     }
 

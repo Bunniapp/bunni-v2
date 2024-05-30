@@ -17,7 +17,7 @@ contract MathTest is Test {
     uint256 internal constant EXPQ96_MAX_REL_ERR = 1;
     uint256 internal constant LNQ96_MAX_REL_ERR = 1e5;
 
-    function testExpQ96() public {
+    function testExpQ96() public pure {
         assertApproxEqRel(ExpMath.expQ96(-5272010636899917441709581228289), 1, EXPQ96_MAX_REL_ERR);
         assertApproxEqRel(ExpMath.expQ96(-5272010636899917441709581228290), 0, EXPQ96_MAX_REL_ERR);
 
@@ -57,7 +57,7 @@ contract MathTest is Test {
         // Relative error: 3.128803544297531e-22
     }
 
-    function testLnQ96() public {
+    function testLnQ96() public pure {
         assertApproxEqAbs(ExpMath.lnQ96(int256(Q96)), 0, Q96 / (WAD / LNQ96_MAX_REL_ERR));
 
         // Actual: 999999999999999999.8674576…
@@ -69,7 +69,7 @@ contract MathTest is Test {
         );
     }
 
-    function testLnQ96Small() public {
+    function testLnQ96Small() public pure {
         // Actual: -41446531673892822312.3238461…
         assertApproxEqRel(ExpMath.lnQ96(_toX96(1)), -3283732547111784853622338894909, LNQ96_MAX_REL_ERR);
 
@@ -83,7 +83,7 @@ contract MathTest is Test {
         assertApproxEqRel(ExpMath.lnQ96(_toX96(1e9)), -1641866273555892426811169447454, LNQ96_MAX_REL_ERR);
     }
 
-    function testLnQ96Big() public {
+    function testLnQ96Big() public pure {
         // Actual: 135305999368893231589.070344787…
         assertApproxEqRel(ExpMath.lnQ96(2 ** 255 - 1), 8731767617365488262831493909354, LNQ96_MAX_REL_ERR);
 
@@ -94,14 +94,14 @@ contract MathTest is Test {
         assertApproxEqRel(ExpMath.lnQ96(2 ** 128), 1757336878966639147236527076096, LNQ96_MAX_REL_ERR);
     }
 
-    function test_getSqrtRatioAtTickWad(int24 tick) public {
+    function test_getSqrtPriceAtTickWad(int24 tick) public pure {
         tick = int24(bound(tick, TickMath.MIN_TICK, TickMath.MAX_TICK));
 
         uint256 maxError = 1;
 
         int256 tickWad = int256(tick) * int256(WAD);
-        uint160 sqrtRatioX96 = tickWad.getSqrtRatioAtTickWad();
-        uint160 expectedSqrtRatioX96 = TickMath.getSqrtRatioAtTick(tick);
+        uint160 sqrtRatioX96 = tickWad.getSqrtPriceAtTickWad();
+        uint160 expectedSqrtRatioX96 = TickMath.getSqrtPriceAtTick(tick);
         if (int256(uint256(sqrtRatioX96)).dist(int256(uint256(expectedSqrtRatioX96))) > 1) {
             // we're OK with errors that are 1 wei, regardless of how big the relative error is
             assertApproxEqRel(sqrtRatioX96, expectedSqrtRatioX96, maxError, "sqrt ratio rel error too large");

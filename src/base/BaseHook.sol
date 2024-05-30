@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 
 import "../interfaces/IBaseHook.sol";
 
@@ -20,76 +21,15 @@ abstract contract BaseHook is IBaseHook {
         _;
     }
 
-    /// @dev Only this address may call this function
-    modifier selfOnly() {
-        if (msg.sender != address(this)) revert NotSelf();
-        _;
-    }
-
-    /// @dev Only pools with hooks set to this contract may call this function
-    modifier onlyValidPools(IHooks hooks) {
-        if (hooks != this) revert InvalidPool();
-        _;
-    }
-
-    function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external virtual returns (bytes4) {}
-
     function afterInitialize(address, PoolKey calldata, uint160, int24, bytes calldata)
         external
         virtual
-        returns (bytes4)
-    {}
-
-    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
-        external
-        virtual
-        returns (bytes4)
-    {}
-
-    function afterAddLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) external virtual returns (bytes4) {}
-
-    function beforeRemoveLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external virtual returns (bytes4) {}
-
-    function afterRemoveLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) external virtual returns (bytes4) {}
+        override
+        returns (bytes4);
 
     function beforeSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
         external
         virtual
-        returns (bytes4)
-    {}
-
-    function afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
-        external
-        virtual
-        returns (bytes4)
-    {}
-
-    function beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
-        external
-        virtual
-        returns (bytes4)
-    {}
-
-    function afterDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
-        external
-        virtual
-        returns (bytes4)
-    {}
+        override
+        returns (bytes4, BeforeSwapDelta);
 }

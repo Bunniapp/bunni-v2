@@ -151,7 +151,7 @@ library ExpMath {
         }
     }
 
-    function getSqrtRatioAtTickWad(int256 tickWad) internal pure returns (uint160 sqrtRatioX96) {
+    function getSqrtPriceAtTickWad(int256 tickWad) internal pure returns (uint160 sqrtRatioX96) {
         sqrtRatioX96 = uint256((HALF_LN_TICK_BASE_Q96 * tickWad / int256(WAD)).expQ96()).toUint160();
     }
 }

@@ -8,7 +8,7 @@ import "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {ILockCallback} from "@uniswap/v4-core/src/interfaces/callback/ILockCallback.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {WETH} from "solady/tokens/WETH.sol";
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
@@ -37,12 +37,12 @@ import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
 contract BunniHub is IBunniHub, Permit2Enabled {
-    using SSTORE2 for address;
     using SafeCastLib for *;
+    using SSTORE2 for address;
+    using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
-    using FixedPointMathLib for *;
     using AdditionalCurrencyLibrary for Currency;
 
     WETH internal immutable weth;
@@ -151,133 +151,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
 
-        poolManager.lock(
-            address(this),
-            abi.encode(
-                LockCallbackType.SWAP,
-                abi.encode(
-                    HookHandleSwapCallbackInputData({
-                        key: key,
-                        zeroForOne: zeroForOne,
-                        inputAmount: inputAmount,
-                        outputAmount: outputAmount
-                    })
-                )
-            )
-        );
-    }
-
-    receive() external payable {}
-
-    /// -----------------------------------------------------------------------
-    /// View functions
-    /// -----------------------------------------------------------------------
-
-    /// @inheritdoc IBunniHub
-    function poolState(PoolId poolId) external view returns (PoolState memory) {
-        return getPoolState(s, poolId);
-    }
-
-    /// @inheritdoc IBunniHub
-    function poolParams(PoolId poolId) external view returns (PoolState memory) {
-        return getPoolParams(s.poolState[poolId].immutableParamsPointer);
-    }
-
-    /// @inheritdoc IBunniHub
-    function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken) {
-        return _getBunniTokenOfPool(poolId);
-    }
-
-    /// @inheritdoc IBunniHub
-    function hookParams(PoolId poolId) external view returns (bytes32) {
-        return _getHookParams(poolId);
-    }
-
-    /// @inheritdoc IBunniHub
-    function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1) {
-        PoolState memory state = getPoolState(s, poolId);
-        balance0 = state.rawBalance0 + getReservesInUnderlying(state.reserve0, state.vault0);
-        balance1 = state.rawBalance1 + getReservesInUnderlying(state.reserve1, state.vault1);
-    }
-
-    /// @inheritdoc IBunniHub
-    function nonce(bytes32 bunniSubspace) external view override returns (uint24) {
-        return s.nonce[bunniSubspace];
-    }
-
-    /// @inheritdoc IBunniHub
-    function poolIdOfBunniToken(IBunniToken bunniToken) external view override returns (PoolId) {
-        return s.poolIdOfBunniToken[bunniToken];
-    }
-
-    /// -----------------------------------------------------------------------
-    /// Uniswap callback
-    /// -----------------------------------------------------------------------
-
-    enum LockCallbackType {
-        SWAP,
-        DEPOSIT,
-        WITHDRAW,
-        INITIALIZE_POOL
-    }
-
-    struct HookHandleSwapCallbackInputData {
-        PoolKey key;
-        bool zeroForOne;
-        uint256 inputAmount;
-        uint256 outputAmount;
-    }
-
-    struct DepositCallbackInputData {
-        address user;
-        PoolKey poolKey;
-        uint256 msgValue;
-        uint256 rawAmount0;
-        uint256 rawAmount1;
-        uint256 tax0;
-        uint256 tax1;
-    }
-
-    struct WithdrawCallbackInputData {
-        address user;
-        PoolKey poolKey;
-        uint256 rawAmount0;
-        uint256 rawAmount1;
-    }
-
-    struct InitializePoolCallbackInputData {
-        PoolKey poolKey;
-        uint160 sqrtPriceX96;
-        uint24 twapSecondsAgo;
-        bytes32 hookParams;
-    }
-
-    /// @inheritdoc ILockCallback
-    function lockAcquired(address lockCaller, bytes calldata data) external override returns (bytes memory) {
-        // verify sender
-        if (msg.sender != address(poolManager) || lockCaller != address(this)) revert BunniHub__Unauthorized();
-
-        // decode input
-        (LockCallbackType t, bytes memory callbackData) = abi.decode(data, (LockCallbackType, bytes));
-
-        // redirect to respective callback
-        if (t == LockCallbackType.SWAP) {
-            _hookHandleSwapLockCallback(abi.decode(callbackData, (HookHandleSwapCallbackInputData)));
-        } else if (t == LockCallbackType.DEPOSIT) {
-            return _depositLockCallback(abi.decode(callbackData, (DepositCallbackInputData)));
-        } else if (t == LockCallbackType.WITHDRAW) {
-            _withdrawLockCallback(abi.decode(callbackData, (WithdrawCallbackInputData)));
-        } else if (t == LockCallbackType.INITIALIZE_POOL) {
-            _initializePoolLockCallback(abi.decode(callbackData, (InitializePoolCallbackInputData)));
-        }
-        // fallback
-        return bytes("");
-    }
-
-    function _hookHandleSwapLockCallback(HookHandleSwapCallbackInputData memory data) internal {
-        (PoolKey memory key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount) =
-            (data.key, data.zeroForOne, data.inputAmount, data.outputAmount);
-
         // load state
         PoolId poolId = key.toId();
         PoolState memory state = getPoolState(s, poolId);
@@ -346,7 +219,94 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
     }
 
-    function _depositLockCallback(DepositCallbackInputData memory data) internal returns (bytes memory) {
+    receive() external payable {}
+
+    /// -----------------------------------------------------------------------
+    /// View functions
+    /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IBunniHub
+    function poolState(PoolId poolId) external view returns (PoolState memory) {
+        return getPoolState(s, poolId);
+    }
+
+    /// @inheritdoc IBunniHub
+    function poolParams(PoolId poolId) external view returns (PoolState memory) {
+        return getPoolParams(s.poolState[poolId].immutableParamsPointer);
+    }
+
+    /// @inheritdoc IBunniHub
+    function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken) {
+        return _getBunniTokenOfPool(poolId);
+    }
+
+    /// @inheritdoc IBunniHub
+    function hookParams(PoolId poolId) external view returns (bytes32) {
+        return _getHookParams(poolId);
+    }
+
+    /// @inheritdoc IBunniHub
+    function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1) {
+        PoolState memory state = getPoolState(s, poolId);
+        balance0 = state.rawBalance0 + getReservesInUnderlying(state.reserve0, state.vault0);
+        balance1 = state.rawBalance1 + getReservesInUnderlying(state.reserve1, state.vault1);
+    }
+
+    /// @inheritdoc IBunniHub
+    function nonce(bytes32 bunniSubspace) external view override returns (uint24) {
+        return s.nonce[bunniSubspace];
+    }
+
+    /// @inheritdoc IBunniHub
+    function poolIdOfBunniToken(IBunniToken bunniToken) external view override returns (PoolId) {
+        return s.poolIdOfBunniToken[bunniToken];
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Uniswap callback
+    /// -----------------------------------------------------------------------
+
+    enum UnlockCallbackType {
+        DEPOSIT,
+        WITHDRAW
+    }
+
+    struct DepositCallbackInputData {
+        address user;
+        PoolKey poolKey;
+        uint256 msgValue;
+        uint256 rawAmount0;
+        uint256 rawAmount1;
+        uint256 tax0;
+        uint256 tax1;
+    }
+
+    struct WithdrawCallbackInputData {
+        address user;
+        PoolKey poolKey;
+        uint256 rawAmount0;
+        uint256 rawAmount1;
+    }
+
+    /// @inheritdoc IUnlockCallback
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        // verify sender
+        if (msg.sender != address(poolManager)) revert BunniHub__Unauthorized();
+
+        // decode input
+        (UnlockCallbackType t, bytes memory callbackData) = abi.decode(data, (UnlockCallbackType, bytes));
+
+        // redirect to respective callback
+        if (t == UnlockCallbackType.DEPOSIT) {
+            return _depositUnlockCallback(abi.decode(callbackData, (DepositCallbackInputData)));
+        } else if (t == UnlockCallbackType.WITHDRAW) {
+            _withdrawUnlockCallback(abi.decode(callbackData, (WithdrawCallbackInputData)));
+        }
+        // fallback
+        return bytes("");
+    }
+
+    function _depositUnlockCallback(DepositCallbackInputData memory data) internal returns (bytes memory) {
         (address msgSender, PoolKey memory key, uint256 msgValue, uint256 rawAmount0, uint256 rawAmount1) =
             (data.user, data.poolKey, data.msgValue, data.rawAmount0, data.rawAmount1);
 
@@ -354,10 +314,18 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         uint256 paid0;
         uint256 paid1;
         if (rawAmount0 != 0) {
-            key.currency0.safeTransferFromPermit2(
-                msgSender, address(poolManager), rawAmount0.divWadUp(WAD - data.tax0), permit2, msgValue
-            );
-            paid0 = poolManager.settle(key.currency0);
+            poolManager.sync(key.currency0);
+
+            // transfer tokens to poolManager
+            if (key.currency0.isNative()) {
+                if (msgValue < rawAmount0) revert BunniHub__MsgValueInsufficient();
+                paid0 = poolManager.settle{value: rawAmount0}(key.currency0);
+            } else {
+                key.currency0.safeTransferFromPermit2(
+                    permit2, msgSender, address(poolManager), rawAmount0.divWadUp(WAD - data.tax0)
+                );
+                paid0 = poolManager.settle(key.currency0);
+            }
 
             // ensure tax value was correct
             if (percentDelta(paid0, rawAmount0) > MAX_TAX_ERROR) {
@@ -368,10 +336,18 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             s.poolState[poolId].rawBalance0 += paid0;
         }
         if (rawAmount1 != 0) {
-            key.currency1.safeTransferFromPermit2(
-                msgSender, address(poolManager), rawAmount1.divWadUp(WAD - data.tax1), permit2, msgValue
-            );
-            paid1 = poolManager.settle(key.currency1);
+            poolManager.sync(key.currency1);
+
+            // transfer tokens to poolManager
+            if (key.currency1.isNative()) {
+                if (msgValue < rawAmount1) revert BunniHub__MsgValueInsufficient();
+                paid1 = poolManager.settle{value: rawAmount1}(key.currency1);
+            } else {
+                key.currency1.safeTransferFromPermit2(
+                    permit2, msgSender, address(poolManager), rawAmount1.divWadUp(WAD - data.tax1)
+                );
+                paid1 = poolManager.settle(key.currency1);
+            }
 
             // ensure tax value was correct
             if (percentDelta(paid1, rawAmount1) > MAX_TAX_ERROR) {
@@ -384,7 +360,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         return abi.encode(paid0, paid1);
     }
 
-    function _withdrawLockCallback(WithdrawCallbackInputData memory data) internal {
+    function _withdrawUnlockCallback(WithdrawCallbackInputData memory data) internal {
         (address recipient, PoolKey memory key, uint256 rawAmount0, uint256 rawAmount1) =
             (data.user, data.poolKey, data.rawAmount0, data.rawAmount1);
 
@@ -401,10 +377,6 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         }
     }
 
-    function _initializePoolLockCallback(InitializePoolCallbackInputData memory data) internal {
-        poolManager.initialize(data.poolKey, data.sqrtPriceX96, abi.encode(data.twapSecondsAgo, data.hookParams));
-    }
-
     /// -----------------------------------------------------------------------
     /// Internal utilities
     /// -----------------------------------------------------------------------
@@ -419,9 +391,9 @@ contract BunniHub is IBunniHub, Permit2Enabled {
         internal
         returns (int256 reserveChange, int256 actualRawBalanceChange)
     {
+        uint256 poolManagerReserve = poolManager.sync(currency);
         uint256 absAmount = FixedPointMathLib.abs(rawBalanceChange);
         if (rawBalanceChange < 0) {
-            uint256 poolManagerReserve = poolManager.reservesOf(currency);
             uint256 maxDepositAmount = vault.maxDeposit(address(this));
             // if poolManager doesn't have enough tokens or we're trying to deposit more than the vault accepts
             // then we only deposit what we can
@@ -452,6 +424,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
             // than requested
             actualRawBalanceChange = -absAmount.toInt256();
         } else if (rawBalanceChange > 0) {
+            uint256 settleMsgValue;
             if (currency.isNative()) {
                 // withdraw WETH from vault to address(this)
                 reserveChange = -vault.withdraw(absAmount, address(this), address(this)).toInt256();
@@ -460,7 +433,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
                 weth.withdraw(absAmount);
 
                 // transfer ETH to poolManager
-                address(poolManager).safeTransferETH(absAmount);
+                settleMsgValue = absAmount;
             } else {
                 // normal ERC20
                 // withdraw tokens to poolManager
@@ -469,7 +442,7 @@ contract BunniHub is IBunniHub, Permit2Enabled {
 
             // settle with poolManager
             // check actual settled amount to prevent malicious vaults from giving us less than we asked for
-            uint256 settleAmount = poolManager.settle(currency);
+            uint256 settleAmount = poolManager.settle{value: settleMsgValue}(currency);
             actualRawBalanceChange = settleAmount.toInt256();
 
             // mint claim tokens to this

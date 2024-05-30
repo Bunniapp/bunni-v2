@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.19;
 
+import "@uniswap/v4-core/src/types/PoolId.sol";
 import "@uniswap/v4-core/src/types/Currency.sol";
+import "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
@@ -55,8 +56,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
 
-    /// @inheritdoc IBunniHook
-    uint32 public immutable oracleMinInterval;
+    /// @notice The minimum interval between the TWAP oracle observations.
+    uint32 internal immutable oracleMinInterval;
 
     /// -----------------------------------------------------------------------
     /// Storage variables
@@ -66,20 +67,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// mappings to BunniHookLogic easier & cheaper.
     HookStorage internal s;
 
-    /// @inheritdoc IBunniHook
-    mapping(PoolId => BoolOverride) public amAmmEnabledOverride;
+    /// @notice The poolwise amAmmEnabled override. Top precedence.
+    mapping(PoolId => BoolOverride) internal amAmmEnabledOverride;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
-    uint96 internal _hookFeesModifier;
+    uint88 internal hookFeeModifier;
 
-    /// @inheritdoc IBunniHook
-    IZone public floodZone;
+    /// @notice The FloodZone contract used in rebalance orders.
+    IZone internal floodZone;
 
-    /// @inheritdoc IBunniHook
-    BoolOverride public globalAmAmmEnabledOverride;
-
-    /// @notice The recipient of collected hook fees
-    address internal _hookFeesRecipient;
+    /// @notice Enables/disables am-AMM globally. Takes precedence over amAmmEnabled in hookParams, overriden by amAmmEnabledOverride.
+    BoolOverride internal globalAmAmmEnabledOverride;
 
     /// -----------------------------------------------------------------------
     /// Constructor
@@ -92,22 +90,22 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         WETH weth_,
         IZone floodZone_,
         address owner_,
-        address hookFeesRecipient_,
-        uint96 hookFeesModifier_,
+        uint88 hookFeeModifier_,
         uint32 oracleMinInterval_
     ) BaseHook(poolManager_) {
+        if (hookFeeModifier_ > 1e18) revert BunniHook__InvalidHookFeeModifier();
+
         hub = hub_;
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
         oracleMinInterval = oracleMinInterval_;
         floodZone = floodZone_;
-        _hookFeesModifier = hookFeesModifier_;
-        _hookFeesRecipient = hookFeesRecipient_;
+        hookFeeModifier = hookFeeModifier_;
         _initializeOwner(owner_);
         poolManager_.setOperator(address(hub_), true);
 
-        emit SetHookFeesParams(hookFeesModifier_, hookFeesRecipient_);
+        emit SetHookFeeModifier(hookFeeModifier_);
     }
 
     /// -----------------------------------------------------------------------
@@ -153,41 +151,37 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Uniswap lock callback
     /// -----------------------------------------------------------------------
 
-    enum HookLockCallbackType {
-        BURN_AND_TAKE,
-        SETTLE_AND_MINT,
+    enum HookUnlockCallbackType {
+        REBALANCE_PREHOOK,
+        REBALANCE_POSTHOOK,
         CLAIM_FEES
     }
 
-    /// @inheritdoc ILockCallback
-    function lockAcquired(address lockCaller, bytes calldata data)
-        external
-        override
-        poolManagerOnly
-        returns (bytes memory)
-    {
+    /// @inheritdoc IUnlockCallback
+    function unlockCallback(bytes calldata data) external override poolManagerOnly returns (bytes memory) {
         // decode input
-        (HookLockCallbackType t, bytes memory callbackData) = abi.decode(data, (HookLockCallbackType, bytes));
+        (HookUnlockCallbackType t, bytes memory callbackData) = abi.decode(data, (HookUnlockCallbackType, bytes));
 
-        if (t == HookLockCallbackType.BURN_AND_TAKE) {
-            _burnAndTake(lockCaller, callbackData);
-        } else if (t == HookLockCallbackType.SETTLE_AND_MINT) {
-            _settleAndMint(lockCaller, callbackData);
-        } else if (t == HookLockCallbackType.CLAIM_FEES) {
-            _claimFees(lockCaller, callbackData);
-        } else {
-            revert BunniHook__InvalidLockCallbackType();
+        if (t == HookUnlockCallbackType.REBALANCE_PREHOOK) {
+            _rebalancePrehookCallback(callbackData);
+        } else if (t == HookUnlockCallbackType.REBALANCE_POSTHOOK) {
+            _rebalancePosthookCallback(callbackData);
+        } else if (t == HookUnlockCallbackType.CLAIM_FEES) {
+            _claimFees(callbackData);
         }
         return bytes("");
     }
 
-    /// @dev Burns PoolManager claim tokens and takes the underlying tokens from PoolManager.
+    /// @dev Calls hub.hookHandleSwap to pull the rebalance swap input tokens from BunniHub.
+    /// Then burns PoolManager claim tokens and takes the underlying tokens from PoolManager.
     /// Used while executing rebalance orders.
-    function _burnAndTake(address lockCaller, bytes memory callbackData) internal {
-        if (lockCaller != address(this)) revert BunniHook__Unauthorized();
-
+    function _rebalancePrehookCallback(bytes memory callbackData) internal {
         // decode data
-        (Currency currency, uint256 amount) = abi.decode(callbackData, (Currency, uint256));
+        (Currency currency, uint256 amount, PoolKey memory key, bool zeroForOne) =
+            abi.decode(callbackData, (Currency, uint256, PoolKey, bool));
+
+        // pull claim tokens from BunniHub
+        hub.hookHandleSwap({key: key, zeroForOne: zeroForOne, inputAmount: 0, outputAmount: amount});
 
         // burn and take
         poolManager.burn(address(this), currency.toId(), amount);
@@ -195,27 +189,27 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// @dev Settles tokens sent to PoolManager and mints the corresponding claim tokens.
+    /// Then calls hub.hookHandleSwap to update pool balances with rebalance swap output.
     /// Used while executing rebalance orders.
-    function _settleAndMint(address lockCaller, bytes memory callbackData) internal {
-        if (lockCaller != address(this)) revert BunniHook__Unauthorized();
-
+    function _rebalancePosthookCallback(bytes memory callbackData) internal {
         // decode data
-        Currency currency = abi.decode(callbackData, (Currency));
+        (Currency currency, uint256 amount, PoolKey memory key, bool zeroForOne) =
+            abi.decode(callbackData, (Currency, uint256, PoolKey, bool));
 
         // settle and mint
-        uint256 paid = poolManager.settle(currency);
+        uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}(currency);
         poolManager.mint(address(this), currency.toId(), paid);
+
+        // push claim tokens to BunniHub
+        hub.hookHandleSwap({key: key, zeroForOne: zeroForOne, inputAmount: paid, outputAmount: 0});
     }
 
     /// @dev Claims protocol fees earned and sends it to the recipient.
-    function _claimFees(address lockCaller, bytes memory callbackData) internal {
-        if (lockCaller != owner()) revert BunniHook__Unauthorized();
-
+    function _claimFees(bytes memory callbackData) internal {
         // decode data
-        Currency[] memory currencyList = abi.decode(callbackData, (Currency[]));
+        (Currency[] memory currencyList, address recipient) = abi.decode(callbackData, (Currency[], address));
 
         // claim protocol fees
-        address recipient = _hookFeesRecipient;
         for (uint256 i; i < currencyList.length; i++) {
             Currency currency = currencyList[i];
             // can claim balance - am-AMM accrued fees
@@ -243,17 +237,23 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHook
+    function claimProtocolFees(Currency[] calldata currencyList, address recipient) external override onlyOwner {
+        poolManager.unlock(abi.encode(HookUnlockCallbackType.CLAIM_FEES, abi.encode(currencyList, recipient)));
+    }
+
+    /// @inheritdoc IBunniHook
     function setZone(IZone zone) external onlyOwner {
         floodZone = zone;
         emit SetZone(zone);
     }
 
     /// @inheritdoc IBunniHook
-    function setHookFeesParams(uint96 newModifier, address newRecipient) external onlyOwner {
-        _hookFeesModifier = newModifier;
-        _hookFeesRecipient = newRecipient;
+    function setHookFeeModifier(uint88 newModifier) external onlyOwner {
+        if (newModifier > 1e18) revert BunniHook__InvalidHookFeeModifier();
 
-        emit SetHookFeesParams(newModifier, newRecipient);
+        hookFeeModifier = newModifier;
+
+        emit SetHookFeeModifier(newModifier);
     }
 
     /// @inheritdoc IBunniHook
@@ -271,11 +271,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
-
-    /// @inheritdoc IBunniHook
-    function getHookFeesParams() external view override returns (uint96 modifierVal, address recipient) {
-        return (_hookFeesModifier, _hookFeesRecipient);
-    }
 
     /// @inheritdoc IBunniHook
     function getObservation(PoolKey calldata key, uint256 index)
@@ -368,48 +363,36 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Hooks
     /// -----------------------------------------------------------------------
 
-    /// @inheritdoc IDynamicFeeManager
-    function getFee(address, /* sender */ PoolKey calldata /* key */ ) external pure override returns (uint24) {
-        // always return 0 since the swap fee is taken in the beforeSwap hook
-        return 0;
-    }
-
-    /// @inheritdoc IHooks
+    /// @inheritdoc IBaseHook
     function afterInitialize(
         address caller,
         PoolKey calldata key,
         uint160 sqrtPriceX96,
         int24 tick,
         bytes calldata hookData
-    ) external override(BaseHook, IHooks) poolManagerOnly returns (bytes4) {
+    ) external override(BaseHook, IBaseHook) poolManagerOnly returns (bytes4) {
         BunniHookLogic.afterInitialize(s, caller, key, sqrtPriceX96, tick, hookData, hub, oracleMinInterval);
         return BunniHook.afterInitialize.selector;
     }
 
-    /// @inheritdoc IHooks
-    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
-        external
-        view
-        override(BaseHook, IHooks)
-        poolManagerOnly
-        returns (bytes4)
-    {
-        revert BunniHook__NoAddLiquidity();
-    }
-
-    /// @inheritdoc IHooks
+    /// @inheritdoc IBaseHook
     function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         external
-        override(BaseHook, IHooks)
+        override(BaseHook, IBaseHook)
         poolManagerOnly
         nonReentrant
-        returns (bytes4)
+        returns (bytes4, BeforeSwapDelta)
     {
-        (bool useAmAmmFee, address amAmmManager, Currency amAmmFeeCurrency, uint256 amAmmFeeAmount) = BunniHookLogic
-            .beforeSwap(
+        (
+            bool useAmAmmFee,
+            address amAmmManager,
+            Currency amAmmFeeCurrency,
+            uint256 amAmmFeeAmount,
+            BeforeSwapDelta beforeSwapDelta
+        ) = BunniHookLogic.beforeSwap(
             s,
             BunniHookLogic.Env({
-                hookFeesModifier: _hookFeesModifier,
+                hookFeesModifier: hookFeeModifier,
                 floodZone: floodZone,
                 hub: hub,
                 poolManager: poolManager,
@@ -428,7 +411,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             _accrueFees(amAmmManager, amAmmFeeCurrency, amAmmFeeAmount);
         }
 
-        return Hooks.NO_OP_SELECTOR;
+        return (BunniHook.beforeSwap.selector, beforeSwapDelta);
     }
 
     /// -----------------------------------------------------------------------
@@ -451,17 +434,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // pull input tokens from BunniHub to BunniHook
         // received in the form of PoolManager claim tokens
-        hub.hookHandleSwap({
-            key: hookArgs.key,
-            zeroForOne: hookArgs.key.currency1 == args.currency,
-            inputAmount: 0,
-            outputAmount: args.amount
-        });
-
-        // unwrap claim tokens
+        // then unwrap claim tokens
         // NOTE: tax-on-transfer tokens are not supported due to this unwrap since we need exactly args.amount tokens upon return
-        poolManager.lock(
-            address(this), abi.encode(HookLockCallbackType.BURN_AND_TAKE, abi.encode(args.currency, args.amount))
+        poolManager.unlock(
+            abi.encode(
+                HookUnlockCallbackType.REBALANCE_PREHOOK,
+                abi.encode(args.currency, args.amount, hookArgs.key, hookArgs.key.currency1 == args.currency)
+            )
         );
 
         // ensure we have exactly args.amount tokens
@@ -512,23 +491,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             orderOutputAmount = args.currency.balanceOfSelf();
         }
 
-        // wrap claim tokens
+        // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
         // NOTE: tax-on-transfer tokens are not supported because we need exactly orderOutputAmount tokens
-        if (args.currency.isNative()) {
-            address(poolManager).safeTransferETH(orderOutputAmount);
-        } else {
+        poolManager.sync(args.currency);
+        if (!args.currency.isNative()) {
             Currency.unwrap(args.currency).safeTransfer(address(poolManager), orderOutputAmount);
         }
-        poolManager.lock(address(this), abi.encode(HookLockCallbackType.SETTLE_AND_MINT, abi.encode(args.currency)));
-
-        // posthook should push output tokens from BunniHook to BunniHub and update pool balances
-        // BunniHub receives output tokens in the form of PoolManager claim tokens
-        hub.hookHandleSwap({
-            key: hookArgs.key,
-            zeroForOne: hookArgs.key.currency0 == args.currency,
-            inputAmount: orderOutputAmount,
-            outputAmount: 0
-        });
+        poolManager.unlock(
+            abi.encode(
+                HookUnlockCallbackType.REBALANCE_POSTHOOK,
+                abi.encode(args.currency, orderOutputAmount, hookArgs.key, hookArgs.key.currency0 == args.currency)
+            )
+        );
     }
 
     /// -----------------------------------------------------------------------
