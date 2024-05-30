@@ -309,7 +309,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             shares: shares,
             amount0Min: 0,
             amount1Min: 0,
-            deadline: block.timestamp
+            deadline: block.timestamp,
+            useQueuedWithdrawal: false
         });
         IBunniHub hub_ = hub;
         (uint256 beforeBalance0, uint256 beforeBalance1) =
@@ -362,7 +363,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             shares: shares,
             amount0Min: 0,
             amount1Min: 0,
-            deadline: block.timestamp
+            deadline: block.timestamp,
+            useQueuedWithdrawal: false
         });
         IBunniHub hub_ = hub;
         (uint256 beforeBalance0, uint256 beforeBalance1) =

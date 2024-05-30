@@ -16,18 +16,25 @@ import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction
 
 /// @title Contains structs shared between multiple contracts
 
+struct QueuedWithdrawal {
+    uint224 shareAmount;
+    uint32 unlockTimestamp;
+}
+
 /// @notice THe storage of BunniHub
 /// @member poolState The state of a given pool
 /// @member reserve0 The vault share tokens owned in vault0
 /// @member reserve1 The vault share tokens owned in vault1
 /// @member nonce The nonce for a given bunniSubspace
 /// @member poolIdOfBunniToken The pool ID of a given BunniToken
+/// @member queuedWithdrawals The queued withdrawals for a given pool & user
 struct HubStorage {
     mapping(PoolId poolId => RawPoolState) poolState;
     mapping(PoolId poolId => uint256) reserve0;
     mapping(PoolId poolId => uint256) reserve1;
     mapping(bytes32 bunniSubspace => uint24) nonce;
     mapping(IBunniToken bunniToken => PoolId) poolIdOfBunniToken;
+    mapping(PoolId poolId => mapping(address => QueuedWithdrawal)) queuedWithdrawals;
 }
 
 /// @notice The decoded hook params for a given pool

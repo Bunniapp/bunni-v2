@@ -104,6 +104,11 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     }
 
     /// @inheritdoc IBunniHub
+    function queueWithdraw(QueueWithdrawParams calldata params) external virtual override nonReentrant {
+        BunniHubLogic.queueWithdraw(s, params);
+    }
+
+    /// @inheritdoc IBunniHub
     function withdraw(WithdrawParams calldata params)
         external
         virtual

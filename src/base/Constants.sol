@@ -14,4 +14,6 @@ uint256 constant RAW_TOKEN_RATIO_BASE = 1e6;
 uint256 constant LN2_WAD = 693147180559945309;
 uint256 constant MAX_TAX_ERROR = 1e6;
 uint256 constant MAX_CARDINALITY = 2 ** 24 - 1;
+uint256 constant WITHDRAW_DELAY = 1 minutes;
+uint256 constant WITHDRAW_GRACE_PERIOD = 15 minutes;
 int256 constant ROUND_TICK_TOLERANCE = 5e12;

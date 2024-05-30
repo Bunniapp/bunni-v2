@@ -43,6 +43,11 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
         uint256 amount1,
         uint256 shares
     );
+    /// @notice Emitted when a withdrawal is queued
+    /// @param sender The msg.sender address
+    /// @param poolId The Uniswap V4 pool's ID
+    /// @param shares The amount of share tokens queued for withdrawal
+    event QueueWithdraw(address indexed sender, PoolId indexed poolId, uint256 shares);
     /// @notice Emitted when liquidity is decreased via withdrawal
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the collected tokens
@@ -114,11 +119,28 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
         returns (uint256 shares, uint256 amount0, uint256 amount1);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
+    /// @param shares The amount of share tokens to burn
+    struct QueueWithdrawParams {
+        PoolKey poolKey;
+        uint256 shares;
+    }
+
+    /// @notice Queues a withdrawal of liquidity. Need to use this before calling withdraw() if am-AMM is enabled
+    /// and a manager exists for the pool. A queued withdrawal is unlocked after WITHDRAW_DELAY (1 minutes) has passed,
+    /// and before WITHDRAW_GRACE_PERIOD (15 minutes) has passed after it's been unlocked. This ensures the am-AMM manager
+    /// has an opportunity to execute any arbitrage trades before a withdrawal is processed.
+    /// @param params The input parameters
+    /// poolKey The PoolKey of the Uniswap V4 pool
+    /// shares The amount of share tokens to burn
+    function queueWithdraw(QueueWithdrawParams calldata params) external;
+
+    /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the withdrawn tokens
-    /// @param shares The amount of ERC20 tokens (this) to burn,
-    /// @param amount0Min The minimum amount of token0 that should be accounted for the burned liquidity,
-    /// @param amount1Min The minimum amount of token1 that should be accounted for the burned liquidity,
+    /// @param shares The amount of share tokens to burn
+    /// @param amount0Min The minimum amount of token0 that should be accounted for the burned liquidity
+    /// @param amount1Min The minimum amount of token1 that should be accounted for the burned liquidity
     /// @param deadline The time by which the transaction must be included to effect the change
+    /// @param useQueuedWithdrawal If true, queued withdrawal share tokens will be used
     struct WithdrawParams {
         PoolKey poolKey;
         address recipient;
@@ -126,6 +148,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
         uint256 amount0Min;
         uint256 amount1Min;
         uint256 deadline;
+        bool useQueuedWithdrawal;
     }
 
     /// @notice Decreases the amount of liquidity in the position and sends the tokens to the sender.
