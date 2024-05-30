@@ -56,8 +56,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
 
-    /// @inheritdoc IBunniHook
-    uint32 public immutable oracleMinInterval;
+    /// @notice The minimum interval between the TWAP oracle observations.
+    uint32 internal immutable oracleMinInterval;
 
     /// -----------------------------------------------------------------------
     /// Storage variables
@@ -67,20 +67,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// mappings to BunniHookLogic easier & cheaper.
     HookStorage internal s;
 
-    /// @inheritdoc IBunniHook
-    mapping(PoolId => BoolOverride) public amAmmEnabledOverride;
+    /// @notice The poolwise amAmmEnabled override. Top precedence.
+    mapping(PoolId => BoolOverride) internal amAmmEnabledOverride;
 
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
-    uint96 internal _hookFeesModifier;
+    uint88 internal hookFeeModifier;
 
-    /// @inheritdoc IBunniHook
-    IZone public floodZone;
+    /// @notice The FloodZone contract used in rebalance orders.
+    IZone internal floodZone;
 
-    /// @inheritdoc IBunniHook
-    BoolOverride public globalAmAmmEnabledOverride;
-
-    /// @notice The recipient of collected hook fees
-    address internal _hookFeesRecipient;
+    /// @notice Enables/disables am-AMM globally. Takes precedence over amAmmEnabled in hookParams, overriden by amAmmEnabledOverride.
+    BoolOverride internal globalAmAmmEnabledOverride;
 
     /// -----------------------------------------------------------------------
     /// Constructor
@@ -93,22 +90,22 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         WETH weth_,
         IZone floodZone_,
         address owner_,
-        address hookFeesRecipient_,
-        uint96 hookFeesModifier_,
+        uint88 hookFeeModifier_,
         uint32 oracleMinInterval_
     ) BaseHook(poolManager_) {
+        if (hookFeeModifier_ > 1e18) revert BunniHook__InvalidHookFeeModifier();
+
         hub = hub_;
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
         oracleMinInterval = oracleMinInterval_;
         floodZone = floodZone_;
-        _hookFeesModifier = hookFeesModifier_;
-        _hookFeesRecipient = hookFeesRecipient_;
+        hookFeeModifier = hookFeeModifier_;
         _initializeOwner(owner_);
         poolManager_.setOperator(address(hub_), true);
 
-        emit SetHookFeesParams(hookFeesModifier_, hookFeesRecipient_);
+        emit SetHookFeeModifier(hookFeeModifier_);
     }
 
     /// -----------------------------------------------------------------------
@@ -171,8 +168,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             _rebalancePosthookCallback(callbackData);
         } else if (t == HookUnlockCallbackType.CLAIM_FEES) {
             _claimFees(callbackData);
-        } else {
-            revert BunniHook__InvalidUnlockCallbackType();
         }
         return bytes("");
     }
@@ -212,10 +207,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// @dev Claims protocol fees earned and sends it to the recipient.
     function _claimFees(bytes memory callbackData) internal {
         // decode data
-        Currency[] memory currencyList = abi.decode(callbackData, (Currency[]));
+        (Currency[] memory currencyList, address recipient) = abi.decode(callbackData, (Currency[], address));
 
         // claim protocol fees
-        address recipient = _hookFeesRecipient;
         for (uint256 i; i < currencyList.length; i++) {
             Currency currency = currencyList[i];
             // can claim balance - am-AMM accrued fees
@@ -243,8 +237,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHook
-    function claimProtocolFees(Currency[] calldata currencyList) external override onlyOwner {
-        poolManager.unlock(abi.encode(HookUnlockCallbackType.CLAIM_FEES, abi.encode(currencyList)));
+    function claimProtocolFees(Currency[] calldata currencyList, address recipient) external override onlyOwner {
+        poolManager.unlock(abi.encode(HookUnlockCallbackType.CLAIM_FEES, abi.encode(currencyList, recipient)));
     }
 
     /// @inheritdoc IBunniHook
@@ -254,11 +248,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// @inheritdoc IBunniHook
-    function setHookFeesParams(uint96 newModifier, address newRecipient) external onlyOwner {
-        _hookFeesModifier = newModifier;
-        _hookFeesRecipient = newRecipient;
+    function setHookFeeModifier(uint88 newModifier) external onlyOwner {
+        if (newModifier > 1e18) revert BunniHook__InvalidHookFeeModifier();
 
-        emit SetHookFeesParams(newModifier, newRecipient);
+        hookFeeModifier = newModifier;
+
+        emit SetHookFeeModifier(newModifier);
     }
 
     /// @inheritdoc IBunniHook
@@ -276,11 +271,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
-
-    /// @inheritdoc IBunniHook
-    function getHookFeesParams() external view override returns (uint96 modifierVal, address recipient) {
-        return (_hookFeesModifier, _hookFeesRecipient);
-    }
 
     /// @inheritdoc IBunniHook
     function getObservation(PoolKey calldata key, uint256 index)
@@ -386,17 +376,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// @inheritdoc IBaseHook
-    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
-        external
-        view
-        override(BaseHook, IBaseHook)
-        poolManagerOnly
-        returns (bytes4)
-    {
-        revert BunniHook__NoAddLiquidity();
-    }
-
-    /// @inheritdoc IBaseHook
     function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         external
         override(BaseHook, IBaseHook)
@@ -413,7 +392,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         ) = BunniHookLogic.beforeSwap(
             s,
             BunniHookLogic.Env({
-                hookFeesModifier: _hookFeesModifier,
+                hookFeesModifier: hookFeeModifier,
                 floodZone: floodZone,
                 hub: hub,
                 poolManager: poolManager,

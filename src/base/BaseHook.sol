@@ -27,12 +27,6 @@ abstract contract BaseHook is IBaseHook {
         override
         returns (bytes4);
 
-    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
-        external
-        virtual
-        override
-        returns (bytes4);
-
     function beforeSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
         external
         virtual

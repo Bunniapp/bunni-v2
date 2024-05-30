@@ -69,7 +69,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint256 internal constant PRECISION = 10 ** 18;
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
-    uint96 internal constant HOOK_SWAP_FEE = 0.1e18;
+    uint88 internal constant HOOK_SWAP_FEE = 0.1e18;
     uint32 internal constant ALPHA = 0.7e8;
     uint256 internal constant MAX_ERROR = 1e9;
     uint24 internal constant FEE_MIN = 0.0001e6;
@@ -186,17 +186,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         unchecked {
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
-                abi.encode(
-                    poolManager,
-                    hub,
-                    floodPlain,
-                    weth,
-                    zone,
-                    address(this),
-                    HOOK_FEES_RECIPIENT,
-                    HOOK_SWAP_FEE,
-                    ORACLE_MIN_INTERVAL
-                )
+                abi.encode(poolManager, hub, floodPlain, weth, zone, address(this), HOOK_SWAP_FEE, ORACLE_MIN_INTERVAL)
             );
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(offset);
@@ -208,15 +198,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager,
-            hub,
-            floodPlain,
-            weth,
-            zone,
-            address(this),
-            HOOK_FEES_RECIPIENT,
-            HOOK_SWAP_FEE,
-            ORACLE_MIN_INTERVAL
+            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_SWAP_FEE, ORACLE_MIN_INTERVAL
         );
         vm.label(address(bunniHook), "BunniHook");
 
@@ -807,7 +789,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         currencies[0] = key.currency0;
         currencies[1] = key.currency1;
         snapStart(string.concat("collect protocol fees", snapLabel));
-        bunniHook.claimProtocolFees(currencies);
+        bunniHook.claimProtocolFees(currencies, HOOK_FEES_RECIPIENT);
         snapEnd();
 
         // check balances

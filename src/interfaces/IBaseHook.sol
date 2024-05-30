@@ -27,19 +27,6 @@ interface IBaseHook {
         bytes calldata hookData
     ) external returns (bytes4);
 
-    /// @notice The hook called before liquidity is added
-    /// @param sender The initial msg.sender for the add liquidity call
-    /// @param key The key for the pool
-    /// @param params The parameters for adding liquidity
-    /// @param hookData Arbitrary data handed into the PoolManager by the liquidty provider to be be passed on to the hook
-    /// @return bytes4 The function selector for the hook
-    function beforeAddLiquidity(
-        address sender,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
-        bytes calldata hookData
-    ) external returns (bytes4);
-
     /// @notice The hook called before a swap
     /// @param sender The initial msg.sender for the swap call
     /// @param key The key for the pool

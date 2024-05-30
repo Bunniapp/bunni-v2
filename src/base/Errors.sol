@@ -24,7 +24,6 @@ error BunniToken__NotBunniHub();
 
 error BunniHook__InvalidSwap();
 error BunniHook__Unauthorized();
-error BunniHook__NoAddLiquidity();
-error BunniHook__InvalidUnlockCallbackType();
+error BunniHook__InvalidHookFeeModifier();
 error BunniHook__PrehookPostConditionFailed();
 error BunniHook__InvalidRebalanceOrderHookArgs();

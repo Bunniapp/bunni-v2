@@ -54,7 +54,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
         uint256 totalLiquidity
     );
     event SetZone(IZone zone);
-    event SetHookFeesParams(uint96 indexed newModifier, address indexed newRecipient);
+    event SetHookFeeModifier(uint88 indexed newModifier);
     event SetAmAmmEnabledOverride(PoolId indexed id, BoolOverride indexed boolOverride);
     event SetGlobalAmAmmEnabledOverride(BoolOverride indexed boolOverride);
 
@@ -108,9 +108,6 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
-
-    /// @notice Returns hook fees params
-    function getHookFeesParams() external view returns (uint96 modifierVal, address recipient);
 
     /// @notice Returns the observation for the given pool key and observation index
     /// @param key The pool key
@@ -166,20 +163,8 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
         view
         returns (bool initialized, uint120 sharePrice0, uint120 sharePrice1);
 
-    /// @notice The FloodZone contract used in rebalance orders.
-    function floodZone() external view returns (IZone);
-
-    /// @notice The poolwise amAmmEnabled override. Top precedence.
-    function amAmmEnabledOverride(PoolId id) external view returns (BoolOverride);
-
-    /// @notice Enables/disables am-AMM globally. Takes precedence over amAmmEnabled in hookParams, overriden by amAmmEnabledOverride.
-    function globalAmAmmEnabledOverride() external view returns (BoolOverride);
-
     /// @notice Whether am-AMM is enabled for the given pool.
     function getAmAmmEnabled(PoolId id) external view returns (bool);
-
-    /// @notice The minimum interval between the TWAP oracle observations.
-    function oracleMinInterval() external view returns (uint32);
 
     /// -----------------------------------------------------------------------
     /// External functions
@@ -209,7 +194,8 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
 
     /// @notice Claim protocol fees for the given currency list. Only callable by the owner.
     /// @param currencyList The list of currencies to claim fees for
-    function claimProtocolFees(Currency[] calldata currencyList) external;
+    /// @param recipient The recipient of the fees
+    function claimProtocolFees(Currency[] calldata currencyList, address recipient) external;
 
     /// @notice Set the FloodZone contract address. Only callable by the owner.
     /// @param zone The new FloodZone contract address
@@ -217,8 +203,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
 
     /// @notice Set the hook fees params. Only callable by the owner.
     /// @param newModifier The new fee modifier
-    /// @param newRecipient The new recipient
-    function setHookFeesParams(uint96 newModifier, address newRecipient) external;
+    function setHookFeeModifier(uint88 newModifier) external;
 
     /// @notice Overrides amAmmEnabled for the given pool. Only callable by the owner.
     /// @param id The pool id

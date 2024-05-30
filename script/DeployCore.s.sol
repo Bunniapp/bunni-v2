@@ -28,8 +28,7 @@ contract DeployCoreScript is CREATE3Script {
         address weth = vm.envAddress(string.concat("WETH_", block.chainid.toString()));
         address permit2 = vm.envAddress("PERMIT2");
         address owner = vm.envAddress(string.concat("OWNER_", block.chainid.toString()));
-        address hookFeesRecipient = vm.envAddress(string.concat("HOOK_FEES_RECIPIENT_", block.chainid.toString()));
-        uint96 hookFeesModifier = vm.envUint("HOOK_FEES_MODIFIER").toUint96();
+        uint88 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint88();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
         uint32 oracleMinInterval = vm.envUint("ORACLE_MIN_INTERVAL").toUint32();
 
@@ -71,17 +70,7 @@ contract DeployCoreScript is CREATE3Script {
                     hookSalt,
                     bytes.concat(
                         type(BunniHook).creationCode,
-                        abi.encode(
-                            poolManager,
-                            hub,
-                            floodPlain,
-                            weth,
-                            zone,
-                            owner,
-                            hookFeesRecipient,
-                            hookFeesModifier,
-                            oracleMinInterval
-                        )
+                        abi.encode(poolManager, hub, floodPlain, weth, zone, owner, hookFeeModifier, oracleMinInterval)
                     )
                 )
             )

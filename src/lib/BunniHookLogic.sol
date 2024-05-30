@@ -54,7 +54,7 @@ library BunniHookLogic {
     /// -----------------------------------------------------------------------
 
     struct Env {
-        uint96 hookFeesModifier;
+        uint88 hookFeesModifier;
         IBunniHub hub;
         IPoolManager poolManager;
         IFloodPlain floodPlain;
