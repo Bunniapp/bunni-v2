@@ -155,8 +155,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     enum HookUnlockCallbackType {
-        BURN_AND_TAKE,
-        SETTLE_AND_MINT,
+        REBALANCE_PREHOOK,
+        REBALANCE_POSTHOOK,
         CLAIM_FEES
     }
 
@@ -165,10 +165,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // decode input
         (HookUnlockCallbackType t, bytes memory callbackData) = abi.decode(data, (HookUnlockCallbackType, bytes));
 
-        if (t == HookUnlockCallbackType.BURN_AND_TAKE) {
-            _burnAndTake(callbackData);
-        } else if (t == HookUnlockCallbackType.SETTLE_AND_MINT) {
-            _settleAndMint(callbackData);
+        if (t == HookUnlockCallbackType.REBALANCE_PREHOOK) {
+            _rebalancePrehookCallback(callbackData);
+        } else if (t == HookUnlockCallbackType.REBALANCE_POSTHOOK) {
+            _rebalancePosthookCallback(callbackData);
         } else if (t == HookUnlockCallbackType.CLAIM_FEES) {
             _claimFees(callbackData);
         } else {
@@ -177,11 +177,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return bytes("");
     }
 
-    /// @dev Burns PoolManager claim tokens and takes the underlying tokens from PoolManager.
+    /// @dev Calls hub.hookHandleSwap to pull the rebalance swap input tokens from BunniHub.
+    /// Then burns PoolManager claim tokens and takes the underlying tokens from PoolManager.
     /// Used while executing rebalance orders.
-    function _burnAndTake(bytes memory callbackData) internal {
+    function _rebalancePrehookCallback(bytes memory callbackData) internal {
         // decode data
-        (Currency currency, uint256 amount) = abi.decode(callbackData, (Currency, uint256));
+        (Currency currency, uint256 amount, PoolKey memory key, bool zeroForOne) =
+            abi.decode(callbackData, (Currency, uint256, PoolKey, bool));
+
+        // pull claim tokens from BunniHub
+        hub.hookHandleSwap({key: key, zeroForOne: zeroForOne, inputAmount: 0, outputAmount: amount});
 
         // burn and take
         poolManager.burn(address(this), currency.toId(), amount);
@@ -189,14 +194,19 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// @dev Settles tokens sent to PoolManager and mints the corresponding claim tokens.
+    /// Then calls hub.hookHandleSwap to update pool balances with rebalance swap output.
     /// Used while executing rebalance orders.
-    function _settleAndMint(bytes memory callbackData) internal {
+    function _rebalancePosthookCallback(bytes memory callbackData) internal {
         // decode data
-        (Currency currency, uint256 amount) = abi.decode(callbackData, (Currency, uint256));
+        (Currency currency, uint256 amount, PoolKey memory key, bool zeroForOne) =
+            abi.decode(callbackData, (Currency, uint256, PoolKey, bool));
 
         // settle and mint
         uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}(currency);
         poolManager.mint(address(this), currency.toId(), paid);
+
+        // push claim tokens to BunniHub
+        hub.hookHandleSwap({key: key, zeroForOne: zeroForOne, inputAmount: paid, outputAmount: 0});
     }
 
     /// @dev Claims protocol fees earned and sends it to the recipient.
@@ -445,16 +455,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // pull input tokens from BunniHub to BunniHook
         // received in the form of PoolManager claim tokens
-        hub.hookHandleSwap({
-            key: hookArgs.key,
-            zeroForOne: hookArgs.key.currency1 == args.currency,
-            inputAmount: 0,
-            outputAmount: args.amount
-        });
-
-        // unwrap claim tokens
+        // then unwrap claim tokens
         // NOTE: tax-on-transfer tokens are not supported due to this unwrap since we need exactly args.amount tokens upon return
-        poolManager.unlock(abi.encode(HookUnlockCallbackType.BURN_AND_TAKE, abi.encode(args.currency, args.amount)));
+        poolManager.unlock(
+            abi.encode(
+                HookUnlockCallbackType.REBALANCE_PREHOOK,
+                abi.encode(args.currency, args.amount, hookArgs.key, hookArgs.key.currency1 == args.currency)
+            )
+        );
 
         // ensure we have exactly args.amount tokens
         if (args.currency.balanceOfSelf() != args.amount) {
@@ -504,24 +512,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             orderOutputAmount = args.currency.balanceOfSelf();
         }
 
-        // wrap claim tokens
+        // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
         // NOTE: tax-on-transfer tokens are not supported because we need exactly orderOutputAmount tokens
         poolManager.sync(args.currency);
         if (!args.currency.isNative()) {
             Currency.unwrap(args.currency).safeTransfer(address(poolManager), orderOutputAmount);
         }
         poolManager.unlock(
-            abi.encode(HookUnlockCallbackType.SETTLE_AND_MINT, abi.encode(args.currency, orderOutputAmount))
+            abi.encode(
+                HookUnlockCallbackType.REBALANCE_POSTHOOK,
+                abi.encode(args.currency, orderOutputAmount, hookArgs.key, hookArgs.key.currency0 == args.currency)
+            )
         );
-
-        // posthook should push output tokens from BunniHook to BunniHub and update pool balances
-        // BunniHub receives output tokens in the form of PoolManager claim tokens
-        hub.hookHandleSwap({
-            key: hookArgs.key,
-            zeroForOne: hookArgs.key.currency0 == args.currency,
-            inputAmount: orderOutputAmount,
-            outputAmount: 0
-        });
     }
 
     /// -----------------------------------------------------------------------
