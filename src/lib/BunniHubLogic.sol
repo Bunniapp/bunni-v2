@@ -4,6 +4,8 @@ pragma solidity ^0.8.19;
 
 import {console2} from "forge-std/console2.sol";
 
+import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
+
 import {ClonesWithImmutableArgs} from "clones-with-immutable-args/ClonesWithImmutableArgs.sol";
 
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
@@ -294,6 +296,41 @@ library BunniHubLogic {
     /// Withdraw
     /// -----------------------------------------------------------------------
 
+    function queueWithdraw(HubStorage storage s, IBunniHub.QueueWithdrawParams calldata params) external {
+        /// -----------------------------------------------------------------------
+        /// Validation
+        /// -----------------------------------------------------------------------
+
+        PoolId id = params.poolKey.toId();
+        IBunniToken bunniToken = _getBunniTokenOfPool(s, id);
+        if (address(bunniToken) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+
+        /// -----------------------------------------------------------------------
+        /// State updates
+        /// -----------------------------------------------------------------------
+
+        address msgSender = LibMulticaller.senderOrSigner();
+        QueuedWithdrawal memory existing = s.queuedWithdrawals[id][msgSender];
+
+        // update queued withdrawal
+        // any existing queued amount simply uses the updated delay
+        s.queuedWithdrawals[id][msgSender] = QueuedWithdrawal({
+            shareAmount: (existing.shareAmount + params.shares).toUint224(),
+            unlockTimestamp: uint32(block.timestamp + WITHDRAW_DELAY)
+        });
+
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        // pull share tokens from msgSender to address(this)
+        if (params.shares != 0) {
+            bunniToken.transferFrom(msgSender, address(this), params.shares);
+        }
+
+        emit IBunniHub.QueueWithdraw(msgSender, id, params.shares);
+    }
+
     function withdraw(HubStorage storage s, Env calldata env, IBunniHub.WithdrawParams calldata params)
         external
         returns (uint256 amount0, uint256 amount1)
@@ -307,7 +344,11 @@ library BunniHubLogic {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = getPoolState(s, poolId);
         IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
-        hook.updateStateMachine(poolId); // trigger am-AMM state machine update to avoid sandwiching rent burns
+
+        IAmAmm.Bid memory topBid = hook.getTopBidWrite(poolId);
+        if (hook.getAmAmmEnabled(poolId) && topBid.manager != address(0) && !params.useQueuedWithdrawal) {
+            revert BunniHub__NeedToUseQueuedWithdrawal();
+        }
 
         /// -----------------------------------------------------------------------
         /// State updates
@@ -315,19 +356,33 @@ library BunniHubLogic {
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
         address msgSender = LibMulticaller.senderOrSigner();
+        uint256 shares;
 
         // burn shares
-        state.bunniToken.burn(msgSender, params.shares);
-        // at this point of execution we know params.shares <= currentTotalSupply
+        if (params.useQueuedWithdrawal) {
+            // use queued withdrawal
+            // need to withdraw the full queued amount
+            QueuedWithdrawal memory queued = s.queuedWithdrawals[poolId][msgSender];
+            if (queued.shareAmount == 0 || queued.unlockTimestamp == 0) revert BunniHub__QueuedWithdrawalNonexistent();
+            if (block.timestamp < queued.unlockTimestamp) revert BunniHub__QueuedWithdrawalNotReady();
+            if (queued.unlockTimestamp + WITHDRAW_GRACE_PERIOD < block.timestamp) revert BunniHub__GracePeriodExpired();
+            shares = queued.shareAmount;
+            s.queuedWithdrawals[poolId][msgSender].shareAmount = 0; // don't delete the struct to save gas later
+            state.bunniToken.burn(address(this), shares);
+        } else {
+            shares = params.shares;
+            state.bunniToken.burn(msgSender, shares);
+        }
+        // at this point of execution we know shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 
         // compute token amount to withdraw and the component amounts
         uint256 reserveAmount0 =
-            getReservesInUnderlying(state.reserve0.mulDiv(params.shares, currentTotalSupply), state.vault0);
+            getReservesInUnderlying(state.reserve0.mulDiv(shares, currentTotalSupply), state.vault0);
         uint256 reserveAmount1 =
-            getReservesInUnderlying(state.reserve1.mulDiv(params.shares, currentTotalSupply), state.vault1);
-        uint256 rawAmount0 = state.rawBalance0.mulDiv(params.shares, currentTotalSupply);
-        uint256 rawAmount1 = state.rawBalance1.mulDiv(params.shares, currentTotalSupply);
+            getReservesInUnderlying(state.reserve1.mulDiv(shares, currentTotalSupply), state.vault1);
+        uint256 rawAmount0 = state.rawBalance0.mulDiv(shares, currentTotalSupply);
+        uint256 rawAmount1 = state.rawBalance1.mulDiv(shares, currentTotalSupply);
         amount0 = reserveAmount0 + rawAmount0;
         amount1 = reserveAmount1 + rawAmount1;
 
@@ -365,7 +420,7 @@ library BunniHubLogic {
             )
         );
 
-        emit IBunniHub.Withdraw(msgSender, params.recipient, poolId, amount0, amount1, params.shares);
+        emit IBunniHub.Withdraw(msgSender, params.recipient, poolId, amount0, amount1, shares);
     }
 
     /// -----------------------------------------------------------------------
@@ -628,5 +683,12 @@ library BunniHubLogic {
                 revert BunniHub__VaultAssetMismatch();
             }
         }
+    }
+
+    function _getBunniTokenOfPool(HubStorage storage s, PoolId poolId) internal view returns (IBunniToken bunniToken) {
+        address ptr = s.poolState[poolId].immutableParamsPointer;
+        if (ptr == address(0)) return IBunniToken(address(0));
+        bytes memory rawValue = ptr.read({start: 20, end: 40});
+        bunniToken = IBunniToken(address(bytes20(rawValue)));
     }
 }
