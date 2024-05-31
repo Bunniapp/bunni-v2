@@ -29,6 +29,7 @@ import {ERC4626} from "solady/tokens/ERC4626.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "../src/lib/Math.sol";
+import "../src/base/Errors.sol";
 import "../src/ldf/ShiftMode.sol";
 import "../src/base/SharedStructs.sol";
 import {MockLDF} from "./mocks/MockLDF.sol";
@@ -332,6 +333,232 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             key.currency1.balanceOf(address(this)) - beforeBalance1, withdrawAmount1, 10, "token1 balance incorrect"
         );
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
+    }
+
+    function test_queueWithdraw_happyPath(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
+        if (currency0 > currency1) (currency0, currency1) = (currency1, currency0);
+        (IBunniToken bunniToken, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+
+        // make deposit
+        (uint256 shares,,) = _makeDepositWithTax({
+            key_: key,
+            depositAmount0: depositAmount0,
+            depositAmount1: depositAmount1,
+            depositor: address(this),
+            tax0: 0,
+            tax1: 0,
+            vaultFee0: 0,
+            vaultFee1: 0,
+            snapLabel: ""
+        });
+
+        // bid in am-AMM auction
+        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
+        PoolId id = key.toId();
+        bunniToken.approve(address(bunniHook), type(uint256).max);
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
+        shares -= 100;
+
+        // wait until address(this) is the manager
+        skip(24 hours);
+        assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
+
+        // queue withdraw
+        bunniToken.approve(address(hub), type(uint256).max);
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares}));
+        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't take shares");
+
+        // wait a minute
+        skip(1 minutes);
+
+        // withdraw
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(this),
+            shares: shares,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: true
+        });
+        hub.withdraw(withdrawParams);
+        assertEqDecimal(bunniToken.balanceOf(address(hub)), 0, DECIMALS, "didn't burn shares");
+    }
+
+    function test_queueWithdraw_fail_didNotQueue(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
+        if (currency0 > currency1) (currency0, currency1) = (currency1, currency0);
+        (IBunniToken bunniToken, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+
+        // make deposit
+        (uint256 shares,,) = _makeDepositWithTax({
+            key_: key,
+            depositAmount0: depositAmount0,
+            depositAmount1: depositAmount1,
+            depositor: address(this),
+            tax0: 0,
+            tax1: 0,
+            vaultFee0: 0,
+            vaultFee1: 0,
+            snapLabel: ""
+        });
+
+        // bid in am-AMM auction
+        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
+        PoolId id = key.toId();
+        bunniToken.approve(address(bunniHook), type(uint256).max);
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
+        shares -= 100;
+
+        // wait until address(this) is the manager
+        skip(24 hours);
+        assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
+
+        // withdraw
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(this),
+            shares: shares,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: false
+        });
+        vm.expectRevert(BunniHub__NeedToUseQueuedWithdrawal.selector);
+        hub.withdraw(withdrawParams);
+
+        withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(this),
+            shares: shares,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: true
+        });
+        vm.expectRevert(BunniHub__QueuedWithdrawalNonexistent.selector);
+        hub.withdraw(withdrawParams);
+    }
+
+    function test_queueWithdraw_fail_notReady(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
+        if (currency0 > currency1) (currency0, currency1) = (currency1, currency0);
+        (IBunniToken bunniToken, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+
+        // make deposit
+        (uint256 shares,,) = _makeDepositWithTax({
+            key_: key,
+            depositAmount0: depositAmount0,
+            depositAmount1: depositAmount1,
+            depositor: address(this),
+            tax0: 0,
+            tax1: 0,
+            vaultFee0: 0,
+            vaultFee1: 0,
+            snapLabel: ""
+        });
+
+        // bid in am-AMM auction
+        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
+        PoolId id = key.toId();
+        bunniToken.approve(address(bunniHook), type(uint256).max);
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
+        shares -= 100;
+
+        // wait until address(this) is the manager
+        skip(24 hours);
+        assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
+
+        // queue withdraw
+        bunniToken.approve(address(hub), type(uint256).max);
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares}));
+        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't take shares");
+
+        // withdraw
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(this),
+            shares: shares,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: true
+        });
+        vm.expectRevert(BunniHub__QueuedWithdrawalNotReady.selector);
+        hub.withdraw(withdrawParams);
+    }
+
+    function test_queueWithdraw_fail_gracePeriodExpired(uint256 depositAmount0, uint256 depositAmount1) public {
+        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
+        if (currency0 > currency1) (currency0, currency1) = (currency1, currency0);
+        (IBunniToken bunniToken, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+
+        // make deposit
+        (uint256 shares,,) = _makeDepositWithTax({
+            key_: key,
+            depositAmount0: depositAmount0,
+            depositAmount1: depositAmount1,
+            depositor: address(this),
+            tax0: 0,
+            tax1: 0,
+            vaultFee0: 0,
+            vaultFee1: 0,
+            snapLabel: ""
+        });
+
+        // bid in am-AMM auction
+        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
+        PoolId id = key.toId();
+        bunniToken.approve(address(bunniHook), type(uint256).max);
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
+        shares -= 100;
+
+        // wait until address(this) is the manager
+        skip(24 hours);
+        assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
+
+        // queue withdraw
+        bunniToken.approve(address(hub), type(uint256).max);
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares}));
+        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't take shares");
+
+        // wait an hour
+        skip(1 hours);
+
+        // withdraw
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(this),
+            shares: shares,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp + 1 hours,
+            useQueuedWithdrawal: true
+        });
+        vm.expectRevert(BunniHub__GracePeriodExpired.selector);
+        hub.withdraw(withdrawParams);
+
+        // queue withdraw again to refresh lock
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: 0}));
+
+        // wait a minute
+        skip(1 minutes);
+
+        // withdraw
+        hub.withdraw(withdrawParams);
     }
 
     function test_tokenWithTax_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {

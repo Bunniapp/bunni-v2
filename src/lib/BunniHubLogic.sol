@@ -363,14 +363,16 @@ library BunniHubLogic {
             // use queued withdrawal
             // need to withdraw the full queued amount
             QueuedWithdrawal memory queued = s.queuedWithdrawals[poolId][msgSender];
+            if (queued.shareAmount == 0 || queued.unlockTimestamp == 0) revert BunniHub__QueuedWithdrawalNonexistent();
             if (block.timestamp < queued.unlockTimestamp) revert BunniHub__QueuedWithdrawalNotReady();
             if (queued.unlockTimestamp + WITHDRAW_GRACE_PERIOD < block.timestamp) revert BunniHub__GracePeriodExpired();
             shares = queued.shareAmount;
             s.queuedWithdrawals[poolId][msgSender].shareAmount = 0; // don't delete the struct to save gas later
+            state.bunniToken.burn(address(this), shares);
         } else {
             shares = params.shares;
+            state.bunniToken.burn(msgSender, shares);
         }
-        state.bunniToken.burn(msgSender, shares);
         // at this point of execution we know shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 
