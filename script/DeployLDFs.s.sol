@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import {CREATE3Script} from "./base/CREATE3Script.sol";
 
+import {UniformDistribution} from "../src/ldf/UniformDistribution.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
 import {CarpetedGeometricDistribution} from "../src/ldf/CarpetedGeometricDistribution.sol";
@@ -17,7 +18,8 @@ contract DeployLDFsScript is CREATE3Script {
             GeometricDistribution geometric,
             DoubleGeometricDistribution doubleGeometric,
             CarpetedGeometricDistribution carpetedGeometric,
-            CarpetedDoubleGeometricDistribution carpetedDoubleGeometric
+            CarpetedDoubleGeometricDistribution carpetedDoubleGeometric,
+            UniformDistribution uniform
         )
     {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
@@ -56,6 +58,12 @@ contract DeployLDFsScript is CREATE3Script {
                     getCreate3ContractSalt("CarpetedDoubleGeometricDistribution"),
                     type(CarpetedDoubleGeometricDistribution).creationCode
                 )
+            )
+        );
+
+        uniform = UniformDistribution(
+            payable(
+                create3.deploy(getCreate3ContractSalt("UniformDistribution"), type(UniformDistribution).creationCode)
             )
         );
 
