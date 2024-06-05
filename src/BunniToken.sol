@@ -9,11 +9,12 @@ import {ERC20} from "./base/ERC20.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
+import {ERC20Multicallable} from "./base/ERC20Multicallable.sol";
 
 /// @title BunniToken
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
-contract BunniToken is IBunniToken, ERC20, Clone {
+contract BunniToken is IBunniToken, ERC20Multicallable, Clone {
     function hub() public pure override returns (IBunniHub) {
         return IBunniHub(_getArgAddress(0));
     }

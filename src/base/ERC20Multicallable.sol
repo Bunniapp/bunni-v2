@@ -1,40 +1,38 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: AGPL-3.0
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
-import {ERC20} from "../../src/base/ERC20.sol";
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
-contract ERC20TaxMock is ERC20 {
-    uint256 public constant TAX_MULTIPLIER = 95; // 5% tax
+import {ERC20} from "./ERC20.sol";
 
-    function mint(address to, uint256 amount) public {
-        _mint(to, amount);
+abstract contract ERC20Multicallable is ERC20 {
+    /// @inheritdoc ERC20
+    function approve(address spender, uint256 amount) public override returns (bool) {
+        address msgSender = LibMulticaller.senderOrSigner();
+        /// @solidity memory-safe-assembly
+        assembly {
+            // Compute the allowance slot and store the amount.
+            mstore(0x20, spender)
+            mstore(0x0c, _ALLOWANCE_SLOT_SEED)
+            mstore(0x00, msgSender)
+            sstore(keccak256(0x0c, 0x34), amount)
+            // Emit the {Approval} event.
+            mstore(0x00, amount)
+            log3(0x00, 0x20, _APPROVAL_EVENT_SIGNATURE, msgSender, shr(96, mload(0x2c)))
+        }
+        return true;
     }
 
-    function name() public pure override returns (string memory) {
-        return "MockERC20";
-    }
-
-    function symbol() public pure override returns (string memory) {
-        return "MOCK-ERC20";
-    }
-
-    /// @dev Transfer `amount` tokens from the caller to `to`.
-    ///
-    /// Requirements:
-    /// - `from` must at least have `amount`.
-    ///
-    /// Emits a {Transfer} event.
-    function transfer(address to, uint256 amount) public virtual override returns (bool) {
-        // apply tax
-        uint256 postTaxAmount = amount * TAX_MULTIPLIER / 100;
-
-        _beforeTokenTransfer(msg.sender, to, amount);
+    /// @inheritdoc ERC20
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        address msgSender = LibMulticaller.senderOrSigner();
+        _beforeTokenTransfer(msgSender, to, amount);
         /// @solidity memory-safe-assembly
         assembly {
             // Compute the balance slot and load its value.
             mstore(0x0c, _BALANCE_SLOT_SEED)
-            mstore(0x00, caller())
+            mstore(0x00, msgSender)
             let fromBalanceSlot := keccak256(0x0c, 0x20)
             let fromBalance := sload(fromBalanceSlot)
             // Revert if insufficient balance.
@@ -50,34 +48,24 @@ contract ERC20TaxMock is ERC20 {
             // Add and store the updated balance of `to`.
             // Will not overflow because the sum of all user balances
             // cannot exceed the maximum uint256 value.
-            sstore(toBalanceSlot, add(sload(toBalanceSlot), postTaxAmount))
+            sstore(toBalanceSlot, add(sload(toBalanceSlot), amount))
             // Emit the {Transfer} event.
-            mstore(0x20, postTaxAmount)
-            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, caller(), shr(96, mload(0x0c)))
+            mstore(0x20, amount)
+            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, msgSender, shr(96, mload(0x0c)))
         }
-        _afterTokenTransfer(msg.sender, to, amount);
+        _afterTokenTransfer(msgSender, to, amount);
         return true;
     }
 
-    /// @dev Transfers `amount` tokens from `from` to `to`.
-    ///
-    /// Note: Does not update the allowance if it is the maximum uint256 value.
-    ///
-    /// Requirements:
-    /// - `from` must at least have `amount`.
-    /// - The caller must have at least `amount` of allowance to transfer the tokens of `from`.
-    ///
-    /// Emits a {Transfer} event.
-    function transferFrom(address from, address to, uint256 amount) public virtual override returns (bool) {
-        // apply tax
-        uint256 postTaxAmount = amount * TAX_MULTIPLIER / 100;
-
+    /// @inheritdoc ERC20
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        address msgSender = LibMulticaller.senderOrSigner();
         _beforeTokenTransfer(from, to, amount);
         /// @solidity memory-safe-assembly
         assembly {
             let from_ := shl(96, from)
             // Compute the allowance slot and load its value.
-            mstore(0x20, caller())
+            mstore(0x20, msgSender)
             mstore(0x0c, or(from_, _ALLOWANCE_SLOT_SEED))
             let allowanceSlot := keccak256(0x0c, 0x34)
             let allowance_ := sload(allowanceSlot)
@@ -108,9 +96,9 @@ contract ERC20TaxMock is ERC20 {
             // Add and store the updated balance of `to`.
             // Will not overflow because the sum of all user balances
             // cannot exceed the maximum uint256 value.
-            sstore(toBalanceSlot, add(sload(toBalanceSlot), postTaxAmount))
+            sstore(toBalanceSlot, add(sload(toBalanceSlot), amount))
             // Emit the {Transfer} event.
-            mstore(0x20, postTaxAmount)
+            mstore(0x20, amount)
             log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
         }
         _afterTokenTransfer(from, to, amount);

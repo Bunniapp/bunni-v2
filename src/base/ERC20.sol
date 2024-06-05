@@ -51,11 +51,11 @@ abstract contract ERC20 is IERC20 {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev `keccak256(bytes("Transfer(address,address,uint256)"))`.
-    uint256 private constant _TRANSFER_EVENT_SIGNATURE =
+    uint256 internal constant _TRANSFER_EVENT_SIGNATURE =
         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef;
 
     /// @dev `keccak256(bytes("Approval(address,address,uint256)"))`.
-    uint256 private constant _APPROVAL_EVENT_SIGNATURE =
+    uint256 internal constant _APPROVAL_EVENT_SIGNATURE =
         0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -63,7 +63,7 @@ abstract contract ERC20 is IERC20 {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev The storage slot for the total supply.
-    uint256 private constant _TOTAL_SUPPLY_SLOT = 0x05345cdf77eb68f44c;
+    uint256 internal constant _TOTAL_SUPPLY_SLOT = 0x05345cdf77eb68f44c;
 
     /// @dev The balance slot of `owner` is given by:
     /// ```
@@ -71,7 +71,7 @@ abstract contract ERC20 is IERC20 {
     ///     mstore(0x00, owner)
     ///     let balanceSlot := keccak256(0x0c, 0x20)
     /// ```
-    uint256 private constant _BALANCE_SLOT_SEED = 0x87a211a2;
+    uint256 internal constant _BALANCE_SLOT_SEED = 0x87a211a2;
 
     /// @dev The allowance slot of (`owner`, `spender`) is given by:
     /// ```
@@ -80,7 +80,7 @@ abstract contract ERC20 is IERC20 {
     ///     mstore(0x00, owner)
     ///     let allowanceSlot := keccak256(0x0c, 0x34)
     /// ```
-    uint256 private constant _ALLOWANCE_SLOT_SEED = 0x7f5e9f20;
+    uint256 internal constant _ALLOWANCE_SLOT_SEED = 0x7f5e9f20;
 
     /// @dev The nonce slot of `owner` is given by:
     /// ```
@@ -88,23 +88,23 @@ abstract contract ERC20 is IERC20 {
     ///     mstore(0x00, owner)
     ///     let nonceSlot := keccak256(0x0c, 0x20)
     /// ```
-    uint256 private constant _NONCES_SLOT_SEED = 0x38377508;
+    uint256 internal constant _NONCES_SLOT_SEED = 0x38377508;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         CONSTANTS                          */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev `(_NONCES_SLOT_SEED << 16) | 0x1901`.
-    uint256 private constant _NONCES_SLOT_SEED_WITH_SIGNATURE_PREFIX = 0x383775081901;
+    uint256 internal constant _NONCES_SLOT_SEED_WITH_SIGNATURE_PREFIX = 0x383775081901;
 
     /// @dev `keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")`.
-    bytes32 private constant _DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
+    bytes32 internal constant _DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
 
     /// @dev `keccak256("1")`.
-    bytes32 private constant _VERSION_HASH = 0xc89efdaa54c0f20c7adf612882df0950f5a951637e0307cdcb4c672f298b8bc6;
+    bytes32 internal constant _VERSION_HASH = 0xc89efdaa54c0f20c7adf612882df0950f5a951637e0307cdcb4c672f298b8bc6;
 
     /// @dev `keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")`.
-    bytes32 private constant _PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
+    bytes32 internal constant _PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       ERC20 METADATA                       */

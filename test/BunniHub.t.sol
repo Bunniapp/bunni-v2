@@ -1888,6 +1888,42 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(bunniHook.getAmAmmEnabled(id), expected, "getAmAmmEnabled incorrect");
     }
 
+    function test_bunniToken_multicall() external {
+        (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
+        if (currency0 > currency1) (currency0, currency1) = (currency1, currency0);
+        (IBunniToken bunniToken, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+
+        // make deposit
+        (uint256 shares,,) = _makeDepositWithTax({
+            key_: key,
+            depositAmount0: 1 ether,
+            depositAmount1: 1 ether,
+            depositor: address(this),
+            tax0: 0,
+            tax1: 0,
+            vaultFee0: 0,
+            vaultFee1: 0,
+            snapLabel: ""
+        });
+
+        // multitransfer
+        uint256 N = 10;
+        address[] memory targets = new address[](N);
+        bytes[] memory data = new bytes[](N);
+        uint256[] memory values = new uint256[](N);
+        for (uint256 i; i < N; i++) {
+            targets[i] = address(bunniToken);
+            data[i] = abi.encodeCall(IERC20.transfer, (address(uint160(i + 1)), shares / N));
+        }
+        MulticallerWithSender(payable(LibMulticaller.MULTICALLER_WITH_SENDER)).aggregateWithSender(
+            targets, data, values
+        );
+        for (uint256 i; i < N; i++) {
+            assertEq(bunniToken.balanceOf(address(uint160(i + 1))), shares / N, "balance incorrect");
+        }
+    }
+
     function _makeDeposit(PoolKey memory key, uint256 depositAmount0, uint256 depositAmount1)
         internal
         returns (uint256 shares, uint256 amount0, uint256 amount1)
