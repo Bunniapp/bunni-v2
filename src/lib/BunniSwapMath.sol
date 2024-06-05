@@ -174,8 +174,8 @@ library BunniSwapMath {
             } else {
                 // exact output swap
                 inverseCumulativeAmountFnInput = zeroForOne
-                    ? currentActiveBalance1 - (outputAmount = FixedPointMathLib.min(outputAmount, currentActiveBalance1))
-                    : currentActiveBalance0 - (outputAmount = FixedPointMathLib.min(outputAmount, currentActiveBalance0));
+                    ? currentActiveBalance1 - FixedPointMathLib.min(outputAmount, currentActiveBalance1)
+                    : currentActiveBalance0 - FixedPointMathLib.min(outputAmount, currentActiveBalance0);
             }
 
             (bool success, int24 updatedRoundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) = input
@@ -216,12 +216,12 @@ library BunniSwapMath {
                     amountSpecifiedRemaining += naiveSwapAmountIn.toInt256();
                 }
                 if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
-                    // Equivalent to `updatedTick = partialSwapZeroForOne ? tickNext - 1 : tickNext;`
+                    // Equivalent to `updatedTick = zeroForOne ? tickNext - 1 : tickNext;`
                     unchecked {
                         // cannot cast a bool to an int24 in Solidity
                         int24 _zeroForOne;
                         assembly {
-                            _zeroForOne := partialSwapZeroForOne
+                            _zeroForOne := zeroForOne
                         }
                         updatedTick = tickNext - _zeroForOne;
                     }
