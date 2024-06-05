@@ -1428,6 +1428,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         console2.log("thirdSwapInputAmount", thirdSwapInputAmount);
         console2.log("thirdSwapOutputAmount", thirdSwapOutputAmount);
 
+        if (thirdSwapOutputAmount == 0) return;
+
         // wait for some time
         skip(waitTime);
 

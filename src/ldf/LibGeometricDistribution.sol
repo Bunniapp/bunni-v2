@@ -205,7 +205,7 @@ library LibGeometricDistribution {
             }
         }
 
-        amount0 = cumulativeAmount0DensityX96.mulDiv(totalLiquidity, Q96);
+        amount0 = cumulativeAmount0DensityX96.fullMulDiv(totalLiquidity, Q96);
     }
 
     /// @dev Computes the cumulative amount of token1 in the rounded ticks [tickLower, roundedTick].
@@ -279,7 +279,7 @@ library LibGeometricDistribution {
             }
         }
 
-        amount1 = cumulativeAmount1DensityX96.mulDiv(totalLiquidity, Q96);
+        amount1 = cumulativeAmount1DensityX96.fullMulDiv(totalLiquidity, Q96);
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
@@ -295,7 +295,7 @@ library LibGeometricDistribution {
         uint256 alphaX96,
         bool roundUp
     ) internal pure returns (bool success, int24 roundedTick) {
-        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.mulDiv(Q96, totalLiquidity);
+        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.fullMulDiv(Q96, totalLiquidity);
         if (cumulativeAmount0DensityX96 == 0) {
             // return right boundary of distribution
             return (true, minTick + length * tickSpacing);
