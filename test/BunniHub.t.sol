@@ -1576,7 +1576,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         uint32 alpha,
         uint24 feeMin,
         uint24 feeMax,
-        uint24 feeQuadraticMultiplier
+        uint24 feeQuadraticMultiplier,
+        bool amAmmEnabled
     ) external {
         swapAmount = bound(swapAmount, 1e6, 1e36);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
@@ -1603,7 +1604,12 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                     SURGE_HALFLIFE,
                     SURGE_AUTOSTART_TIME,
                     VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
+                    VAULT_SURGE_THRESHOLD_1,
+                    REBALANCE_THRESHOLD,
+                    REBALANCE_MAX_SLIPPAGE,
+                    REBALANCE_TWAP_SECONDS_AGO,
+                    REBALANCE_ORDER_TTL,
+                    amAmmEnabled
                 )
             )
         );

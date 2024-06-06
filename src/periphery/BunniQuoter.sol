@@ -171,7 +171,7 @@ contract BunniQuoter is IBunniQuoter {
         address amAmmManager;
         if (hookParams.amAmmEnabled) {
             bytes7 payload;
-            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBid(id);
+            IAmAmm.Bid memory topBid = hook.getTopBid(id);
             (amAmmManager, payload) = (topBid.manager, topBid.payload);
             uint24 swapFee0For1;
             uint24 swapFee1For0;
