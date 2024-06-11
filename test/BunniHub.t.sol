@@ -805,6 +805,47 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing * 2, "didn't cross two ticks");
     }
 
+    function test_swap_zeroForOne_oneTickCrossing_limit() public {
+        _execTestAcrossScenarios(
+            _test_swap_zeroForOne_oneTickCrossing_limit, 0, 0, "swap zeroForOne oneTickCrossing, first swap, hit limit"
+        );
+    }
+
+    function _test_swap_zeroForOne_oneTickCrossing_limit(
+        uint256,
+        uint256,
+        Currency currency0,
+        Currency currency1,
+        ERC4626 vault0_,
+        ERC4626 vault1_,
+        string memory snapLabel
+    ) internal {
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
+
+        uint256 inputAmount = 5.4e17;
+        uint256 value = key.currency0.isNative() ? inputAmount : 0;
+
+        _mint(key.currency0, address(this), inputAmount);
+
+        (, int24 currentTick,,) = bunniHook.slot0s(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        uint160 sqrtPriceLimitX96 = TickMath.getSqrtPriceAtTick(-9);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: sqrtPriceLimitX96
+        });
+
+        _swap(key, params, value, snapLabel);
+
+        uint160 sqrtPriceX96;
+        (sqrtPriceX96, currentTick,,) = bunniHook.slot0s(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick - key.tickSpacing, "didn't cross one tick");
+        assertEq(sqrtPriceX96, sqrtPriceLimitX96, "didn't hit price limit");
+    }
+
     function test_swap_oneForZero_noTickCrossing() public {
         _execTestAcrossScenarios(
             _test_swap_oneForZero_noTickCrossing, 0, 0, "swap oneForZero noTickCrossing, first swap"
@@ -946,6 +987,47 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, currentTick,,) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
         assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing * 2, "didn't cross two ticks");
+    }
+
+    function test_swap_oneForZero_oneTickCrossing_limit() public {
+        _execTestAcrossScenarios(
+            _test_swap_oneForZero_oneTickCrossing_limit, 0, 0, "swap oneForZero oneTickCrossing, first swap, hit limit"
+        );
+    }
+
+    function _test_swap_oneForZero_oneTickCrossing_limit(
+        uint256,
+        uint256,
+        Currency currency0,
+        Currency currency1,
+        ERC4626 vault0_,
+        ERC4626 vault1_,
+        string memory snapLabel
+    ) internal {
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
+
+        uint256 inputAmount = 2.5e17;
+        uint256 value = key.currency1.isNative() ? inputAmount : 0;
+
+        _mint(key.currency1, address(this), inputAmount);
+
+        (, int24 currentTick,,) = bunniHook.slot0s(key.toId());
+        int24 beforeRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+
+        uint160 sqrtPriceLimitX96 = TickMath.getSqrtPriceAtTick(19);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: -int256(inputAmount),
+            sqrtPriceLimitX96: sqrtPriceLimitX96
+        });
+
+        _swap(key, params, value, snapLabel);
+
+        uint160 sqrtPriceX96;
+        (sqrtPriceX96, currentTick,,) = bunniHook.slot0s(key.toId());
+        int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
+        assertEq(afterRoundedTick, beforeRoundedTick + key.tickSpacing, "didn't cross one tick");
+        assertEq(sqrtPriceX96, sqrtPriceLimitX96, "didn't hit price limit");
     }
 
     function test_collectProtocolFees() public {

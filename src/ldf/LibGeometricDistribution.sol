@@ -406,6 +406,10 @@ library LibGeometricDistribution {
         // limits tick precision to (ROUND_TICK_TOLERANCE / WAD) of a rounded tick
         xWad = (xWad / ROUND_TICK_TOLERANCE) * ROUND_TICK_TOLERANCE; // clear small errors
 
+        if (xWad >= length * int256(WAD)) {
+            return (false, 0);
+        }
+
         // get rounded tick from xWad
         success = true;
         roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
@@ -576,6 +580,7 @@ library LibGeometricDistribution {
             (success, roundedTick) = inverseCumulativeAmount1(
                 inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
             );
+            console2.log("inverse cum success", success);
             if (!success) return (false, 0, 0, 0);
 
             // compute the cumulative amount up to roundedTick
@@ -593,6 +598,7 @@ library LibGeometricDistribution {
             //   rick - tickSpacing
             cumulativeAmount =
                 cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+            console2.log("cum success");
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
@@ -608,6 +614,7 @@ library LibGeometricDistribution {
             //      rick
             swapLiquidity =
                 (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96;
+            console2.log("liquidity success");
         }
     }
 
