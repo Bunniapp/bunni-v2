@@ -373,8 +373,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
         assertEqDecimal(bunniToken.balanceOf(address(this)), shares, DECIMALS, "took shares");
 
-        // wait a minute + 1 second
-        skip(1 minutes + 1);
+        // wait a minute
+        skip(1 minutes);
 
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
@@ -554,8 +554,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // queue withdraw again to refresh lock
         hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
 
-        // wait a minute + 1 second
-        skip(1 minutes + 1);
+        // wait a minute
+        skip(1 minutes);
 
         // withdraw
         hub.withdraw(withdrawParams);
