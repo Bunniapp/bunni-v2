@@ -78,10 +78,10 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
     uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
     address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
-    uint24 internal constant TWAP_SECONDS_AGO = 7 days;
-    uint24 internal constant SURGE_FEE = 0.5e6;
-    uint16 internal constant SURGE_HALFLIFE = 2 minutes;
-    uint16 internal constant SURGE_AUTOSTART_TIME = 5 minutes;
+    uint24 internal constant TWAP_SECONDS_AGO = 1 days;
+    uint24 internal constant SURGE_FEE = 0.1e6;
+    uint16 internal constant SURGE_HALFLIFE = 1 minutes;
+    uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
     uint16 internal constant VAULT_SURGE_THRESHOLD_0 = 1e4; // 0.01% change in share price
     uint16 internal constant VAULT_SURGE_THRESHOLD_1 = 1e3; // 0.1% change in share price
     uint256 internal constant TOKEN_TAX = 0.05e18;
