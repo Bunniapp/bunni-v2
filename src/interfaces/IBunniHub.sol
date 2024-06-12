@@ -122,7 +122,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
     /// @param shares The amount of share tokens to burn
     struct QueueWithdrawParams {
         PoolKey poolKey;
-        uint256 shares;
+        uint200 shares;
     }
 
     /// @notice Queues a withdrawal of liquidity. Need to use this before calling withdraw() if am-AMM is enabled

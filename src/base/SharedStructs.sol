@@ -17,8 +17,8 @@ import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction
 /// @title Contains structs shared between multiple contracts
 
 struct QueuedWithdrawal {
-    uint224 shareAmount;
-    uint32 unlockTimestamp;
+    uint200 shareAmount;
+    uint56 unlockTimestamp;
 }
 
 /// @notice THe storage of BunniHub

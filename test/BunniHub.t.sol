@@ -26,6 +26,7 @@ import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManage
 
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC4626} from "solady/tokens/ERC4626.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "../src/lib/Math.sol";
@@ -57,6 +58,7 @@ import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistributio
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
 contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
+    using SafeCastLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint256;
@@ -368,12 +370,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
 
         // queue withdraw
-        bunniToken.approve(address(hub), type(uint256).max);
-        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares}));
-        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't take shares");
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
+        assertEqDecimal(bunniToken.balanceOf(address(this)), shares, DECIMALS, "took shares");
 
-        // wait a minute
-        skip(1 minutes);
+        // wait a minute + 1 second
+        skip(1 minutes + 1);
 
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
@@ -386,6 +387,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             useQueuedWithdrawal: true
         });
         hub.withdraw(withdrawParams);
+        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't take shares");
         assertEqDecimal(bunniToken.balanceOf(address(hub)), 0, DECIMALS, "didn't burn shares");
     }
 
@@ -480,9 +482,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
 
         // queue withdraw
-        bunniToken.approve(address(hub), type(uint256).max);
-        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares}));
-        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't take shares");
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
+        assertEqDecimal(bunniToken.balanceOf(address(this)), shares, DECIMALS, "tooke shares");
 
         // withdraw
         IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
@@ -531,9 +532,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
 
         // queue withdraw
-        bunniToken.approve(address(hub), type(uint256).max);
-        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares}));
-        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't take shares");
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
+        assertEqDecimal(bunniToken.balanceOf(address(this)), shares, DECIMALS, "took shares");
 
         // wait an hour
         skip(1 hours);
@@ -552,10 +552,10 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         hub.withdraw(withdrawParams);
 
         // queue withdraw again to refresh lock
-        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: 0}));
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
 
-        // wait a minute
-        skip(1 minutes);
+        // wait a minute + 1 second
+        skip(1 minutes + 1);
 
         // withdraw
         hub.withdraw(withdrawParams);

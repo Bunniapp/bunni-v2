@@ -310,22 +310,16 @@ library BunniHubLogic {
         /// -----------------------------------------------------------------------
 
         address msgSender = LibMulticaller.senderOrSigner();
-        QueuedWithdrawal memory existing = s.queuedWithdrawals[id][msgSender];
 
         // update queued withdrawal
         // any existing queued amount simply uses the updated delay
-        s.queuedWithdrawals[id][msgSender] = QueuedWithdrawal({
-            shareAmount: (existing.shareAmount + params.shares).toUint224(),
-            unlockTimestamp: uint32(block.timestamp + WITHDRAW_DELAY)
-        });
-
-        /// -----------------------------------------------------------------------
-        /// External calls
-        /// -----------------------------------------------------------------------
-
-        // pull share tokens from msgSender to address(this)
-        if (params.shares != 0) {
-            bunniToken.transferFrom(msgSender, address(this), params.shares);
+        // use unchecked to get unlockTimestamp to overflow back to 0 if overflow occurs
+        // which is fine since we only care about relative time
+        unchecked {
+            s.queuedWithdrawals[id][msgSender] = QueuedWithdrawal({
+                shareAmount: params.shares,
+                unlockTimestamp: uint56(block.timestamp) + WITHDRAW_DELAY
+            });
         }
 
         emit IBunniHub.QueueWithdraw(msgSender, id, params.shares);
@@ -368,11 +362,10 @@ library BunniHubLogic {
             if (queued.unlockTimestamp + WITHDRAW_GRACE_PERIOD < block.timestamp) revert BunniHub__GracePeriodExpired();
             shares = queued.shareAmount;
             s.queuedWithdrawals[poolId][msgSender].shareAmount = 0; // don't delete the struct to save gas later
-            state.bunniToken.burn(address(this), shares);
         } else {
             shares = params.shares;
-            state.bunniToken.burn(msgSender, shares);
         }
+        state.bunniToken.burn(msgSender, shares);
         // at this point of execution we know shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 
