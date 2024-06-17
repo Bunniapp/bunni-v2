@@ -7,6 +7,7 @@ import {UniformDistribution} from "../src/ldf/UniformDistribution.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
 import {CarpetedGeometricDistribution} from "../src/ldf/CarpetedGeometricDistribution.sol";
+import {BuyTheDipGeometricDistribution} from "../src/ldf/BuyTheDipGeometricDistribution.sol";
 import {CarpetedDoubleGeometricDistribution} from "../src/ldf/CarpetedDoubleGeometricDistribution.sol";
 
 contract DeployLDFsScript is CREATE3Script {
@@ -19,7 +20,8 @@ contract DeployLDFsScript is CREATE3Script {
             DoubleGeometricDistribution doubleGeometric,
             CarpetedGeometricDistribution carpetedGeometric,
             CarpetedDoubleGeometricDistribution carpetedDoubleGeometric,
-            UniformDistribution uniform
+            UniformDistribution uniform,
+            BuyTheDipGeometricDistribution buyTheDipGeometric
         )
     {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
@@ -64,6 +66,15 @@ contract DeployLDFsScript is CREATE3Script {
         uniform = UniformDistribution(
             payable(
                 create3.deploy(getCreate3ContractSalt("UniformDistribution"), type(UniformDistribution).creationCode)
+            )
+        );
+
+        buyTheDipGeometric = BuyTheDipGeometricDistribution(
+            payable(
+                create3.deploy(
+                    getCreate3ContractSalt("BuyTheDipGeometricDistribution"),
+                    type(BuyTheDipGeometricDistribution).creationCode
+                )
             )
         );
 
