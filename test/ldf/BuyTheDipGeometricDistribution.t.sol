@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import "forge-std/Test.sol";
 
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityFunction.sol";
@@ -19,7 +20,6 @@ contract BuyTheDipGeometricDistributionTest is Test {
     function test_morphToAltAlphaAndBack() external view {
         PoolKey memory key;
         key.tickSpacing = TICK_SPACING;
-
         int24 minTick = -9 * TICK_SPACING;
         int16 length = 10;
         uint32 alpha = 1.2e8;
@@ -28,6 +28,7 @@ contract BuyTheDipGeometricDistributionTest is Test {
         bool altThresholdDirection = true;
         bytes32 ldfParams =
             bytes32(abi.encodePacked(minTick, length, alpha, uint8(0), altAlpha, altThreshold, altThresholdDirection));
+        assertTrue(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "LDF params are invalid");
 
         // make first query
         (uint256 liquidityDensityX96,,, bytes32 ldfState, bool shouldSurge) = ldf.query({
@@ -82,5 +83,80 @@ contract BuyTheDipGeometricDistributionTest is Test {
         });
         assertTrue(shouldSurge, "fourth query does not surge");
         assertNotEq(liquidityDensityX96, newLiquidityDensityX96, "fourth liquidity density did not change");
+    }
+
+    function test_isValidParams() external view {
+        PoolKey memory key;
+        key.tickSpacing = TICK_SPACING;
+        int24 minTick = -9 * TICK_SPACING;
+        int16 length = 10;
+        uint32 alpha = 1.2e8;
+        uint32 altAlpha = 0.8e8;
+        int24 altThreshold = -2 * TICK_SPACING;
+        bool altThresholdDirection = true;
+        bytes32 ldfParams =
+            bytes32(abi.encodePacked(minTick, length, alpha, uint8(0), altAlpha, altThreshold, altThresholdDirection));
+        assertTrue(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "LDF params are invalid");
+
+        // validity conditions:
+        // - need TWAP to be enabled to trigger the alt alpha switch
+        // - both LDFs are valid
+        // - threshold makes sense i.e. both LDFs can be used at some point
+        // - alpha and altAlpha are on different sides of 1
+        // - does not exceed minUsableTick or maxUsableTick
+
+        // invalid TWAP
+        assertFalse(ldf.isValidParams(key.tickSpacing, 0, ldfParams), "allow 0 TWAP window");
+
+        // invalid LDFs
+        ldfParams = bytes32(
+            abi.encodePacked(minTick, length, alpha, uint8(0), uint32(1e8), altThreshold, altThresholdDirection)
+        );
+        assertFalse(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "allow invalid alt alpha");
+        ldfParams = bytes32(
+            abi.encodePacked(minTick, length, uint32(1e8), uint8(0), altAlpha, altThreshold, altThresholdDirection)
+        );
+        assertFalse(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "allow invalid alpha");
+
+        // invalid threshold
+        ldfParams =
+            bytes32(abi.encodePacked(minTick, length, alpha, uint8(0), altAlpha, minTick, altThresholdDirection));
+        assertFalse(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "allow invalid threshold");
+        ldfParams = bytes32(
+            abi.encodePacked(
+                minTick, length, alpha, uint8(0), altAlpha, minTick + length * key.tickSpacing, altThresholdDirection
+            )
+        );
+        assertFalse(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "allow invalid threshold");
+
+        // invalid alpha and altAlpha combo
+        ldfParams = bytes32(
+            abi.encodePacked(
+                minTick, length, uint32(1.2e8), uint8(0), uint32(1.5e8), altThreshold, altThresholdDirection
+            )
+        );
+        assertFalse(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "allow invalid alpha and alt alpha combo");
+
+        // exceeds min/max usable ticks
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(key.tickSpacing), TickMath.maxUsableTick(key.tickSpacing));
+        ldfParams = bytes32(
+            abi.encodePacked(
+                minUsableTick - key.tickSpacing, length, alpha, uint8(0), altAlpha, altThreshold, altThresholdDirection
+            )
+        );
+        assertFalse(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "allow below min usable tick");
+        ldfParams = bytes32(
+            abi.encodePacked(
+                maxUsableTick - length * key.tickSpacing + key.tickSpacing,
+                length,
+                alpha,
+                uint8(0),
+                altAlpha,
+                altThreshold,
+                altThresholdDirection
+            )
+        );
+        assertFalse(ldf.isValidParams(key.tickSpacing, 1 minutes, ldfParams), "allow above max usable tick");
     }
 }

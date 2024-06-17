@@ -12,7 +12,6 @@ import "../base/Constants.sol";
 import "./LibGeometricDistribution.sol";
 
 library LibBuyTheDipGeometricDistribution {
-    using TickMath for int24;
     using FixedPointMathLib for uint256;
 
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
