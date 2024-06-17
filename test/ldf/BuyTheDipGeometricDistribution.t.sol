@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: AGPL-3.0
+pragma solidity ^0.8.19;
+
+import "forge-std/Test.sol";
+
+import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+
+import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityFunction.sol";
+import {BuyTheDipGeometricDistribution} from "../../src/ldf/BuyTheDipGeometricDistribution.sol";
+
+contract BuyTheDipGeometricDistributionTest is Test {
+    ILiquidityDensityFunction internal ldf;
+    int24 internal constant TICK_SPACING = 1;
+
+    function setUp() public {
+        ldf = new BuyTheDipGeometricDistribution();
+    }
+
+    function test_morphToAltAlphaAndBack() external view {
+        PoolKey memory key;
+        key.tickSpacing = TICK_SPACING;
+
+        int24 minTick = -9 * TICK_SPACING;
+        int16 length = 10;
+        uint32 alpha = 1.2e8;
+        uint32 altAlpha = 0.8e8;
+        int24 altThreshold = -2 * TICK_SPACING;
+        bool altThresholdDirection = true;
+        bytes32 ldfParams =
+            bytes32(abi.encodePacked(minTick, length, alpha, uint8(0), altAlpha, altThreshold, altThresholdDirection));
+
+        // make first query
+        (uint256 liquidityDensityX96,,, bytes32 ldfState, bool shouldSurge) = ldf.query({
+            key: key,
+            roundedTick: 0,
+            twapTick: 0,
+            spotPriceTick: 0,
+            useTwap: true,
+            ldfParams: ldfParams,
+            ldfState: bytes32(0)
+        });
+        assertFalse(shouldSurge, "initial query surges");
+
+        // make second query where the TWAP reaches the threshold
+        uint256 newLiquidityDensityX96;
+        (newLiquidityDensityX96,,, ldfState, shouldSurge) = ldf.query({
+            key: key,
+            roundedTick: 0,
+            twapTick: altThreshold,
+            spotPriceTick: 0,
+            useTwap: true,
+            ldfParams: ldfParams,
+            ldfState: ldfState
+        });
+        assertTrue(shouldSurge, "second query does not surge");
+        assertNotEq(liquidityDensityX96, newLiquidityDensityX96, "second liquidity density did not change");
+
+        // make third query where the TWAP stays below the threshold
+        liquidityDensityX96 = newLiquidityDensityX96;
+        (newLiquidityDensityX96,,, ldfState, shouldSurge) = ldf.query({
+            key: key,
+            roundedTick: 0,
+            twapTick: altThreshold - TICK_SPACING,
+            spotPriceTick: 0,
+            useTwap: true,
+            ldfParams: ldfParams,
+            ldfState: ldfState
+        });
+        assertFalse(shouldSurge, "third query surges");
+        assertEq(liquidityDensityX96, newLiquidityDensityX96, "third liquidity density changed");
+
+        // make fourth query where the TWAP goes back above the threshold
+        liquidityDensityX96 = newLiquidityDensityX96;
+        (newLiquidityDensityX96,,, ldfState, shouldSurge) = ldf.query({
+            key: key,
+            roundedTick: 0,
+            twapTick: altThreshold + TICK_SPACING,
+            spotPriceTick: 0,
+            useTwap: true,
+            ldfParams: ldfParams,
+            ldfState: ldfState
+        });
+        assertTrue(shouldSurge, "fourth query does not surge");
+        assertNotEq(liquidityDensityX96, newLiquidityDensityX96, "fourth liquidity density did not change");
+    }
+}
