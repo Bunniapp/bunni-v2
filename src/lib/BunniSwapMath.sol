@@ -215,9 +215,11 @@ library BunniSwapMath {
                     (uint160 naiveSwapResultSqrtPriceX96, uint256 naiveSwapAmountIn, uint256 naiveSwapAmountOut) =
                     SwapMath.computeSwapStep({
                         sqrtPriceCurrentX96: startSqrtPriceX96,
-                        sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(
-                            partialSwapZeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96
-                        ),
+                        // sqrtPriceLimitX96 is only meaningful if the partial swap and the overall swap are in the same direction
+                        // which is when exactIn is true
+                        sqrtPriceTargetX96: exactIn
+                            ? SwapMath.getSqrtPriceTarget(partialSwapZeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96)
+                            : sqrtPriceNextX96,
                         liquidity: swapLiquidity,
                         amountRemaining: amountSpecifiedRemaining
                     });
