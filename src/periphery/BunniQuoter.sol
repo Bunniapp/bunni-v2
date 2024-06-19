@@ -430,7 +430,7 @@ contract BunniQuoter is IBunniQuoter {
     ) private view returns (bool shouldSurge) {
         // only surge if both vaults are set because otherwise total liquidity won't automatically increase
         // so there's no risk of being sandwiched
-        if (address(bunniState.vault0) == address(0) && address(bunniState.vault1) == address(0)) return false;
+        if (address(bunniState.vault0) == address(0) || address(bunniState.vault1) == address(0)) return false;
 
         // compute share prices
         VaultSharePrices memory sharePrices = VaultSharePrices({
