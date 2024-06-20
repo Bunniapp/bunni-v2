@@ -1191,6 +1191,69 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         }
     }
 
+    function test_deployBunniToken(
+        string calldata name,
+        string calldata symbol,
+        address owner,
+        string calldata metadataURI
+    ) external {
+        vm.assume(bytes(name).length <= 32 && bytes(symbol).length <= 32);
+
+        Currency currency0 = Currency.wrap(address(token0));
+        Currency currency1 = Currency.wrap(address(token1));
+        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH));
+        bytes32 hookParams = bytes32(
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1
+            )
+        );
+        bytes32 name_ = bytes32(bytes(name));
+        bytes32 symbol_ = bytes32(bytes(symbol));
+
+        (IBunniToken bunniToken, PoolKey memory key) = hub.deployBunniToken(
+            IBunniHub.DeployBunniTokenParams({
+                currency0: currency0,
+                currency1: currency1,
+                tickSpacing: TICK_SPACING,
+                twapSecondsAgo: TWAP_SECONDS_AGO,
+                liquidityDensityFunction: ldf,
+                statefulLdf: true,
+                ldfParams: ldfParams,
+                hooks: bunniHook,
+                hookParams: hookParams,
+                vault0: ERC4626(address(0)),
+                vault1: ERC4626(address(0)),
+                minRawTokenRatio0: 0.08e6,
+                targetRawTokenRatio0: 0.1e6,
+                maxRawTokenRatio0: 0.12e6,
+                minRawTokenRatio1: 0.08e6,
+                targetRawTokenRatio1: 0.1e6,
+                maxRawTokenRatio1: 0.12e6,
+                sqrtPriceX96: TickMath.getSqrtPriceAtTick(4),
+                name: name_,
+                symbol: symbol_,
+                owner: owner,
+                metadataURI: metadataURI
+            })
+        );
+        assertEq(bunniToken.owner(), owner, "owner not set");
+        assertEq(bunniToken.name(), string(abi.encodePacked(name_)), "name not set");
+        assertEq(bunniToken.symbol(), string(abi.encodePacked(symbol_)), "symbol not set");
+        assertEq(bunniToken.metadataURI(), metadataURI, "metadataURI not set");
+        assertEq(Currency.unwrap(key.currency0), Currency.unwrap(currency0), "currency0 not set");
+        assertEq(Currency.unwrap(key.currency1), Currency.unwrap(currency1), "currency1 not set");
+        assertEq(key.tickSpacing, TICK_SPACING, "tickSpacing not set");
+        assertEq(address(key.hooks), address(bunniHook), "hooks not set");
+    }
+
     function test_hookHasInsufficientTokens() external {
         MockLDF ldf_ = new MockLDF();
 
@@ -2230,7 +2293,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 minRawTokenRatio1: 0.08e6,
                 targetRawTokenRatio1: 0.1e6,
                 maxRawTokenRatio1: 0.12e6,
-                sqrtPriceX96: TickMath.getSqrtPriceAtTick(4)
+                sqrtPriceX96: TickMath.getSqrtPriceAtTick(4),
+                name: bytes32("BunniToken"),
+                symbol: bytes32("BUNNI-LP"),
+                owner: address(this),
+                metadataURI: "metadataURI"
             })
         );
 

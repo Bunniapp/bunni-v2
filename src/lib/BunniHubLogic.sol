@@ -482,9 +482,10 @@ library BunniHubLogic {
         // deploy BunniToken
         token = IBunniToken(
             address(env.bunniTokenImplementation).clone({
-                data: abi.encodePacked(address(this), params.currency0, params.currency1)
+                data: abi.encodePacked(address(this), params.currency0, params.currency1, params.name, params.symbol)
             })
         );
+        token.initialize(params.owner, params.metadataURI);
 
         key = PoolKey({
             currency0: params.currency0,

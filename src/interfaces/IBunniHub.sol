@@ -182,6 +182,10 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
     /// @param targetRawTokenRatio1 The target (rawBalance / balance) ratio for token1
     /// @param maxRawTokenRatio1 The maximum (rawBalance / balance) ratio for token1
     /// @param sqrtPriceX96 The initial sqrt price of the Uniswap V4 pool
+    /// @param name The name of the BunniToken
+    /// @param symbol The symbol of the BunniToken
+    /// @param owner The owner of the BunniToken. Only has the power to set the metadata URI.
+    /// @param metadataURI The initial metadata URI of the BunniToken, containing info like description, image, etc.
     struct DeployBunniTokenParams {
         Currency currency0;
         Currency currency1;
@@ -201,6 +205,10 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
         uint24 targetRawTokenRatio1;
         uint24 maxRawTokenRatio1;
         uint160 sqrtPriceX96;
+        bytes32 name;
+        bytes32 symbol;
+        address owner;
+        string metadataURI;
     }
 
     /// @notice Deploys the BunniToken contract for a Bunni position. This token
