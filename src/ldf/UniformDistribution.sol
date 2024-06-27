@@ -3,23 +3,26 @@ pragma solidity ^0.8.19;
 
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import "./ShiftMode.sol";
 import {LibUniformDistribution} from "./LibUniformDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
 /// @title UniformDistribution
 /// @author zefram.eth
 /// @notice Uniform distribution between two ticks, equivalent to a basic Uniswap v3 position.
-/// Has no shapeshifting features, it's here mostly for educational purposes. The most basic LDF.
+/// Can shift using TWAP.
 contract UniformDistribution is ILiquidityDensityFunction {
+    uint32 internal constant INITIALIZED_STATE = 1 << 24;
+
     /// @inheritdoc ILiquidityDensityFunction
     function query(
         PoolKey calldata key,
         int24 roundedTick,
-        int24, /* twapTick */
+        int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
+        bool useTwap,
         bytes32 ldfParams,
-        bytes32 /* ldfState */
+        bytes32 ldfState
     )
         external
         pure
@@ -32,11 +35,19 @@ contract UniformDistribution is ILiquidityDensityFunction {
             bool shouldSurge
         )
     {
-        (int24 tickLower, int24 tickUpper) = LibUniformDistribution.decodeParams(ldfParams);
+        (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
+        if (initialized) {
+            int24 tickLength = tickUpper - tickLower;
+            tickLower = enforceShiftMode(tickLower, lastTickLower, shiftMode);
+            tickUpper = tickLower + tickLength;
+            shouldSurge = tickLower != lastTickLower;
+        }
+
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
             LibUniformDistribution.query(roundedTick, key.tickSpacing, tickLower, tickUpper);
-        newLdfState = bytes32(0);
-        shouldSurge = false;
+        newLdfState = _encodeState(tickLower);
     }
 
     /// @inheritdoc ILiquidityDensityFunction
@@ -46,18 +57,25 @@ contract UniformDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         bool zeroForOne,
         bool exactIn,
-        int24, /* twapTick */
+        int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
+        bool useTwap,
         bytes32 ldfParams,
-        bytes32 /* ldfState */
+        bytes32 ldfState
     )
         external
         pure
         override
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
-        (int24 tickLower, int24 tickUpper) = LibUniformDistribution.decodeParams(ldfParams);
+        (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
+        if (initialized) {
+            int24 tickLength = tickUpper - tickLower;
+            tickLower = enforceShiftMode(tickLower, lastTickLower, shiftMode);
+            tickUpper = tickLower + tickLength;
+        }
 
         return LibUniformDistribution.computeSwap(
             inverseCumulativeAmountInput, totalLiquidity, zeroForOne, exactIn, key.tickSpacing, tickLower, tickUpper
@@ -65,13 +83,13 @@ contract UniformDistribution is ILiquidityDensityFunction {
     }
 
     /// @inheritdoc ILiquidityDensityFunction
-    function isValidParams(int24 tickSpacing, uint24, /* twapSecondsAgo */ bytes32 ldfParams)
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
         external
         pure
         override
         returns (bool)
     {
-        return LibUniformDistribution.isValidParams(tickSpacing, ldfParams);
+        return LibUniformDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
     }
 
     /// @inheritdoc ILiquidityDensityFunction
@@ -79,13 +97,20 @@ contract UniformDistribution is ILiquidityDensityFunction {
         PoolKey calldata key,
         int24 roundedTick,
         uint256 totalLiquidity,
-        int24, /* twapTick */
+        int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
+        bool useTwap,
         bytes32 ldfParams,
-        bytes32 /* ldfState */
+        bytes32 ldfState
     ) external pure override returns (uint256) {
-        (int24 tickLower, int24 tickUpper) = LibUniformDistribution.decodeParams(ldfParams);
+        (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
+        if (initialized) {
+            int24 tickLength = tickUpper - tickLower;
+            tickLower = enforceShiftMode(tickLower, lastTickLower, shiftMode);
+            tickUpper = tickLower + tickLength;
+        }
 
         return
             LibUniformDistribution.cumulativeAmount0(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
@@ -96,15 +121,33 @@ contract UniformDistribution is ILiquidityDensityFunction {
         PoolKey calldata key,
         int24 roundedTick,
         uint256 totalLiquidity,
-        int24, /* twapTick */
+        int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
+        bool useTwap,
         bytes32 ldfParams,
-        bytes32 /* ldfState */
+        bytes32 ldfState
     ) external pure override returns (uint256) {
-        (int24 tickLower, int24 tickUpper) = LibUniformDistribution.decodeParams(ldfParams);
+        (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
+        if (initialized) {
+            int24 tickLength = tickUpper - tickLower;
+            tickLower = enforceShiftMode(tickLower, lastTickLower, shiftMode);
+            tickUpper = tickLower + tickLength;
+        }
 
         return
             LibUniformDistribution.cumulativeAmount1(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
+    }
+
+    function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastTickLower) {
+        // | initialized - 1 byte | lastTickLower - 3 bytes |
+        initialized = uint8(bytes1(ldfState)) == 1;
+        lastTickLower = int24(uint24(bytes3(ldfState << 8)));
+    }
+
+    function _encodeState(int24 lastTickLower) internal pure returns (bytes32 ldfState) {
+        // | initialized - 1 byte | lastTickLower - 3 bytes |
+        ldfState = bytes32(bytes4(INITIALIZED_STATE + uint32(uint24(lastTickLower))));
     }
 }

@@ -8,6 +8,7 @@ import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 
+import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../base/Constants.sol";
 
@@ -175,10 +176,8 @@ library LibUniformDistribution {
         }
     }
 
-    function isValidParams(int24 tickSpacing, bytes32 ldfParams) internal pure returns (bool) {
-        // | tickLower - 3 bytes | tickUpper - 3 bytes |
-        int24 tickLower = int24(uint24(bytes3(ldfParams)));
-        int24 tickUpper = int24(uint24(bytes3(ldfParams << 24)));
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        (int24 tickLower, int24 tickUpper,) = decodeParams(0, tickSpacing, twapSecondsAgo != 0, ldfParams);
         return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper;
     }
 
@@ -312,9 +311,22 @@ library LibUniformDistribution {
 
     /// @return tickLower The lower tick of the distribution
     /// @return tickUpper The upper tick of the distribution
-    function decodeParams(bytes32 ldfParams) internal pure returns (int24 tickLower, int24 tickUpper) {
-        // | tickLower - 3 bytes | tickUpper - 3 bytes |
-        tickLower = int24(uint24(bytes3(ldfParams)));
-        tickUpper = int24(uint24(bytes3(ldfParams << 24)));
+    function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+        internal
+        pure
+        returns (int24 tickLower, int24 tickUpper, ShiftMode shiftMode)
+    {
+        if (useTwap) {
+            // | offset - 3 bytes | length - 3 bytes | shiftMode - 1 byte |
+            int24 offset = int24(uint24(bytes3(ldfParams))); // offset (in rounded ticks) of tickLower from the twap tick
+            int24 length = int24(uint24(bytes3(ldfParams << 24))); // length of the position in rounded ticks
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 48)));
+            tickLower = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
+            tickUpper = tickLower + length * tickSpacing;
+        } else {
+            // | tickLower - 3 bytes | tickUpper - 3 bytes |
+            tickLower = int24(uint24(bytes3(ldfParams)));
+            tickUpper = int24(uint24(bytes3(ldfParams << 24)));
+        }
     }
 }
