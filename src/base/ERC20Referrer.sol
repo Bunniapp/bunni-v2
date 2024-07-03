@@ -41,26 +41,34 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
 
     /// @dev The score slot of `referrer` is given by:
     /// ```
-    ///     mstore(0x0c, _SCORE_SLOT_SEED)
-    ///     mstore(0x00, referrer)
-    ///     let scoreSlot := keccak256(0x0c, 0x20)
+    ///     mstore(0x00, or(referrer, _SCORE_SLOT_SEED))
+    ///     let scoreSlot := keccak256(0x00, 0x20)
     /// ```
+    /// The uint16 referrer value must be in the most significant 16 bits of `referrer`, so a shl(240, referrer) is needed
+    /// if `referrer` is initially a Solidity uint16 value.
+    /// The bytes being hashed are | referrer - 2 bytes | 0 - 26 bytes | seed - 4 bytes |.
     uint256 internal constant _SCORE_SLOT_SEED = 0xea0f192f;
 
     /// -----------------------------------------------------------------------
     /// Referrer functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Returns the score of a referrer. The score is the sum of all
-    /// balances of accounts that have the referrer as their referrer.
-    /// @param referrer The referrer whose score is to be returned.
-    /// @return score The score of the referrer.
+    /// @inheritdoc IERC20Referrer
     function scoreOf(uint16 referrer) public view override returns (uint256 score) {
         /// @solidity memory-safe-assembly
         assembly {
-            mstore(0x0c, _SCORE_SLOT_SEED)
-            mstore(0x00, shl(240, referrer)) // storage mapping uses most significant 16 bits as key
-            score := sload(keccak256(0x0c, 0x20))
+            mstore(0x00, or(shl(240, referrer), _SCORE_SLOT_SEED))
+            score := sload(keccak256(0x00, 0x20))
+        }
+    }
+
+    /// @inheritdoc IERC20Referrer
+    function referrerOf(address account) public view override returns (uint16 referrer) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            mstore(0x0c, _BALANCE_SLOT_SEED)
+            mstore(0x00, account)
+            referrer := shr(240, sload(keccak256(0x0c, 0x20)))
         }
     }
 
@@ -132,15 +140,14 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             sstore(toBalanceSlot, or(toReferrer, toBalance))
             // Update referrer scores if referrers are different.
             if iszero(eq(fromReferrer, toReferrer)) {
-                mstore(0x0c, _SCORE_SLOT_SEED)
                 // Compute the score slot of `fromReferrer`.
-                mstore(0x00, fromReferrer)
-                let fromScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(fromReferrer, _SCORE_SLOT_SEED))
+                let fromScoreSlot := keccak256(0x00, 0x20)
                 // Subtract and store the updated score of `fromReferrer`.
                 sstore(fromScoreSlot, sub(sload(fromScoreSlot), amount))
                 // Compute the score slot of `toReferrer`.
-                mstore(0x00, toReferrer)
-                let toScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(toReferrer, _SCORE_SLOT_SEED))
+                let toScoreSlot := keccak256(0x00, 0x20)
                 // Add and store the updated score of `toReferrer`.
                 sstore(toScoreSlot, add(sload(toScoreSlot), amount))
             }
@@ -203,15 +210,14 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             sstore(toBalanceSlot, or(toReferrer, toBalance))
             // Update referrer scores if referrers are different.
             if iszero(eq(fromReferrer, toReferrer)) {
-                mstore(0x0c, _SCORE_SLOT_SEED)
                 // Compute the score slot of `fromReferrer`.
-                mstore(0x00, fromReferrer)
-                let fromScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(fromReferrer, _SCORE_SLOT_SEED))
+                let fromScoreSlot := keccak256(0x00, 0x20)
                 // Subtract and store the updated score of `fromReferrer`.
                 sstore(fromScoreSlot, sub(sload(fromScoreSlot), amount))
                 // Compute the score slot of `toReferrer`.
-                mstore(0x00, toReferrer)
-                let toScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(toReferrer, _SCORE_SLOT_SEED))
+                let toScoreSlot := keccak256(0x00, 0x20)
                 // Add and store the updated score of `toReferrer`.
                 sstore(toScoreSlot, add(sload(toScoreSlot), amount))
             }
@@ -255,9 +261,8 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             sstore(toBalanceSlot, or(toReferrer, toBalance))
             // Update referrer score.
             // Compute the score slot of `toReferrer`.
-            mstore(0x0c, _SCORE_SLOT_SEED)
-            mstore(0x00, toReferrer)
-            let toScoreSlot := keccak256(0x0c, 0x20)
+            mstore(0x00, or(toReferrer, _SCORE_SLOT_SEED))
+            let toScoreSlot := keccak256(0x00, 0x20)
             // Add and store the updated score of `toReferrer`.
             sstore(toScoreSlot, add(sload(toScoreSlot), amount))
             // Emit the {Transfer} event.
@@ -304,15 +309,16 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
                 // Referrers are different.
                 // Need to subtract `toBalance` from the original referrer's score
                 // and give `toBalance + amount` to the new referrer.
-                // Compute the score slot of `toReferrer`.
-                mstore(0x0c, _SCORE_SLOT_SEED)
-                mstore(0x00, toReferrer)
-                let toScoreSlot := keccak256(0x0c, 0x20)
-                // Subtract and store the updated score of `toReferrer`.
-                sstore(toScoreSlot, sub(sload(toScoreSlot), toBalance))
+                if toBalance {
+                    // Compute the score slot of `toReferrer`.
+                    mstore(0x00, or(toReferrer, _SCORE_SLOT_SEED))
+                    let toScoreSlot := keccak256(0x00, 0x20)
+                    // Subtract and store the updated score of `toReferrer`.
+                    sstore(toScoreSlot, sub(sload(toScoreSlot), toBalance))
+                }
                 // Compute the score slot of `referrer`.
-                mstore(0x00, referrer)
-                let newReferrerScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(referrer, _SCORE_SLOT_SEED))
+                let newReferrerScoreSlot := keccak256(0x00, 0x20)
                 // Add and store the updated score of `referrer`.
                 sstore(newReferrerScoreSlot, add(sload(newReferrerScoreSlot), updatedToBalance))
             }
@@ -320,9 +326,8 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
                 // Same referrer as before.
                 // Simply add `amount` to the score of the referrer.
                 // Compute the score slot of `toReferrer`.
-                mstore(0x0c, _SCORE_SLOT_SEED)
-                mstore(0x00, toReferrer)
-                let toScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(toReferrer, _SCORE_SLOT_SEED))
+                let toScoreSlot := keccak256(0x00, 0x20)
                 // Add and store the updated score of `toReferrer`.
                 sstore(toScoreSlot, add(sload(toScoreSlot), amount))
             }
@@ -358,9 +363,8 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             sstore(_TOTAL_SUPPLY_SLOT, sub(sload(_TOTAL_SUPPLY_SLOT), amount))
             // Update referrer score.
             // Compute the score slot of `fromReferrer`.
-            mstore(0x0c, _SCORE_SLOT_SEED)
-            mstore(0x00, fromReferrer)
-            let fromScoreSlot := keccak256(0x0c, 0x20)
+            mstore(0x00, or(fromReferrer, _SCORE_SLOT_SEED))
+            let fromScoreSlot := keccak256(0x00, 0x20)
             // Subtract and store the updated score of `fromReferrer`.
             sstore(fromScoreSlot, sub(sload(fromScoreSlot), amount))
             // Emit the {Transfer} event.
@@ -404,15 +408,14 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             sstore(toBalanceSlot, or(toReferrer, toBalance))
             // Update referrer scores if referrers are different.
             if iszero(eq(fromReferrer, toReferrer)) {
-                mstore(0x0c, _SCORE_SLOT_SEED)
                 // Compute the score slot of `fromReferrer`.
-                mstore(0x00, fromReferrer)
-                let fromScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(fromReferrer, _SCORE_SLOT_SEED))
+                let fromScoreSlot := keccak256(0x00, 0x20)
                 // Subtract and store the updated score of `fromReferrer`.
                 sstore(fromScoreSlot, sub(sload(fromScoreSlot), amount))
                 // Compute the score slot of `toReferrer`.
-                mstore(0x00, toReferrer)
-                let toScoreSlot := keccak256(0x0c, 0x20)
+                mstore(0x00, or(toReferrer, _SCORE_SLOT_SEED))
+                let toScoreSlot := keccak256(0x00, 0x20)
                 // Add and store the updated score of `toReferrer`.
                 sstore(toScoreSlot, add(sload(toScoreSlot), amount))
             }
