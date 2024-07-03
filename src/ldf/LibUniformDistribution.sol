@@ -177,8 +177,26 @@ library LibUniformDistribution {
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        (int24 tickLower, int24 tickUpper,) = decodeParams(0, tickSpacing, twapSecondsAgo != 0, ldfParams);
-        return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper;
+        bool useTwap = twapSecondsAgo > 0;
+        int24 tickLower;
+        int24 tickUpper;
+        if (useTwap) {
+            // | offset - 3 bytes | length - 3 bytes | shiftMode - 1 byte |
+            int24 offset = int24(uint24(bytes3(ldfParams))); // offset (in rounded ticks) of tickLower from the twap tick
+            int24 length = int24(uint24(bytes3(ldfParams << 24))); // length of the position in rounded ticks
+            uint8 shiftMode = uint8(bytes1(ldfParams << 48));
+
+            return length > 0 && int256(offset) * int256(tickSpacing) <= type(int24).max
+                && int256(length) * int256(tickSpacing) <= type(int24).max && shiftMode <= uint8(type(ShiftMode).max);
+        } else {
+            // | tickLower - 3 bytes | tickUpper - 3 bytes |
+            tickLower = int24(uint24(bytes3(ldfParams)));
+            tickUpper = int24(uint24(bytes3(ldfParams << 24)));
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper
+                && tickLower >= minUsableTick && tickUpper <= maxUsableTick;
+        }
     }
 
     function liquidityDensityX96(int24 roundedTick, int24 tickSpacing, int24 tickLower, int24 tickUpper)
@@ -323,6 +341,19 @@ library LibUniformDistribution {
             shiftMode = ShiftMode(uint8(bytes1(ldfParams << 48)));
             tickLower = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
             tickUpper = tickLower + length * tickSpacing;
+
+            // bound distribution to be within the range of usable ticks
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            if (tickLower < minUsableTick) {
+                int24 tickLength = tickUpper - tickLower;
+                tickLower = minUsableTick;
+                tickUpper = int24(FixedPointMathLib.min(tickLower + tickLength, maxUsableTick));
+            } else if (tickUpper > maxUsableTick) {
+                int24 tickLength = tickUpper - tickLower;
+                tickUpper = maxUsableTick;
+                tickLower = int24(FixedPointMathLib.max(tickUpper - tickLength, minUsableTick));
+            }
         } else {
             // | tickLower - 3 bytes | tickUpper - 3 bytes |
             tickLower = int24(uint24(bytes3(ldfParams)));

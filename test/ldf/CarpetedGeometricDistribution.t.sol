@@ -293,4 +293,53 @@ contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
             assertEq(roundedTick, maxUsableTick - tickSpacing, "tick not maxUsableTick");
         }
     }
+
+    function test_boundary_static_invalidWhenOutOfBounds(int24 tickSpacing) external view {
+        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        uint32 alpha = 0.9e8;
+        uint32 weightMain = 0.9e9;
+
+        // invalid when minTick < minUsableTick
+        (int24 minTick, int24 length) = (minUsableTick - tickSpacing, 2);
+        bytes32 ldfParams = bytes32(abi.encodePacked(minTick, int16(length), alpha, weightMain));
+        assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
+
+        // invalid when maxTick > maxUsableTick
+        (minTick, length) = (maxUsableTick - tickSpacing, 2);
+        ldfParams = bytes32(abi.encodePacked(minTick, int16(length), alpha, weightMain));
+        assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
+
+        // valid test
+        (minTick, length) = (0, 2);
+        ldfParams = bytes32(abi.encodePacked(minTick, int16(length), alpha, weightMain));
+        assertTrue(ldf.isValidParams(tickSpacing, 0, ldfParams));
+    }
+
+    function test_boundary_dynamic_boundedWhenDecoding(int24 tickSpacing) external view {
+        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        uint32 alpha = 0.9e8;
+        uint32 weightMain = 0.9e9;
+        ShiftMode shiftMode = ShiftMode.RIGHT;
+
+        // bounded when minTick < minUsableTick
+        (int24 offset, int24 length) = (minUsableTick / tickSpacing - 1, 2);
+        bytes32 ldfParams = bytes32(abi.encodePacked(offset, int16(length), alpha, weightMain, shiftMode));
+        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams));
+        (int24 minTick,,,, ShiftMode decodedShiftMode) =
+            LibCarpetedGeometricDistribution.decodeParams(0, tickSpacing, true, ldfParams);
+        assertEq(minTick, minUsableTick, "minTick incorrect");
+        assertTrue(shiftMode == decodedShiftMode, "shiftMode incorrect");
+
+        // bounded when maxTick > maxUsableTick
+        (offset, length) = (maxUsableTick / tickSpacing - 1, 2);
+        ldfParams = bytes32(abi.encodePacked(offset, int16(length), alpha, weightMain, shiftMode));
+        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams));
+        (minTick,,,, decodedShiftMode) = LibCarpetedGeometricDistribution.decodeParams(0, tickSpacing, true, ldfParams);
+        assertEq(minTick + length * tickSpacing, maxUsableTick, "maxTick incorrect");
+        assertTrue(shiftMode == decodedShiftMode, "shiftMode incorrect");
+    }
 }

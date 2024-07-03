@@ -196,14 +196,10 @@ library LibBuyTheDipGeometricDistribution {
         // - both LDFs are valid
         // - threshold makes sense i.e. both LDFs can be used at some point
         // - alpha and altAlpha are on different sides of 1
-        // - does not exceed minUsableTick or maxUsableTick
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        return (twapSecondsAgo != 0) && LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams)
-            && LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, altLdfParams)
+        return (twapSecondsAgo != 0) && LibGeometricDistribution.isValidParams(tickSpacing, 0, ldfParams)
+            && LibGeometricDistribution.isValidParams(tickSpacing, 0, altLdfParams)
             && altThreshold < minTick + length * tickSpacing && altThreshold > minTick
-            && ((alphaX96 < Q96) != (altAlphaX96 < Q96)) && minTick >= minUsableTick
-            && minTick + length * tickSpacing <= maxUsableTick;
+            && ((alphaX96 < Q96) != (altAlphaX96 < Q96));
     }
 
     function liquidityDensityX96(

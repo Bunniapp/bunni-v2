@@ -279,27 +279,32 @@ library LibCarpetedDoubleGeometricDistribution {
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        int24 minTick;
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams)));
         int24 length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
         uint32 alpha0 = uint32(bytes4(ldfParams << 40));
-        uint256 weight0 = uint32(bytes4(ldfParams << 72));
+        uint32 weight0 = uint32(bytes4(ldfParams << 72));
         int24 length1 = int24(int16(uint16(bytes2(ldfParams << 104))));
         uint32 alpha1 = uint32(bytes4(ldfParams << 120));
-        uint256 weight1 = uint32(bytes4(ldfParams << 152));
-        uint256 weightMain = uint32(bytes4(ldfParams << 184));
-
-        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightMain != 0
-            && weightMain < WEIGHT_BASE
-            && LibDoubleGeometricDistribution.checkMinLiquidityDensity(
-                Q96.mulDiv(weightMain, WEIGHT_BASE),
-                tickSpacing,
-                minTick,
-                length0,
-                alpha0,
+        uint32 weight1 = uint32(bytes4(ldfParams << 152));
+        uint32 weightMain = uint32(bytes4(ldfParams << 184));
+        uint8 shiftMode = uint8(bytes1(ldfParams << 216));
+        bytes32 doubleGeometricLdfParams = bytes32(
+            abi.encodePacked(
+                minTickOrOffset,
+                int16(length0),
+                uint32(alpha0),
                 weight0,
-                length1,
-                alpha1,
-                weight1
+                int16(length1),
+                uint32(alpha1),
+                weight1,
+                shiftMode
+            )
+        );
+
+        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, doubleGeometricLdfParams)
+            && weightMain != 0 && weightMain < WEIGHT_BASE
+            && LibDoubleGeometricDistribution.checkMinLiquidityDensity(
+                Q96.mulDiv(weightMain, WEIGHT_BASE), tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1
             );
     }
 
@@ -458,18 +463,6 @@ library LibCarpetedDoubleGeometricDistribution {
         pure
         returns (Params memory params)
     {
-        if (useTwap) {
-            // use rounded TWAP value + offset as minTick
-            // | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
-            params.minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            params.shiftMode = ShiftMode(uint8(bytes1(ldfParams << 216)));
-        } else {
-            // static minTick set in params
-            // | minTick - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
-            params.minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            params.shiftMode = ShiftMode.BOTH;
-        }
         params.length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
         uint256 alpha0 = uint32(bytes4(ldfParams << 40));
         params.weight0 = uint32(bytes4(ldfParams << 72));
@@ -481,13 +474,26 @@ library LibCarpetedDoubleGeometricDistribution {
         params.alpha0X96 = alpha0.mulDiv(Q96, ALPHA_BASE);
         params.alpha1X96 = alpha1.mulDiv(Q96, ALPHA_BASE);
 
-        // bound distribution to be within the range of usable ticks
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        if (params.minTick < minUsableTick) {
-            params.minTick = minUsableTick;
-        } else if (params.minTick > maxUsableTick - (params.length0 + params.length1) * tickSpacing) {
-            params.minTick = maxUsableTick - (params.length0 + params.length1) * tickSpacing;
+        if (useTwap) {
+            // use rounded TWAP value + offset as minTick
+            // | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
+            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
+            params.minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
+            params.shiftMode = ShiftMode(uint8(bytes1(ldfParams << 216)));
+
+            // bound distribution to be within the range of usable ticks
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            if (params.minTick < minUsableTick) {
+                params.minTick = minUsableTick;
+            } else if (params.minTick > maxUsableTick - (params.length0 + params.length1) * tickSpacing) {
+                params.minTick = maxUsableTick - (params.length0 + params.length1) * tickSpacing;
+            }
+        } else {
+            // static minTick set in params
+            // | minTick - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
+            params.minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
+            params.shiftMode = ShiftMode.BOTH;
         }
     }
 

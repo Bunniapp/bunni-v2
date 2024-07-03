@@ -196,7 +196,6 @@ library LibDoubleGeometricDistribution {
     function checkMinLiquidityDensity(
         uint256 totalLiquidity,
         int24 tickSpacing,
-        int24 minTick,
         int24 length0,
         uint256 alpha0,
         uint256 weight0,
@@ -206,6 +205,7 @@ library LibDoubleGeometricDistribution {
     ) internal pure returns (bool) {
         // ensure liquidity density is nowhere equal to zero
         // can check boundaries since function is monotonic
+        int24 minTick = 0; // no loss of generality since shifting doesn't change the min liquidity density
         {
             uint256 alpha0X96 = uint256(alpha0).mulDiv(Q96, ALPHA_BASE);
             uint256 minLiquidityDensityX96;
@@ -255,8 +255,8 @@ library LibDoubleGeometricDistribution {
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // | minTick - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 2 bytes | weight1 - 4 bytes |
-        int24 minTick = int24(uint24(bytes3(ldfParams)));
+        // | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 2 bytes | weight1 - 4 bytes | shiftMode - 1 byte |
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams)));
         int24 length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
         uint32 alpha0 = uint32(bytes4(ldfParams << 40));
         uint256 weight0 = uint32(bytes4(ldfParams << 72));
@@ -264,15 +264,41 @@ library LibDoubleGeometricDistribution {
         uint32 alpha1 = uint32(bytes4(ldfParams << 120));
         uint256 weight1 = uint32(bytes4(ldfParams << 152));
 
+        // ensure length doesn't overflow when multiplied by tickSpacing
+        // ensure length can be contained between minUsableTick and maxUsableTick
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        int24 length = length0 + length1;
+        if (
+            int256(length) * int256(tickSpacing) > type(int24).max || length > maxUsableTick / tickSpacing
+                || -length < minUsableTick / tickSpacing
+        ) return false;
+
+        bool useTwap = twapSecondsAgo != 0;
+        if (useTwap) {
+            uint8 shiftMode = uint8(bytes1(ldfParams << 184));
+
+            // ensure shiftMode is within the valid range
+            if (shiftMode > uint8(type(ShiftMode).max)) {
+                return false;
+            }
+        }
+
         return LibGeometricDistribution.isValidParams(
-            tickSpacing, twapSecondsAgo, bytes32(abi.encodePacked(minTick, int16(length1), alpha1))
+            tickSpacing, twapSecondsAgo, bytes32(abi.encodePacked(minTickOrOffset, int16(length1), alpha1))
         )
             && LibGeometricDistribution.isValidParams(
                 tickSpacing,
                 twapSecondsAgo,
-                bytes32(abi.encodePacked(minTick + length1 * tickSpacing, int16(length0), alpha0))
+                bytes32(
+                    abi.encodePacked(
+                        useTwap ? minTickOrOffset + length1 : minTickOrOffset + length1 * tickSpacing,
+                        int16(length0),
+                        alpha0
+                    )
+                )
             ) && weight0 != 0 && weight1 != 0
-            && checkMinLiquidityDensity(Q96, tickSpacing, minTick, length0, alpha0, weight0, length1, alpha1, weight1);
+            && checkMinLiquidityDensity(Q96, tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1);
     }
 
     function liquidityDensityX96(
@@ -493,37 +519,36 @@ library LibDoubleGeometricDistribution {
             ShiftMode shiftMode
         )
     {
-        uint256 alpha0;
-        uint256 alpha1;
+        length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
+        uint256 alpha0 = uint32(bytes4(ldfParams << 40));
+        weight0 = uint32(bytes4(ldfParams << 72));
+        length1 = int24(int16(uint16(bytes2(ldfParams << 104))));
+        uint256 alpha1 = uint32(bytes4(ldfParams << 120));
+        weight1 = uint32(bytes4(ldfParams << 152));
+
+        alpha0X96 = alpha0.mulDiv(Q96, ALPHA_BASE);
+        alpha1X96 = alpha1.mulDiv(Q96, ALPHA_BASE);
+
         if (useTwap) {
             // use rounded TWAP value + offset as minTick
             // | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | shiftMode - 1 byte |
             int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
             minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
             shiftMode = ShiftMode(uint8(bytes1(ldfParams << 184)));
+
+            // bound distribution to be within the range of usable ticks
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            if (minTick < minUsableTick) {
+                minTick = minUsableTick;
+            } else if (minTick > maxUsableTick - (length0 + length1) * tickSpacing) {
+                minTick = maxUsableTick - (length0 + length1) * tickSpacing;
+            }
         } else {
             // static minTick set in params
             // | minTick - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes |
             minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
             shiftMode = ShiftMode.BOTH;
-        }
-        length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
-        alpha0 = uint32(bytes4(ldfParams << 40));
-        weight0 = uint32(bytes4(ldfParams << 72));
-        length1 = int24(int16(uint16(bytes2(ldfParams << 104))));
-        alpha1 = uint32(bytes4(ldfParams << 120));
-        weight1 = uint32(bytes4(ldfParams << 152));
-
-        alpha0X96 = alpha0.mulDiv(Q96, ALPHA_BASE);
-        alpha1X96 = alpha1.mulDiv(Q96, ALPHA_BASE);
-
-        // bound distribution to be within the range of usable ticks
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        if (minTick < minUsableTick) {
-            minTick = minUsableTick;
-        } else if (minTick > maxUsableTick - (length0 + length1) * tickSpacing) {
-            minTick = maxUsableTick - (length0 + length1) * tickSpacing;
         }
     }
 }

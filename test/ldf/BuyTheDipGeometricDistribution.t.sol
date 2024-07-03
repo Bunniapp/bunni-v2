@@ -12,6 +12,8 @@ import {BuyTheDipGeometricDistribution} from "../../src/ldf/BuyTheDipGeometricDi
 contract BuyTheDipGeometricDistributionTest is Test {
     ILiquidityDensityFunction internal ldf;
     int24 internal constant TICK_SPACING = 1;
+    int24 internal constant MAX_TICK_SPACING = type(int16).max;
+    int24 internal constant MIN_TICK_SPACING = 1;
 
     function setUp() public {
         ldf = new BuyTheDipGeometricDistribution();
@@ -85,14 +87,15 @@ contract BuyTheDipGeometricDistributionTest is Test {
         assertNotEq(liquidityDensityX96, newLiquidityDensityX96, "fourth liquidity density did not change");
     }
 
-    function test_isValidParams() external view {
+    function test_isValidParams(int24 tickSpacing) external view {
+        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         PoolKey memory key;
-        key.tickSpacing = TICK_SPACING;
-        int24 minTick = -9 * TICK_SPACING;
+        key.tickSpacing = tickSpacing;
+        int24 minTick = -9 * tickSpacing;
         int16 length = 10;
         uint32 alpha = 1.2e8;
         uint32 altAlpha = 0.8e8;
-        int24 altThreshold = -2 * TICK_SPACING;
+        int24 altThreshold = -2 * tickSpacing;
         bool altThresholdDirection = true;
         bytes32 ldfParams =
             bytes32(abi.encodePacked(minTick, length, alpha, uint8(0), altAlpha, altThreshold, altThresholdDirection));

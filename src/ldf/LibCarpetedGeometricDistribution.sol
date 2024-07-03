@@ -219,13 +219,14 @@ library LibCarpetedGeometricDistribution {
         return (false, 0);
     }
 
-    function checkMinLiquidityDensity(int24 tickSpacing, int24 minTick, int24 length, uint256 alpha, uint256 weightMain)
+    function checkMinLiquidityDensity(int24 tickSpacing, int24 length, uint256 alpha, uint256 weightMain)
         internal
         pure
         returns (bool)
     {
         // ensure liquidity density is nowhere equal to zero
         // can check boundaries since function is monotonic
+        int24 minTick = 0; // no loss of generality since shifting doesn't change the min liquidity density
         {
             uint256 alphaX96 = uint256(alpha).mulDiv(Q96, ALPHA_BASE);
             uint256 minLiquidityDensityX96;
@@ -254,12 +255,13 @@ library LibCarpetedGeometricDistribution {
         int24 minTickOrOffset = int24(uint24(bytes3(ldfParams)));
         int24 length = int24(int16(uint16(bytes2(ldfParams << 24))));
         uint32 alpha = uint32(bytes4(ldfParams << 40));
-        uint256 weightMain = uint32(bytes4(ldfParams << 72));
-        bytes32 geometricLdfParams = bytes32(abi.encodePacked(minTickOrOffset, int16(length), alpha));
+        uint32 weightMain = uint32(bytes4(ldfParams << 72));
+        uint8 shiftMode = uint8(bytes1(ldfParams << 104));
+        bytes32 geometricLdfParams = bytes32(abi.encodePacked(minTickOrOffset, int16(length), alpha, shiftMode));
 
         return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, geometricLdfParams)
             && weightMain != 0 && weightMain < WEIGHT_BASE
-            && checkMinLiquidityDensity(tickSpacing, minTickOrOffset, length, alpha, weightMain);
+            && checkMinLiquidityDensity(tickSpacing, length, alpha, weightMain);
     }
 
     function liquidityDensityX96(
@@ -418,31 +420,32 @@ library LibCarpetedGeometricDistribution {
         pure
         returns (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode)
     {
-        if (useTwap) {
-            // use rounded TWAP value + offset as minTick
-            // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
-            minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 104)));
-        } else {
-            // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
-            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            shiftMode = ShiftMode.BOTH;
-        }
         length = int24(int16(uint16(bytes2(ldfParams << 24))));
         uint256 alpha = uint32(bytes4(ldfParams << 40));
         weightMain = uint32(bytes4(ldfParams << 72));
 
         alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
 
-        // bound distribution to be within the range of usable ticks
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        if (minTick < minUsableTick) {
-            minTick = minUsableTick;
-        } else if (minTick > maxUsableTick - length * tickSpacing) {
-            minTick = maxUsableTick - length * tickSpacing;
+        if (useTwap) {
+            // use rounded TWAP value + offset as minTick
+            // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
+            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
+            minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
+            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 104)));
+
+            // bound distribution to be within the range of usable ticks
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            if (minTick < minUsableTick) {
+                minTick = minUsableTick;
+            } else if (minTick > maxUsableTick - length * tickSpacing) {
+                minTick = maxUsableTick - length * tickSpacing;
+            }
+        } else {
+            // static minTick set in params
+            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
+            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
+            shiftMode = ShiftMode.BOTH;
         }
     }
 
