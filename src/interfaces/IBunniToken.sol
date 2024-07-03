@@ -5,11 +5,12 @@ pragma solidity >=0.6.0;
 import {IERC20} from "./IERC20.sol";
 import {IOwnable} from "./IOwnable.sol";
 import {IBunniHub} from "./IBunniHub.sol";
+import {IERC20Referrer} from "./IERC20Referrer.sol";
 
 /// @title BunniToken
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
-interface IBunniToken is IERC20, IOwnable {
+interface IBunniToken is IERC20, IERC20Referrer, IOwnable {
     event SetMetadataURI(string newURI);
 
     function hub() external view returns (IBunniHub);
@@ -18,7 +19,7 @@ interface IBunniToken is IERC20, IOwnable {
 
     function token1() external view returns (IERC20);
 
-    function mint(address to, uint256 amount) external;
+    function mint(address to, uint256 amount, uint16 referrer) external;
 
     function burn(address from, uint256 amount) external;
 

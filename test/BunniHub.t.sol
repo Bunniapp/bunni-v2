@@ -1136,7 +1136,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 tax0: 0,
                 tax1: 0,
                 vaultFee0: 0,
-                vaultFee1: 0
+                vaultFee1: 0,
+                referrer: 0
             })
         );
         data[1] = abi.encodeWithSelector(
@@ -1153,7 +1154,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 tax0: 0,
                 tax1: 0,
                 vaultFee0: 0,
-                vaultFee1: 0
+                vaultFee1: 0,
+                referrer: 0
             })
         );
 
@@ -1842,7 +1844,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             tax0: 0,
             tax1: 0,
             vaultFee0: 0,
-            vaultFee1: 0
+            vaultFee1: 0,
+            referrer: 0
         });
         (uint256 shares, uint256 amount0, uint256 amount1) = quoter.quoteDeposit(depositParams);
 
@@ -2112,7 +2115,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             tax0: 0,
             tax1: 0,
             vaultFee0: 0,
-            vaultFee1: 0
+            vaultFee1: 0,
+            referrer: 0
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
@@ -2160,7 +2164,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             tax0: tax0,
             tax1: tax1,
             vaultFee0: vaultFee0,
-            vaultFee1: vaultFee1
+            vaultFee1: vaultFee1,
+            referrer: 0
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);

@@ -80,6 +80,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
     /// @param vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
     /// @param vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// @param deadline The time by which the transaction must be included to effect the change
+    /// @param referrer The referrer of the liquidity provider. Used for fee sharing.
     struct DepositParams {
         PoolKey poolKey;
         address recipient;
@@ -93,6 +94,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
         uint256 vaultFee0;
         uint256 vaultFee1;
         uint256 deadline;
+        uint16 referrer;
     }
 
     /// @notice Increases the amount of liquidity in a position, with tokens paid by the `msg.sender`

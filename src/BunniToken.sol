@@ -10,12 +10,12 @@ import {Ownable} from "./base/Ownable.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
-import {ERC20Multicallable} from "./base/ERC20Multicallable.sol";
+import {ERC20Referrer} from "./base/ERC20Referrer.sol";
 
 /// @title BunniToken
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
-contract BunniToken is IBunniToken, ERC20Multicallable, Clone, Ownable {
+contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     string public metadataURI;
 
     function hub() public pure override returns (IBunniHub) {
@@ -45,10 +45,10 @@ contract BunniToken is IBunniToken, ERC20Multicallable, Clone, Ownable {
         emit SetMetadataURI(metadataURI_);
     }
 
-    function mint(address to, uint256 amount) external override {
+    function mint(address to, uint256 amount, uint16 referrer) external override {
         if (msg.sender != address(hub())) revert BunniToken__NotBunniHub();
 
-        _mint(to, amount);
+        _mint(to, amount, referrer);
     }
 
     function burn(address from, uint256 amount) external override {

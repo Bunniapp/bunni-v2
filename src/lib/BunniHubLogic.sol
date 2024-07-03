@@ -148,7 +148,8 @@ library BunniHubLogic {
             address(state.vault0) != address(0) ? rawAmount0 + reserveAmount0 : rawAmount0,
             depositReturnData.balance0,
             address(state.vault1) != address(0) ? rawAmount1 + reserveAmount1 : rawAmount1,
-            depositReturnData.balance1
+            depositReturnData.balance1,
+            params.referrer
         );
 
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
@@ -535,6 +536,11 @@ library BunniHubLogic {
     /// @notice Mints share tokens to the recipient based on the amount of liquidity added.
     /// @param shareToken The BunniToken to mint
     /// @param recipient The recipient of the share tokens
+    /// @param addedAmount0 The amount of token0 added to the pool
+    /// @param existingAmount0 The existing amount of token0 in the pool
+    /// @param addedAmount1 The amount of token1 added to the pool
+    /// @param existingAmount1 The existing amount of token1 in the pool
+    /// @param referrer The referrer of the liquidity provider
     /// @return shares The amount of share tokens minted to the sender.
     function _mintShares(
         IBunniToken shareToken,
@@ -542,7 +548,8 @@ library BunniHubLogic {
         uint256 addedAmount0,
         uint256 existingAmount0,
         uint256 addedAmount1,
-        uint256 existingAmount1
+        uint256 existingAmount1,
+        uint16 referrer
     ) internal returns (uint256 shares) {
         uint256 existingShareSupply = shareToken.totalSupply();
         if (existingShareSupply == 0) {
@@ -550,7 +557,7 @@ library BunniHubLogic {
             shares = WAD - MIN_INITIAL_SHARES;
             // prevent first staker from stealing funds of subsequent stakers
             // see https://code4rena.com/reports/2022-01-sherlock/#h-01-first-user-can-steal-everyone-elses-tokens
-            shareToken.mint(address(0), MIN_INITIAL_SHARES);
+            shareToken.mint(address(0), MIN_INITIAL_SHARES, referrer);
         } else {
             // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
             if (existingAmount0 == 0 && existingAmount1 == 0) revert BunniHub__ZeroSharesMinted();
@@ -562,7 +569,7 @@ library BunniHubLogic {
         }
 
         // mint shares to sender
-        shareToken.mint(recipient, shares);
+        shareToken.mint(recipient, shares, referrer);
     }
 
     /// @dev Deposits tokens into a vault.
