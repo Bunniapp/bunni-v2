@@ -38,7 +38,9 @@ contract DeployCoreScript is CREATE3Script {
             payable(
                 create3.deploy(
                     getCreate3ContractSalt("BunniHub"),
-                    bytes.concat(type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2, new BunniToken()))
+                    bytes.concat(
+                        type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2, new BunniToken(), owner)
+                    )
                 )
             )
         );

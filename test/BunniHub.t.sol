@@ -179,7 +179,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         swapperWithTax = new UniswapperTax(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, permit2, new BunniToken());
+        hub = new BunniHub(poolManager, weth, permit2, new BunniToken(), address(this));
 
         // deploy zone
         zone = new BunniZone(address(this));
