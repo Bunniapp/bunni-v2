@@ -557,7 +557,7 @@ library BunniHubLogic {
             shares = WAD - MIN_INITIAL_SHARES;
             // prevent first staker from stealing funds of subsequent stakers
             // see https://code4rena.com/reports/2022-01-sherlock/#h-01-first-user-can-steal-everyone-elses-tokens
-            shareToken.mint(address(0), MIN_INITIAL_SHARES, referrer);
+            shareToken.mint(address(0), MIN_INITIAL_SHARES, 0);
         } else {
             // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
             if (existingAmount0 == 0 && existingAmount1 == 0) revert BunniHub__ZeroSharesMinted();

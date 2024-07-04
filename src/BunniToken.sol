@@ -230,7 +230,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     }
 
     /// @dev Should accrue rewards for the referrers of `from` and `to` in both token0 and token1
-    function _beforeTokenTransfer(address from, address to, uint256 amount) internal override {
+    function _beforeTokenTransfer(address from, address to, uint256) internal override {
         uint256 rewardPerToken0 = referrerRewardPerToken0;
         uint256 rewardPerToken1 = referrerRewardPerToken1;
 
