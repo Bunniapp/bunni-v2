@@ -5,6 +5,8 @@ pragma solidity ^0.8.15;
 import {Clone} from "clones-with-immutable-args/Clone.sol";
 
 import "@uniswap/v4-core/src/types/Currency.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -78,6 +80,10 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         return string(abi.encodePacked(_getArgUint256(92)));
     }
 
+    function poolManager() public pure override returns (IPoolManager) {
+        return IPoolManager(_getArgAddress(124));
+    }
+
     /// -----------------------------------------------------------------------
     /// Initialization
     /// -----------------------------------------------------------------------
@@ -123,7 +129,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniToken
-    function distributeReferralRewards(bool isToken0, uint256 amount) external payable override {
+    function distributeReferralRewards(bool isToken0, uint256 amount) external override {
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
@@ -131,17 +137,9 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         Currency token;
         if (isToken0) {
             token = token0();
-
-            // if token is native, override amount with msg.value
-            if (token.isNative()) amount = msg.value;
-
             referrerRewardPerToken0 += amount.fullMulDiv(REFERRAL_REWARD_PER_TOKEN_PRECISION, totalSupply());
         } else {
             token = token1();
-
-            // if token is native, override amount with msg.value
-            if (token.isNative()) amount = msg.value;
-
             referrerRewardPerToken1 += amount.fullMulDiv(REFERRAL_REWARD_PER_TOKEN_PRECISION, totalSupply());
         }
 
@@ -149,11 +147,8 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         /// External calls
         /// -----------------------------------------------------------------------
 
-        if (!token.isNative()) {
-            // ERC20 token
-            // pull tokens from msg.sender
-            Currency.unwrap(token).safeTransferFrom(msg.sender, address(this), amount);
-        }
+        // pull PoolManager claims tokens from msg.sender
+        poolManager().transferFrom(msg.sender, address(this), token.toId(), amount);
     }
 
     /// @inheritdoc IBunniToken
@@ -199,13 +194,8 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         /// External calls
         /// -----------------------------------------------------------------------
 
-        // transfer the rewards
-        if (reward0 > 0) {
-            token0().transfer(referrerAddress, reward0);
-        }
-        if (reward1 > 0) {
-            token1().transfer(referrerAddress, reward1);
-        }
+        // call PoolManager to convert claim tokens into underlying tokens
+        poolManager().unlock(abi.encode(referrerAddress, reward0, reward1));
     }
 
     /// @inheritdoc IBunniToken
@@ -227,6 +217,31 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
             referrerRewardPerTokenPaid1[referrer],
             referrerRewardUnclaimed1[referrer]
         );
+    }
+
+    /// @inheritdoc IUnlockCallback
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        // verify sender
+        IPoolManager manager = poolManager();
+        if (msg.sender != address(manager)) revert BunniToken__NotPoolManager();
+
+        // decode input
+        (address referrerAddress, uint256 reward0, uint256 reward1) = abi.decode(data, (address, uint256, uint256));
+
+        // burn claim tokens and take underlying tokens for referrer
+        if (reward0 != 0) {
+            Currency token = token0();
+            manager.burn(address(this), token.toId(), reward0);
+            manager.take(token, referrerAddress, reward0);
+        }
+        if (reward1 != 0) {
+            Currency token = token1();
+            manager.burn(address(this), token.toId(), reward1);
+            manager.take(token, referrerAddress, reward1);
+        }
+
+        // fallback
+        return bytes("");
     }
 
     /// @dev Should accrue rewards for the referrers of `from` and `to` in both token0 and token1
@@ -264,7 +279,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
             toReferrer = referrerOf(to);
 
             // no need to accrue rewards again if from and to have the same referrer
-            if (from != address(0) && fromReferrer != toReferrer) {
+            if (!(from != address(0) && fromReferrer == toReferrer)) {
                 uint256 toReferrerScore = scoreOf(toReferrer);
 
                 // accrue token0 rewards

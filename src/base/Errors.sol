@@ -25,6 +25,7 @@ error BunniHub__InvalidRawTokenRatioBounds();
 error BunniHub__QueuedWithdrawalNonexistent();
 
 error BunniToken__NotBunniHub();
+error BunniToken__NotPoolManager();
 error BunniToken__ReferrerAddressIsZero();
 
 error BunniHook__InvalidSwap();

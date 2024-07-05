@@ -3,6 +3,8 @@
 pragma solidity >=0.6.0;
 
 import "@uniswap/v4-core/src/types/Currency.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {IERC20} from "./IERC20.sol";
 import {IOwnable} from "./IOwnable.sol";
@@ -12,7 +14,7 @@ import {IERC20Referrer} from "./IERC20Referrer.sol";
 /// @title BunniToken
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
-interface IBunniToken is IERC20, IERC20Referrer, IOwnable {
+interface IBunniToken is IERC20, IERC20Referrer, IOwnable, IUnlockCallback {
     event SetMetadataURI(string newURI);
 
     function hub() external view returns (IBunniHub);
@@ -20,6 +22,8 @@ interface IBunniToken is IERC20, IERC20Referrer, IOwnable {
     function token0() external view returns (Currency);
 
     function token1() external view returns (Currency);
+
+    function poolManager() external view returns (IPoolManager);
 
     function mint(address to, uint256 amount, uint16 referrer) external;
 
@@ -34,12 +38,12 @@ interface IBunniToken is IERC20, IERC20Referrer, IOwnable {
     function setMetadataURI(string calldata metadataURI_) external;
 
     /// @notice Distributes referral rewards to all referrers. Usually called by the hook but can be called by anyone.
-    /// If the reward token is the native token (e.g. ETH), `amount` is overridden by `msg.value`.
+    /// The referral rewards should be in the form of PoolManager ERC6909 claim tokens.
     /// @dev Does not early return if the reward amount is 0, so the caller is responsible for not calling this function
     /// if amount is indeed 0.
     /// @param isToken0 Whether the rewards are in token0 or token1
-    /// @param amount The amount of rewards to distribute. Ignored if the reward token is the native token.
-    function distributeReferralRewards(bool isToken0, uint256 amount) external payable;
+    /// @param amount The amount of rewards to distribute.
+    function distributeReferralRewards(bool isToken0, uint256 amount) external;
 
     /// @notice Claims referral rewards for a given referrer ID. Can be called by anyone.
     /// Reverts if the referrer ID has not been registered in the hub.

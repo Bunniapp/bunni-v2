@@ -11,6 +11,7 @@ import "@uniswap/v4-core/src/types/Currency.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC4626} from "solady/tokens/ERC4626.sol";
@@ -31,7 +32,7 @@ import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
-contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer {
+contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback {
     using CurrencyLibrary for Currency;
 
     uint32 internal constant ALPHA = 0.7e8;
@@ -151,7 +152,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer {
 
         // approve tokens
         token1.approve(address(permit2), type(uint256).max);
-        token1.approve(address(bunniToken), type(uint256).max);
+        poolManager.setOperator(address(bunniToken), true);
 
         // permit2 approve tokens to hub
         permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
@@ -171,10 +172,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer {
 
         // distribute `amount` tokens to referrers
         if (isToken0) {
-            _mint(currency0, address(this), amount);
-            bunniToken.distributeReferralRewards{value: amount}(isToken0, amount);
+            poolManager.unlock(abi.encode(currency0, amount));
+            bunniToken.distributeReferralRewards(isToken0, amount);
         } else {
-            _mint(currency1, address(this), amount);
+            poolManager.unlock(abi.encode(currency1, amount));
             bunniToken.distributeReferralRewards(isToken0, amount);
         }
 
@@ -203,6 +204,29 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer {
             assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
             assertEq(currency1.balanceOf(referrerAddress), claimableAmount1, "balance incorrect");
         }
+    }
+
+    /// @inheritdoc IUnlockCallback
+    /// @dev Mint claim tokens of a currency
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        // decode input
+        (Currency token, uint256 amount) = abi.decode(data, (Currency, uint256));
+
+        // mint tokens
+        _mint(token, address(this), amount);
+
+        // mint claim tokens
+        poolManager.mint(address(this), token.toId(), amount);
+        poolManager.sync(token);
+        if (token.isNative()) {
+            poolManager.settle{value: amount}(token);
+        } else {
+            token.transfer(address(poolManager), amount);
+            poolManager.settle(token);
+        }
+
+        // fallback
+        return bytes("");
     }
 
     receive() external payable {}

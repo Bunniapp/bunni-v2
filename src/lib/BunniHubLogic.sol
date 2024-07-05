@@ -483,7 +483,9 @@ library BunniHubLogic {
         // deploy BunniToken
         token = IBunniToken(
             address(env.bunniTokenImplementation).clone({
-                data: abi.encodePacked(address(this), params.currency0, params.currency1, params.name, params.symbol)
+                data: abi.encodePacked(
+                    address(this), params.currency0, params.currency1, params.name, params.symbol, env.poolManager
+                )
             })
         );
         token.initialize(params.owner, params.metadataURI);
