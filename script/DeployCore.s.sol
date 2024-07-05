@@ -45,6 +45,9 @@ contract DeployCoreScript is CREATE3Script {
             )
         );
 
+        // set the default referrer's address to owner
+        hub.setReferrerAddress(0, owner);
+
         zone = BunniZone(
             payable(
                 create3.deploy(
