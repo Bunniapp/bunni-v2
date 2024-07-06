@@ -433,6 +433,222 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         }
     }
 
+    function test_distribute_singleDistro_twoReferrersWithTransfer(bool isToken0, uint256 amount) public {
+        amount = bound(amount, 1e5, 1e36);
+
+        // register referrer
+        address referrer1Address = makeAddr("referrer1");
+        hub.setReferrerAddress(1, referrer1Address);
+        address referrer2Address = makeAddr("referrer2");
+        hub.setReferrerAddress(2, referrer2Address);
+
+        // mint bunni token using referrers
+        uint256 shares1 = _makeDeposit(key, 1 ether, 1 ether, referrer1Address, 1);
+        assertEq(bunniToken.scoreOf(1), shares1, "score incorrect");
+
+        uint256 shares2 = _makeDeposit(key, 1 ether, 1 ether, referrer2Address, 2);
+        assertEq(bunniToken.scoreOf(2), shares2, "score incorrect");
+
+        // distribute `amount` tokens to referrers
+        Currency token = isToken0 ? currency0 : currency1;
+        poolManager.unlock(abi.encode(token, amount));
+        bunniToken.distributeReferralRewards(isToken0, amount);
+
+        // make transfer from referrer1 to referrer2
+        vm.startPrank(referrer1Address);
+        bunniToken.transfer(referrer2Address, bunniToken.balanceOf(referrer1Address) / 2);
+        vm.stopPrank();
+
+        // check claimable amounts
+        // transfer shouldn't have affected claimable amounts
+        // since it was after the distribution
+        uint256 bunniTotalSupply = bunniToken.totalSupply();
+        {
+            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(1);
+            if (isToken0) {
+                if (dist(claimableAmount0, amount * shares1 / bunniTotalSupply) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount0,
+                        amount * shares1 / bunniTotalSupply,
+                        MAX_REL_ERROR,
+                        "claimableAmount0 incorrect"
+                    );
+                }
+                assertEq(claimableAmount1, 0, "claimableAmount1 incorrect");
+            } else {
+                assertEq(claimableAmount0, 0, "claimableAmount0 incorrect");
+                if (dist(claimableAmount1, amount * shares1 / bunniTotalSupply) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount1,
+                        amount * shares1 / bunniTotalSupply,
+                        MAX_REL_ERROR,
+                        "claimableAmount1 incorrect"
+                    );
+                }
+            }
+
+            // claim rewards
+            uint256 beforeBalance = token.balanceOf(referrer1Address);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(1);
+            assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
+            assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
+            assertEq(
+                token.balanceOf(referrer1Address) - beforeBalance,
+                isToken0 ? claimableAmount0 : claimableAmount1,
+                "balance incorrect"
+            );
+        }
+
+        {
+            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(2);
+            if (isToken0) {
+                if (dist(claimableAmount0, amount * shares2 / bunniTotalSupply) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount0,
+                        amount * shares2 / bunniTotalSupply,
+                        MAX_REL_ERROR,
+                        "claimableAmount0 incorrect"
+                    );
+                }
+                assertEq(claimableAmount1, 0, "claimableAmount1 incorrect");
+            } else {
+                assertEq(claimableAmount0, 0, "claimableAmount0 incorrect");
+                if (dist(claimableAmount1, amount * shares2 / bunniTotalSupply) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount1,
+                        amount * shares2 / bunniTotalSupply,
+                        MAX_REL_ERROR,
+                        "claimableAmount1 incorrect"
+                    );
+                }
+            }
+
+            // claim rewards
+            uint256 beforeBalance = token.balanceOf(referrer2Address);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(2);
+            assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
+            assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
+            assertEq(
+                token.balanceOf(referrer2Address) - beforeBalance,
+                isToken0 ? claimableAmount0 : claimableAmount1,
+                "balance incorrect"
+            );
+        }
+    }
+
+    function test_distribute_transferAndDistro(
+        bool isToken0,
+        uint256 amountFirst,
+        uint256 amountSecond,
+        uint256 amountThird
+    ) public {
+        amountFirst = bound(amountFirst, 1e5, 1e36);
+        amountSecond = bound(amountSecond, 1e5, 1e36);
+        amountThird = bound(amountThird, 1e5, 1e36);
+
+        // register referrers
+        address referrer1Address = makeAddr("referrer1");
+        hub.setReferrerAddress(1, referrer1Address);
+        address referrer2Address = makeAddr("referrer2");
+        hub.setReferrerAddress(2, referrer2Address);
+
+        // mint bunni token to referrer 1
+        uint256 shares1 = _makeDeposit(key, 1 ether, 1 ether, referrer1Address, 1);
+        assertEq(bunniToken.scoreOf(1), shares1, "score incorrect");
+
+        // mint bunni token to referrer 2
+        uint256 shares2 = _makeDeposit(key, 2 ether, 2 ether, referrer2Address, 2);
+        assertEq(bunniToken.scoreOf(2), shares2, "score incorrect");
+
+        // distribute `amountFirst` tokens
+        Currency token = isToken0 ? currency0 : currency1;
+        uint256 amountTotal = amountFirst + amountSecond + amountThird;
+        poolManager.unlock(abi.encode(token, amountTotal));
+        bunniToken.distributeReferralRewards(isToken0, amountFirst);
+
+        // transfer referrer 2 balance to referrer 1
+        // so that referrer 1 has `shares1 + shares2` tokens
+        // and referrer 2 has 0 tokens
+        vm.prank(referrer2Address);
+        bunniToken.transfer(referrer1Address, shares2);
+
+        // distribute `amountSecond` tokens
+        bunniToken.distributeReferralRewards(isToken0, amountSecond);
+
+        // transfer referrer 1 balance to referrer 2
+        vm.prank(referrer1Address);
+        bunniToken.transfer(referrer2Address, shares1 + shares2);
+
+        // distribute `amountThird` tokens
+        bunniToken.distributeReferralRewards(isToken0, amountThird);
+
+        // check claimable amounts
+        uint256 bunniTotalSupply = bunniToken.totalSupply();
+        {
+            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(1);
+            uint256 expectedClaimableAmount =
+                amountFirst * shares1 / bunniTotalSupply + amountSecond * (shares1 + shares2) / bunniTotalSupply;
+            if (isToken0) {
+                if (dist(claimableAmount0, expectedClaimableAmount) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount0, expectedClaimableAmount, MAX_REL_ERROR, "referrer1 claimableAmount0 incorrect"
+                    );
+                }
+                assertEq(claimableAmount1, 0, "referrer1 claimableAmount1 incorrect");
+            } else {
+                assertEq(claimableAmount0, 0, "referrer1 claimableAmount0 incorrect");
+                if (dist(claimableAmount1, expectedClaimableAmount) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount1, expectedClaimableAmount, MAX_REL_ERROR, "referrer1 claimableAmount1 incorrect"
+                    );
+                }
+            }
+
+            // claim rewards
+            uint256 beforeBalance = token.balanceOf(referrer1Address);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(1);
+            assertEq(claimedAmount0, claimableAmount0, "referrer1 claimedAmount0 incorrect");
+            assertEq(claimedAmount1, claimableAmount1, "referrer1 claimedAmount1 incorrect");
+            assertEq(
+                token.balanceOf(referrer1Address) - beforeBalance,
+                isToken0 ? claimableAmount0 : claimableAmount1,
+                "balance incorrect"
+            );
+        }
+
+        {
+            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(2);
+            uint256 expectedClaimableAmount =
+                amountFirst * shares2 / bunniTotalSupply + amountThird * (shares1 + shares2) / bunniTotalSupply;
+            if (isToken0) {
+                if (dist(claimableAmount0, expectedClaimableAmount) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount0, expectedClaimableAmount, MAX_REL_ERROR, "referrer2 claimableAmount0 incorrect"
+                    );
+                }
+                assertEq(claimableAmount1, 0, "referrer2 claimableAmount1 incorrect");
+            } else {
+                assertEq(claimableAmount0, 0, "referrer2 claimableAmount0 incorrect");
+                if (dist(claimableAmount1, expectedClaimableAmount) > 1) {
+                    assertApproxEqRel(
+                        claimableAmount1, expectedClaimableAmount, MAX_REL_ERROR, "referrer2 claimableAmount1 incorrect"
+                    );
+                }
+            }
+
+            // claim rewards
+            uint256 beforeBalance = token.balanceOf(referrer2Address);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(2);
+            assertEq(claimedAmount0, claimableAmount0, "referrer2 claimedAmount0 incorrect");
+            assertEq(claimedAmount1, claimableAmount1, "referrer2 claimedAmount1 incorrect");
+            assertEq(
+                token.balanceOf(referrer2Address) - beforeBalance,
+                isToken0 ? claimableAmount0 : claimableAmount1,
+                "balance incorrect"
+            );
+        }
+    }
+
     /// @inheritdoc IUnlockCallback
     /// @dev Mint claim tokens of a currency
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {

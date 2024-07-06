@@ -161,16 +161,13 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         address referrerAddress = hub().getReferrerAddress(referrer);
         if (referrerAddress == address(0)) revert BunniToken__ReferrerAddressIsZero();
 
-        // early return if the referrer has zero score
-        uint256 referrerScore = scoreOf(referrer);
-        if (referrerScore == 0) return (0, 0);
-
         /// -----------------------------------------------------------------------
         /// Storage loads
         /// -----------------------------------------------------------------------
 
         uint256 rewardPerToken0 = referrerRewardPerToken0;
         uint256 rewardPerToken1 = referrerRewardPerToken1;
+        uint256 referrerScore = scoreOf(referrer);
 
         /// -----------------------------------------------------------------------
         /// State updates
