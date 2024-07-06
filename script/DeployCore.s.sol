@@ -28,7 +28,8 @@ contract DeployCoreScript is CREATE3Script {
         address weth = vm.envAddress(string.concat("WETH_", block.chainid.toString()));
         address permit2 = vm.envAddress("PERMIT2");
         address owner = vm.envAddress(string.concat("OWNER_", block.chainid.toString()));
-        uint88 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint88();
+        uint32 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint32();
+        uint32 referralRewardModifier = vm.envUint("REFERRAL_REWARD_MODIFIER").toUint32();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
         uint32 oracleMinInterval = vm.envUint("ORACLE_MIN_INTERVAL").toUint32();
 
@@ -38,10 +39,15 @@ contract DeployCoreScript is CREATE3Script {
             payable(
                 create3.deploy(
                     getCreate3ContractSalt("BunniHub"),
-                    bytes.concat(type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2, new BunniToken()))
+                    bytes.concat(
+                        type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2, new BunniToken(), owner)
+                    )
                 )
             )
         );
+
+        // set the default referrer's address to owner
+        hub.setReferrerAddress(0, owner);
 
         zone = BunniZone(
             payable(
@@ -70,7 +76,17 @@ contract DeployCoreScript is CREATE3Script {
                     hookSalt,
                     bytes.concat(
                         type(BunniHook).creationCode,
-                        abi.encode(poolManager, hub, floodPlain, weth, zone, owner, hookFeeModifier, oracleMinInterval)
+                        abi.encode(
+                            poolManager,
+                            hub,
+                            floodPlain,
+                            weth,
+                            zone,
+                            owner,
+                            hookFeeModifier,
+                            referralRewardModifier,
+                            oracleMinInterval
+                        )
                     )
                 )
             )

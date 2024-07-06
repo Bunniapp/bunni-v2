@@ -54,7 +54,8 @@ library BunniHookLogic {
     /// -----------------------------------------------------------------------
 
     struct Env {
-        uint88 hookFeesModifier;
+        uint32 hookFeeModifier;
+        uint32 referralRewardModifier;
         IBunniHub hub;
         IPoolManager poolManager;
         IFloodPlain floodPlain;
@@ -322,7 +323,7 @@ library BunniHookLogic {
             if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
 
             // take hook fees from swap fee
-            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeesModifier, WAD);
+            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
             swapFeeAmount -= hookFeesAmount;
 
             // modify output amount with fees
@@ -349,7 +350,7 @@ library BunniHookLogic {
             if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
 
             // take hook fees from swap fee
-            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeesModifier, WAD);
+            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
             swapFeeAmount -= hookFeesAmount;
 
             // modify input amount with fees
@@ -381,6 +382,18 @@ library BunniHookLogic {
 
         // burn output claim tokens
         env.poolManager.burn(address(this), outputToken.toId(), outputAmount);
+
+        // distribute part of hookFees to referrers
+        if (hookFeesAmount != 0) {
+            uint256 referrerRewardAmount = hookFeesAmount.mulDiv(env.referralRewardModifier, MODIFIER_BASE);
+            if (referrerRewardAmount != 0) {
+                if (!env.poolManager.isOperator(address(this), address(bunniState.bunniToken))) {
+                    env.poolManager.setOperator(address(bunniState.bunniToken), true);
+                }
+                bool isToken0 = exactIn != params.zeroForOne;
+                bunniState.bunniToken.distributeReferralRewards(isToken0, referrerRewardAmount);
+            }
+        }
 
         // emit swap event
         emit IBunniHook.Swap(

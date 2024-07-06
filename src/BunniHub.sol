@@ -22,6 +22,7 @@ import "./lib/VaultMath.sol";
 import "./base/Constants.sol";
 import "./base/SharedStructs.sol";
 import "./interfaces/IBunniHub.sol";
+import {Ownable} from "./base/Ownable.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {BunniHubLogic} from "./lib/BunniHubLogic.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
@@ -36,7 +37,7 @@ import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-contract BunniHub is IBunniHub, Permit2Enabled {
+contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     using SafeCastLib for *;
     using SSTORE2 for address;
     using FixedPointMathLib for *;
@@ -69,12 +70,17 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// Constructor
     /// -----------------------------------------------------------
 
-    constructor(IPoolManager poolManager_, WETH weth_, IPermit2 permit2_, IBunniToken bunniTokenImplementation_)
-        Permit2Enabled(permit2_)
-    {
+    constructor(
+        IPoolManager poolManager_,
+        WETH weth_,
+        IPermit2 permit2_,
+        IBunniToken bunniTokenImplementation_,
+        address initialOwner
+    ) Permit2Enabled(permit2_) {
         poolManager = poolManager_;
         weth = weth_;
         bunniTokenImplementation = bunniTokenImplementation_;
+        _initializeOwner(initialOwner);
     }
 
     /// -----------------------------------------------------------
@@ -227,6 +233,17 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     receive() external payable {}
 
     /// -----------------------------------------------------------------------
+    /// Owner functions
+    /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IBunniHub
+    function setReferrerAddress(uint16 referrer, address referrerAddress) external {
+        if (msg.sender != owner() && msg.sender != s.referrerAddress[referrer]) revert BunniHub__Unauthorized();
+        s.referrerAddress[referrer] = referrerAddress;
+        emit SetReferrerAddress(referrer, referrerAddress);
+    }
+
+    /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
 
@@ -265,6 +282,11 @@ contract BunniHub is IBunniHub, Permit2Enabled {
     /// @inheritdoc IBunniHub
     function poolIdOfBunniToken(IBunniToken bunniToken) external view override returns (PoolId) {
         return s.poolIdOfBunniToken[bunniToken];
+    }
+
+    /// @inheritdoc IBunniHub
+    function getReferrerAddress(uint16 referrer) external view override returns (address) {
+        return s.referrerAddress[referrer];
     }
 
     /// -----------------------------------------------------------------------

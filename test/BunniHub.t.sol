@@ -72,7 +72,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint256 internal constant PRECISION = 10 ** 18;
     uint8 internal constant DECIMALS = 18;
     int24 internal constant TICK_SPACING = 10;
-    uint88 internal constant HOOK_SWAP_FEE = 0.1e18;
+    uint32 internal constant HOOK_FEE_MODIFIER = 0.1e6;
+    uint32 internal constant REFERRAL_REWARD_MODIFIER = 0.1e6;
     uint32 internal constant ALPHA = 0.7e8;
     uint256 internal constant MAX_ERROR = 1e9;
     uint24 internal constant FEE_MIN = 0.0001e6;
@@ -179,7 +180,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         swapperWithTax = new UniswapperTax(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, permit2, new BunniToken());
+        hub = new BunniHub(poolManager, weth, permit2, new BunniToken(), address(this));
 
         // deploy zone
         zone = new BunniZone(address(this));
@@ -189,7 +190,17 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         unchecked {
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
-                abi.encode(poolManager, hub, floodPlain, weth, zone, address(this), HOOK_SWAP_FEE, ORACLE_MIN_INTERVAL)
+                abi.encode(
+                    poolManager,
+                    hub,
+                    floodPlain,
+                    weth,
+                    zone,
+                    address(this),
+                    HOOK_FEE_MODIFIER,
+                    REFERRAL_REWARD_MODIFIER,
+                    ORACLE_MIN_INTERVAL
+                )
             );
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(offset);
@@ -201,7 +212,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_SWAP_FEE, ORACLE_MIN_INTERVAL
+            poolManager,
+            hub,
+            floodPlain,
+            weth,
+            zone,
+            address(this),
+            HOOK_FEE_MODIFIER,
+            REFERRAL_REWARD_MODIFIER,
+            ORACLE_MIN_INTERVAL
         );
         vm.label(address(bunniHook), "BunniHook");
 
@@ -1136,7 +1155,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 tax0: 0,
                 tax1: 0,
                 vaultFee0: 0,
-                vaultFee1: 0
+                vaultFee1: 0,
+                referrer: 0
             })
         );
         data[1] = abi.encodeWithSelector(
@@ -1153,7 +1173,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 tax0: 0,
                 tax1: 0,
                 vaultFee0: 0,
-                vaultFee1: 0
+                vaultFee1: 0,
+                referrer: 0
             })
         );
 
@@ -1842,7 +1863,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             tax0: 0,
             tax1: 0,
             vaultFee0: 0,
-            vaultFee1: 0
+            vaultFee1: 0,
+            referrer: 0
         });
         (uint256 shares, uint256 amount0, uint256 amount1) = quoter.quoteDeposit(depositParams);
 
@@ -2112,7 +2134,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             tax0: 0,
             tax1: 0,
             vaultFee0: 0,
-            vaultFee1: 0
+            vaultFee1: 0,
+            referrer: 0
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
@@ -2160,7 +2183,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             tax0: tax0,
             tax1: tax1,
             vaultFee0: vaultFee0,
-            vaultFee1: vaultFee1
+            vaultFee1: vaultFee1,
+            referrer: 0
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);

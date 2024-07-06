@@ -28,6 +28,7 @@ struct QueuedWithdrawal {
 /// @member nonce The nonce for a given bunniSubspace
 /// @member poolIdOfBunniToken The pool ID of a given BunniToken
 /// @member queuedWithdrawals The queued withdrawals for a given pool & user
+/// @member referrerAddress The address of a given referrer ID, initialized by governance and transferrable by the referrer
 struct HubStorage {
     mapping(PoolId poolId => RawPoolState) poolState;
     mapping(PoolId poolId => uint256) reserve0;
@@ -35,6 +36,7 @@ struct HubStorage {
     mapping(bytes32 bunniSubspace => uint24) nonce;
     mapping(IBunniToken bunniToken => PoolId) poolIdOfBunniToken;
     mapping(PoolId poolId => mapping(address => QueuedWithdrawal)) queuedWithdrawals;
+    mapping(uint16 => address) referrerAddress;
 }
 
 /// @notice The decoded hook params for a given pool

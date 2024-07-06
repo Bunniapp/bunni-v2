@@ -54,7 +54,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
         uint256 totalLiquidity
     );
     event SetZone(IZone zone);
-    event SetHookFeeModifier(uint88 indexed newModifier);
+    event SetModifiers(uint32 indexed hookFeeModifier, uint32 indexed referrerRewardModifier);
     event SetAmAmmEnabledOverride(PoolId indexed id, BoolOverride indexed boolOverride);
     event SetGlobalAmAmmEnabledOverride(BoolOverride indexed boolOverride);
 
@@ -201,9 +201,10 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @param zone The new FloodZone contract address
     function setZone(IZone zone) external;
 
-    /// @notice Set the hook fees params. Only callable by the owner.
-    /// @param newModifier The new fee modifier
-    function setHookFeeModifier(uint88 newModifier) external;
+    /// @notice Set the hook fee & referral reward params. Only callable by the owner.
+    /// @param newHookFeeModifier The new hook fee modifier. 6 decimals.
+    /// @param newReferralRewardModifier The new referral reward modifier. 6 decimals.
+    function setModifiers(uint32 newHookFeeModifier, uint32 newReferralRewardModifier) external;
 
     /// @notice Overrides amAmmEnabled for the given pool. Only callable by the owner.
     /// @param id The pool id

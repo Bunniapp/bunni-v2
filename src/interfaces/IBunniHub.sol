@@ -15,6 +15,7 @@ import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import "../base/SharedStructs.sol";
 import {IERC20} from "./IERC20.sol";
+import {IOwnable} from "./IOwnable.sol";
 import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {PoolState} from "../types/PoolState.sol";
@@ -27,7 +28,7 @@ import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 /// which is the ERC20 LP token for the Uniswap V3 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-interface IBunniHub is IUnlockCallback, IPermit2Enabled {
+interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
@@ -67,6 +68,10 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
     event NewBunni(IBunniToken indexed bunniToken, PoolId indexed poolId);
+    /// @notice Emitted when a new referrer is set
+    /// @param referrer The referrer ID
+    /// @param referrerAddress The referrer address
+    event SetReferrerAddress(uint16 indexed referrer, address indexed referrerAddress);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
@@ -80,6 +85,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
     /// @param vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
     /// @param vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// @param deadline The time by which the transaction must be included to effect the change
+    /// @param referrer The referrer of the liquidity provider. Used for fee sharing.
     struct DepositParams {
         PoolKey poolKey;
         address recipient;
@@ -93,6 +99,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
         uint256 vaultFee0;
         uint256 vaultFee1;
         uint256 deadline;
+        uint16 referrer;
     }
 
     /// @notice Increases the amount of liquidity in a position, with tokens paid by the `msg.sender`
@@ -241,6 +248,11 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
     function hookHandleSwap(PoolKey calldata key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount)
         external;
 
+    /// @notice Sets the address that corresponds to a referrer ID. Only callable by the owner or the current referrer address.
+    /// @param referrer The referrer ID
+    /// @param referrerAddress The address of the referrer
+    function setReferrerAddress(uint16 referrer, address referrerAddress) external;
+
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
 
@@ -261,4 +273,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled {
 
     /// @notice The token balances of a Bunni pool. Reserves in vaults are converted to raw token balances via ERC4626.previewRedeem().
     function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1);
+
+    /// @notice The address that corresponds to a given referrer ID.
+    function getReferrerAddress(uint16 referrer) external view returns (address);
 }
