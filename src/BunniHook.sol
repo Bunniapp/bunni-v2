@@ -70,8 +70,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// @notice The poolwise amAmmEnabled override. Top precedence.
     mapping(PoolId => BoolOverride) internal amAmmEnabledOverride;
 
-    /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e18`.
-    uint88 internal hookFeeModifier;
+    /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e6`.
+    uint32 internal hookFeeModifier;
+
+    /// @notice Used for computing the referral reward amount. Reward is `hookFee * referralRewardModifier / 1e6`.
+    uint32 internal referralRewardModifier;
 
     /// @notice The FloodZone contract used in rebalance orders.
     IZone internal floodZone;
@@ -90,22 +93,28 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         WETH weth_,
         IZone floodZone_,
         address owner_,
-        uint88 hookFeeModifier_,
+        uint32 hookFeeModifier_,
+        uint32 referralRewardModifier_,
         uint32 oracleMinInterval_
     ) BaseHook(poolManager_) {
-        if (hookFeeModifier_ > 1e18) revert BunniHook__InvalidHookFeeModifier();
+        if (hookFeeModifier_ > MODIFIER_BASE || referralRewardModifier_ > MODIFIER_BASE) {
+            revert BunniHook__InvalidModifier();
+        }
 
         hub = hub_;
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
         oracleMinInterval = oracleMinInterval_;
-        floodZone = floodZone_;
+
         hookFeeModifier = hookFeeModifier_;
+        referralRewardModifier = referralRewardModifier_;
+        floodZone = floodZone_;
+
         _initializeOwner(owner_);
         poolManager_.setOperator(address(hub_), true);
 
-        emit SetHookFeeModifier(hookFeeModifier_);
+        emit SetModifiers(hookFeeModifier_, referralRewardModifier_);
     }
 
     /// -----------------------------------------------------------------------
@@ -248,12 +257,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// @inheritdoc IBunniHook
-    function setHookFeeModifier(uint88 newModifier) external onlyOwner {
-        if (newModifier > 1e18) revert BunniHook__InvalidHookFeeModifier();
+    function setModifiers(uint32 newHookFeeModifier, uint32 newReferralRewardModifier) external onlyOwner {
+        if (newHookFeeModifier > MODIFIER_BASE || newReferralRewardModifier > MODIFIER_BASE) {
+            revert BunniHook__InvalidModifier();
+        }
 
-        hookFeeModifier = newModifier;
+        hookFeeModifier = newHookFeeModifier;
+        referralRewardModifier = newReferralRewardModifier;
 
-        emit SetHookFeeModifier(newModifier);
+        emit SetModifiers(newHookFeeModifier, newReferralRewardModifier);
     }
 
     /// @inheritdoc IBunniHook
@@ -392,7 +404,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         ) = BunniHookLogic.beforeSwap(
             s,
             BunniHookLogic.Env({
-                hookFeesModifier: hookFeeModifier,
+                hookFeeModifier: hookFeeModifier,
+                referralRewardModifier: referralRewardModifier,
                 floodZone: floodZone,
                 hub: hub,
                 poolManager: poolManager,

@@ -47,7 +47,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
     uint16 internal constant VAULT_SURGE_THRESHOLD_0 = 1e4; // 0.01% change in share price
     uint16 internal constant VAULT_SURGE_THRESHOLD_1 = 1e3; // 0.1% change in share price
-    uint88 internal constant HOOK_SWAP_FEE = 0.1e18;
+    uint32 internal constant HOOK_FEE_MODIFIER = 0.1e6;
+    uint32 internal constant REFERRAL_REWARD_MODIFIER = 0.1e6;
     uint32 internal constant ORACLE_MIN_INTERVAL = 1 hours;
     uint256 internal constant HOOK_FLAGS = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         + Hooks.BEFORE_SWAP_FLAG + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
@@ -86,7 +87,17 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         unchecked {
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
-                abi.encode(poolManager, hub, floodPlain, weth, zone, address(this), HOOK_SWAP_FEE, ORACLE_MIN_INTERVAL)
+                abi.encode(
+                    poolManager,
+                    hub,
+                    floodPlain,
+                    weth,
+                    zone,
+                    address(this),
+                    HOOK_FEE_MODIFIER,
+                    REFERRAL_REWARD_MODIFIER,
+                    ORACLE_MIN_INTERVAL
+                )
             );
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(offset);
@@ -98,7 +109,15 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_SWAP_FEE, ORACLE_MIN_INTERVAL
+            poolManager,
+            hub,
+            floodPlain,
+            weth,
+            zone,
+            address(this),
+            HOOK_FEE_MODIFIER,
+            REFERRAL_REWARD_MODIFIER,
+            ORACLE_MIN_INTERVAL
         );
         vm.label(address(bunniHook), "BunniHook");
 
