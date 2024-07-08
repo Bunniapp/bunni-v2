@@ -4,36 +4,49 @@ pragma solidity ^0.8.4;
 
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
+import "./Constants.sol";
 import {ERC20} from "./ERC20.sol";
+import {IERC20Lockable} from "../interfaces/IERC20Lockable.sol";
+import {IERC20Unlocker} from "../interfaces/IERC20Unlocker.sol";
 import {IERC20Referrer} from "../interfaces/IERC20Referrer.sol";
 
 /// @title ERC20Referrer
 /// @notice An ERC20 token with referrer tracking and Multicaller support. Tracks
 /// the score of each referrer, which is the sum of all balances of accounts that
-/// have the referrer as their referrer.
-/// @dev Balances are stored as uint240 instead of uint256 since the upper 16 bits
-/// of the storage slot are used to store the referrer. Referrer 0 should be reserved for
-/// the protocol since it's the default referrer of accounts.
-abstract contract ERC20Referrer is ERC20, IERC20Referrer {
+/// have the referrer as their referrer. Supports locking accounts which enables
+/// transfer-less staking contracts that don't disrupt the referrer tracking.
+/// @dev Balances are stored as uint232 instead of uint256 since the upper 24 bits
+/// of the storage slot are used to store the lock flag & referrer.
+/// Referrer 0 should be reserved for the protocol since it's the default referrer.
+abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
     /// -----------------------------------------------------------------------
     /// Errors
     /// -----------------------------------------------------------------------
 
-    /// @dev Error when the balance overflows uint240.
+    /// @dev Error when the balance overflows uint232.
     error BalanceOverflow();
 
     /// -----------------------------------------------------------------------
     /// Constants
     /// -----------------------------------------------------------------------
 
-    /// @dev Mask for extracting referrer from balance slot. Upper 16 bits.
-    bytes32 internal constant _REFERRER_MASK = 0xffff000000000000000000000000000000000000000000000000000000000000;
+    /// @dev Mask for extracting the locked flag from balance slot. Bit 0.
+    bytes32 internal constant _LOCKED_MASK = 0x8000000000000000000000000000000000000000000000000000000000000000;
 
-    /// @dev Mask for extracting balance from balance slot. Lower 240 bits.
-    bytes32 internal constant _BALANCE_MASK = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+    /// @dev Mask for extracting referrer from balance slot. Bits [1, 23].
+    bytes32 internal constant _REFERRER_MASK = 0x7fffff0000000000000000000000000000000000000000000000000000000000;
+
+    /// @dev Mask for extracting locked flag & referrer from balance slot.
+    bytes32 internal constant _EXTRA_DATA_MASK = 0xffffff0000000000000000000000000000000000000000000000000000000000;
+
+    /// @dev Mask for extracting balance from balance slot. Bits [24, 255].
+    bytes32 internal constant _BALANCE_MASK = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
     /// @dev Max balance for an account.
-    uint256 internal constant _MAX_BALANCE = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+    uint256 internal constant _MAX_BALANCE = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+
+    /// @dev The size of a user's balance in bits.
+    uint256 internal constant _BALANCE_SIZE = 232;
 
     /// -----------------------------------------------------------------------
     /// Storage
@@ -44,31 +57,157 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
     ///     mstore(0x00, or(referrer, _SCORE_SLOT_SEED))
     ///     let scoreSlot := keccak256(0x00, 0x20)
     /// ```
-    /// The uint16 referrer value must be in the most significant 16 bits of `referrer`, so a shl(240, referrer) is needed
-    /// if `referrer` is initially a Solidity uint16 value.
-    /// The bytes being hashed are | referrer - 2 bytes | 0 - 26 bytes | seed - 4 bytes |.
+    /// The uint24 referrer value must be in the most significant 24 bits of `referrer`, so a shl(232, referrer) is needed
+    /// if `referrer` is initially a Solidity uint24 value.
+    /// The bytes being hashed are | referrer - 3 bytes | 0 - 25 bytes | seed - 4 bytes |.
     uint256 internal constant _SCORE_SLOT_SEED = 0xea0f192f;
+
+    /// @dev The unlocker slot of `account` is given by:
+    /// ```
+    ///     mstore(0x0c, _UNLOCKER_SLOT_SEED)
+    ///     mstore(0x00, account)
+    ///     let unlockerSlot := keccak256(0x0c, 0x20)
+    /// ```
+    uint256 internal constant _UNLOCKER_SLOT_SEED = 0x1816035a;
+
+    /// -----------------------------------------------------------------------
+    /// IERC20Lockable functions
+    /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IERC20Lockable
+    function lock(IERC20Unlocker unlocker, bytes calldata data) external override {
+        address account = LibMulticaller.senderOrSigner();
+
+        /// @solidity memory-safe-assembly
+        assembly {
+            /// -----------------------------------------------------------------------
+            /// Validation
+            /// -----------------------------------------------------------------------
+
+            // load balance slot
+            mstore(0x0c, _BALANCE_SLOT_SEED)
+            mstore(0x00, account)
+            let balanceSlot := keccak256(0x0c, 0x20)
+            let balanceSlotValue := sload(balanceSlot)
+
+            // ensure account is not already locked
+            if and(balanceSlotValue, _LOCKED_MASK) {
+                mstore(0x00, 0x5f0ccd7c) // `AlreadyLocked()`.
+                revert(0x1c, 0x04)
+            }
+
+            /// -----------------------------------------------------------------------
+            /// Storage updates
+            /// -----------------------------------------------------------------------
+
+            // set account as locked
+            sstore(balanceSlot, or(balanceSlotValue, _LOCKED_MASK))
+
+            // update unlocker
+            mstore(0x0c, _UNLOCKER_SLOT_SEED)
+            mstore(0x00, account)
+            let unlockerSlot := keccak256(0x0c, 0x20)
+            sstore(unlockerSlot, unlocker)
+        }
+
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        unlocker.lockCallback(account, data);
+
+        emit Lock(account, unlocker);
+    }
+
+    /// @inheritdoc IERC20Lockable
+    function unlock(address account) external override {
+        IERC20Unlocker unlocker;
+
+        /// @solidity memory-safe-assembly
+        assembly {
+            /// -----------------------------------------------------------------------
+            /// Validation
+            /// -----------------------------------------------------------------------
+
+            // load balance slot
+            mstore(0x0c, _BALANCE_SLOT_SEED)
+            mstore(0x00, account)
+            let balanceSlot := keccak256(0x0c, 0x20)
+            let balanceSlotValue := sload(balanceSlot)
+
+            // ensure account is locked
+            if iszero(and(balanceSlotValue, _LOCKED_MASK)) {
+                mstore(0x00, 0x5090d6c6) // `AlreadyUnlocked()`.
+                revert(0x1c, 0x04)
+            }
+
+            // ensure sender is the unlocker
+            mstore(0x0c, _UNLOCKER_SLOT_SEED)
+            mstore(0x00, account)
+            let unlockerSlot := keccak256(0x0c, 0x20)
+            unlocker := sload(unlockerSlot)
+            if iszero(eq(unlocker, caller())) {
+                mstore(0x00, 0x746db0ff) // `NotUnlocker()`.
+                revert(0x1c, 0x04)
+            }
+
+            /// -----------------------------------------------------------------------
+            /// Storage updates
+            /// -----------------------------------------------------------------------
+
+            // set account as unlocked
+            sstore(balanceSlot, sub(balanceSlotValue, _LOCKED_MASK))
+        }
+
+        emit Unlock(account, unlocker);
+    }
+
+    /// @inheritdoc IERC20Lockable
+    function isLocked(address account) public view override returns (bool locked) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            mstore(0x0c, _BALANCE_SLOT_SEED)
+            mstore(0x00, account)
+            let balanceSlot := keccak256(0x0c, 0x20)
+            let balanceSlotValue := sload(balanceSlot)
+            locked := shr(255, and(balanceSlotValue, _LOCKED_MASK))
+        }
+    }
+
+    /// @inheritdoc IERC20Lockable
+    function unlockerOf(address account) public view override returns (IERC20Unlocker unlocker) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            mstore(0x0c, _UNLOCKER_SLOT_SEED)
+            mstore(0x00, account)
+            let unlockerSlot := keccak256(0x0c, 0x20)
+            unlocker := sload(unlockerSlot)
+        }
+    }
 
     /// -----------------------------------------------------------------------
     /// Referrer functions
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IERC20Referrer
-    function scoreOf(uint16 referrer) public view override returns (uint256 score) {
+    function scoreOf(uint24 referrer) public view override returns (uint256 score) {
+        if (referrer > MAX_REFERRER) {
+            return 0;
+        }
         /// @solidity memory-safe-assembly
         assembly {
-            mstore(0x00, or(shl(240, referrer), _SCORE_SLOT_SEED))
+            mstore(0x00, or(shl(_BALANCE_SIZE, referrer), _SCORE_SLOT_SEED))
             score := sload(keccak256(0x00, 0x20))
         }
     }
 
     /// @inheritdoc IERC20Referrer
-    function referrerOf(address account) public view override returns (uint16 referrer) {
+    function referrerOf(address account) public view override returns (uint24 referrer) {
         /// @solidity memory-safe-assembly
         assembly {
             mstore(0x0c, _BALANCE_SLOT_SEED)
             mstore(0x00, account)
-            referrer := shr(240, sload(keccak256(0x0c, 0x20)))
+            referrer := shr(_BALANCE_SIZE, and(sload(keccak256(0x0c, 0x20)), _REFERRER_MASK))
         }
     }
 
@@ -105,9 +244,11 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
     }
 
     /// @inheritdoc ERC20
-    /// @dev Uses upper 16 bits of balance slot for referrer. Updates referrer scores.
+    /// @dev Uses upper 24 bits of balance slot for referrer. Updates referrer scores.
     function transfer(address to, uint256 amount) public virtual override returns (bool) {
         address msgSender = LibMulticaller.senderOrSigner();
+        bool toLocked;
+
         _beforeTokenTransfer(msgSender, to, amount);
         /// @solidity memory-safe-assembly
         assembly {
@@ -116,6 +257,11 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             mstore(0x00, msgSender)
             let fromBalanceSlot := keccak256(0x0c, 0x20)
             let fromBalance := sload(fromBalanceSlot)
+            // Revert if the sender is locked.
+            if and(fromBalance, _LOCKED_MASK) {
+                mstore(0x00, 0x6315bfbb) // `AccountLocked()`.
+                revert(0x1c, 0x04)
+            }
             let fromReferrer := and(fromBalance, _REFERRER_MASK)
             fromBalance := and(fromBalance, _BALANCE_MASK)
             // Revert if insufficient balance.
@@ -124,20 +270,24 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
                 revert(0x1c, 0x04)
             }
             // Subtract and store the updated balance.
+            // We know `from` is not locked so no need to store the flag.
             sstore(fromBalanceSlot, or(fromReferrer, sub(fromBalance, amount)))
             // Compute the balance slot of `to`.
             mstore(0x00, to)
             let toBalanceSlot := keccak256(0x0c, 0x20)
             // Add and store the updated balance of `to`.
             let toBalance := sload(toBalanceSlot)
+            toLocked := and(toBalance, _LOCKED_MASK)
             let toReferrer := and(toBalance, _REFERRER_MASK)
             toBalance := add(and(toBalance, _BALANCE_MASK), amount)
-            // Revert if updated balance overflows uint240
+            // Revert if updated balance overflows uint232
             if gt(toBalance, _MAX_BALANCE) {
                 mstore(0x00, 0x89560ca1) // `BalanceOverflow()`.
                 revert(0x1c, 0x04)
             }
-            sstore(toBalanceSlot, or(toReferrer, toBalance))
+            sstore(toBalanceSlot, or(toLocked, or(toReferrer, toBalance)))
+            // Shift `toLocked` to fit into a bool.
+            toLocked := shr(255, toLocked)
             // Update referrer scores if referrers are different.
             if iszero(eq(fromReferrer, toReferrer)) {
                 // Compute the score slot of `fromReferrer`.
@@ -156,13 +306,22 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, msgSender, shr(96, mload(0x0c)))
         }
         _afterTokenTransfer(msgSender, to, amount);
+
+        // Unlocker callback if `to` is locked.
+        if (toLocked) {
+            IERC20Unlocker unlocker = unlockerOf(to);
+            unlocker.lockedUserReceiveCallback(to, amount);
+        }
+
         return true;
     }
 
     /// @inheritdoc ERC20
-    /// @dev Uses upper 16 bits of balance slot for referrer. Updates referrer scores.
+    /// @dev Uses upper 24 bits of balance slot for referrer. Updates referrer scores.
     function transferFrom(address from, address to, uint256 amount) public virtual override returns (bool) {
         address msgSender = LibMulticaller.senderOrSigner();
+        bool toLocked;
+
         _beforeTokenTransfer(from, to, amount);
         /// @solidity memory-safe-assembly
         assembly {
@@ -186,6 +345,11 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             mstore(0x0c, or(from_, _BALANCE_SLOT_SEED))
             let fromBalanceSlot := keccak256(0x0c, 0x20)
             let fromBalance := sload(fromBalanceSlot)
+            // Revert if `from` is locked.
+            if and(fromBalance, _LOCKED_MASK) {
+                mstore(0x00, 0x6315bfbb) // `AccountLocked()`.
+                revert(0x1c, 0x04)
+            }
             let fromReferrer := and(fromBalance, _REFERRER_MASK)
             fromBalance := and(fromBalance, _BALANCE_MASK)
             // Revert if insufficient balance.
@@ -194,20 +358,24 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
                 revert(0x1c, 0x04)
             }
             // Subtract and store the updated balance.
+            // We know `from` is not locked so no need to store the flag.
             sstore(fromBalanceSlot, or(fromReferrer, sub(fromBalance, amount)))
             // Compute the balance slot of `to`.
             mstore(0x00, to)
             let toBalanceSlot := keccak256(0x0c, 0x20)
             // Add and store the updated balance of `to`.
             let toBalance := sload(toBalanceSlot)
+            toLocked := and(toBalance, _LOCKED_MASK)
             let toReferrer := and(toBalance, _REFERRER_MASK)
             toBalance := add(and(toBalance, _BALANCE_MASK), amount)
-            // Revert if updated balance overflows uint240
+            // Revert if updated balance overflows uint232
             if gt(toBalance, _MAX_BALANCE) {
                 mstore(0x00, 0x89560ca1) // `BalanceOverflow()`.
                 revert(0x1c, 0x04)
             }
-            sstore(toBalanceSlot, or(toReferrer, toBalance))
+            sstore(toBalanceSlot, or(toLocked, or(toReferrer, toBalance)))
+            // Shift `toLocked` to fit into a bool.
+            toLocked := shr(255, toLocked)
             // Update referrer scores if referrers are different.
             if iszero(eq(fromReferrer, toReferrer)) {
                 // Compute the score slot of `fromReferrer`.
@@ -226,13 +394,22 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
         }
         _afterTokenTransfer(from, to, amount);
+
+        // Unlocker callback if `to` is locked.
+        if (toLocked) {
+            IERC20Unlocker unlocker = unlockerOf(to);
+            unlocker.lockedUserReceiveCallback(to, amount);
+        }
+
         return true;
     }
 
     /// @inheritdoc ERC20
-    /// @dev Uses upper 16 bits of balance slot for referrer. Updates referrer scores.
+    /// @dev Uses upper 24 bits of balance slot for referrer. Updates referrer scores.
     /// Uses the existing referrer of the `to` address.
     function _mint(address to, uint256 amount) internal virtual override {
+        bool toLocked;
+
         _beforeTokenTransfer(address(0), to, amount);
         /// @solidity memory-safe-assembly
         assembly {
@@ -251,14 +428,17 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             let toBalanceSlot := keccak256(0x0c, 0x20)
             // Add and store the updated balance.
             let toBalance := sload(toBalanceSlot)
+            toLocked := and(toBalance, _LOCKED_MASK)
             let toReferrer := and(toBalance, _REFERRER_MASK)
             toBalance := add(and(toBalance, _BALANCE_MASK), amount)
-            // Revert if updated balance overflows uint240
+            // Revert if updated balance overflows uint232
             if gt(toBalance, _MAX_BALANCE) {
                 mstore(0x00, 0x89560ca1) // `BalanceOverflow()`.
                 revert(0x1c, 0x04)
             }
-            sstore(toBalanceSlot, or(toReferrer, toBalance))
+            sstore(toBalanceSlot, or(toLocked, or(toReferrer, toBalance)))
+            // Shift `toLocked` to fit into a bool.
+            toLocked := shr(255, toLocked)
             // Update referrer score.
             // Compute the score slot of `toReferrer`.
             mstore(0x00, or(toReferrer, _SCORE_SLOT_SEED))
@@ -270,15 +450,24 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, 0, shr(96, mload(0x0c)))
         }
         _afterTokenTransfer(address(0), to, amount);
+
+        // Unlocker callback if `to` is locked.
+        if (toLocked) {
+            IERC20Unlocker unlocker = unlockerOf(to);
+            unlocker.lockedUserReceiveCallback(to, amount);
+        }
     }
 
-    /// @dev Uses upper 16 bits of balance slot for referrer. Updates referrer scores.
+    /// @dev Uses upper 24 bits of balance slot for referrer. Updates referrer scores.
     /// Updates the referrer of `to` to `referrer`.
-    function _mint(address to, uint256 amount, uint16 referrer) internal virtual {
+    function _mint(address to, uint256 amount, uint24 referrer) internal virtual {
+        bool toLocked;
+
         _beforeTokenTransfer(address(0), to, amount);
         /// @solidity memory-safe-assembly
         assembly {
-            referrer := shl(240, referrer) // storage mapping uses most significant 16 bits as key
+            if gt(referrer, MAX_REFERRER) { referrer := 0 } // referrer can't exceed max value
+            referrer := shl(_BALANCE_SIZE, referrer) // storage mapping uses most significant 24 bits as key
             let totalSupplyBefore := sload(_TOTAL_SUPPLY_SLOT)
             let totalSupplyAfter := add(totalSupplyBefore, amount)
             // Revert if the total supply overflows.
@@ -294,15 +483,18 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             let toBalanceSlot := keccak256(0x0c, 0x20)
             // Add and store the updated balance.
             let toBalance := sload(toBalanceSlot)
+            toLocked := and(toBalance, _LOCKED_MASK)
             let toReferrer := and(toBalance, _REFERRER_MASK)
             toBalance := and(toBalance, _BALANCE_MASK)
             let updatedToBalance := add(toBalance, amount)
-            // Revert if updated balance overflows uint240
+            // Revert if updated balance overflows uint232
             if gt(updatedToBalance, _MAX_BALANCE) {
                 mstore(0x00, 0x89560ca1) // `BalanceOverflow()`.
                 revert(0x1c, 0x04)
             }
-            sstore(toBalanceSlot, or(referrer, updatedToBalance))
+            sstore(toBalanceSlot, or(toLocked, or(referrer, updatedToBalance)))
+            // Shift `toLocked` to fit into a bool.
+            toLocked := shr(255, toLocked)
             // Update referrer scores.
             switch eq(toReferrer, referrer)
             case 0 {
@@ -336,6 +528,12 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, 0, shr(96, mload(0x0c)))
         }
         _afterTokenTransfer(address(0), to, amount);
+
+        // Unlocker callback if `to` is locked.
+        if (toLocked) {
+            IERC20Unlocker unlocker = unlockerOf(to);
+            unlocker.lockedUserReceiveCallback(to, amount);
+        }
     }
 
     /// @dev Burns `amount` tokens from `from`, reducing the total supply.
@@ -350,6 +548,11 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             mstore(0x00, from)
             let fromBalanceSlot := keccak256(0x0c, 0x20)
             let fromBalance := sload(fromBalanceSlot)
+            // Revert if `from` is locked.
+            if and(fromBalance, _LOCKED_MASK) {
+                mstore(0x00, 0x6315bfbb) // `AccountLocked()`.
+                revert(0x1c, 0x04)
+            }
             let fromReferrer := and(fromBalance, _REFERRER_MASK)
             fromBalance := and(fromBalance, _BALANCE_MASK)
             // Revert if insufficient balance.
@@ -358,6 +561,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
                 revert(0x1c, 0x04)
             }
             // Subtract and store the updated balance.
+            // We know `from` is not locked so no need to store the flag.
             sstore(fromBalanceSlot, or(fromReferrer, sub(fromBalance, amount)))
             // Subtract and store the updated total supply.
             sstore(_TOTAL_SUPPLY_SLOT, sub(sload(_TOTAL_SUPPLY_SLOT), amount))
@@ -376,6 +580,8 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
 
     /// @dev Moves `amount` of tokens from `from` to `to`.
     function _transfer(address from, address to, uint256 amount) internal virtual override {
+        bool toLocked;
+
         _beforeTokenTransfer(from, to, amount);
         /// @solidity memory-safe-assembly
         assembly {
@@ -384,6 +590,11 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             mstore(0x0c, or(from_, _BALANCE_SLOT_SEED))
             let fromBalanceSlot := keccak256(0x0c, 0x20)
             let fromBalance := sload(fromBalanceSlot)
+            // Revert if `from` is locked.
+            if and(fromBalance, _LOCKED_MASK) {
+                mstore(0x00, 0x6315bfbb) // `AccountLocked()`.
+                revert(0x1c, 0x04)
+            }
             let fromReferrer := and(fromBalance, _REFERRER_MASK)
             fromBalance := and(fromBalance, _BALANCE_MASK)
             // Revert if insufficient balance.
@@ -392,20 +603,24 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
                 revert(0x1c, 0x04)
             }
             // Subtract and store the updated balance.
+            // We know `from` is not locked so no need to store the flag.
             sstore(fromBalanceSlot, or(fromReferrer, sub(fromBalance, amount)))
             // Compute the balance slot of `to`.
             mstore(0x00, to)
             let toBalanceSlot := keccak256(0x0c, 0x20)
             let toBalance := sload(toBalanceSlot)
+            toLocked := and(toBalance, _LOCKED_MASK)
             let toReferrer := and(toBalance, _REFERRER_MASK)
             // Add and store the updated balance of `to`.
-            // Revert if updated balance overflows uint240
+            // Revert if updated balance overflows uint232
             toBalance := add(and(toBalance, _BALANCE_MASK), amount)
             if gt(toBalance, _MAX_BALANCE) {
                 mstore(0x00, 0x89560ca1) // `BalanceOverflow()`.
                 revert(0x1c, 0x04)
             }
-            sstore(toBalanceSlot, or(toReferrer, toBalance))
+            sstore(toBalanceSlot, or(toLocked, or(toReferrer, toBalance)))
+            // Shift `toLocked` to fit into a bool.
+            toLocked := shr(255, toLocked)
             // Update referrer scores if referrers are different.
             if iszero(eq(fromReferrer, toReferrer)) {
                 // Compute the score slot of `fromReferrer`.
@@ -424,5 +639,11 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer {
             log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
         }
         _afterTokenTransfer(from, to, amount);
+
+        // Unlocker callback if `to` is locked.
+        if (toLocked) {
+            IERC20Unlocker unlocker = unlockerOf(to);
+            unlocker.lockedUserReceiveCallback(to, amount);
+        }
     }
 }

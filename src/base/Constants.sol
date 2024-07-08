@@ -19,3 +19,6 @@ uint56 constant WITHDRAW_GRACE_PERIOD = 15 minutes;
 int256 constant ROUND_TICK_TOLERANCE = 5e12;
 uint256 constant REFERRAL_REWARD_PER_TOKEN_PRECISION = 1e30;
 uint256 constant MODIFIER_BASE = 1e6;
+
+/// @dev The max referrer value.
+uint24 constant MAX_REFERRER = 0x7fffff;

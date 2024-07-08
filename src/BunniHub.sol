@@ -237,8 +237,9 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHub
-    function setReferrerAddress(uint16 referrer, address referrerAddress) external {
+    function setReferrerAddress(uint24 referrer, address referrerAddress) external {
         if (msg.sender != owner() && msg.sender != s.referrerAddress[referrer]) revert BunniHub__Unauthorized();
+        if (referrer > MAX_REFERRER) revert BunniHub__InvalidReferrer();
         s.referrerAddress[referrer] = referrerAddress;
         emit SetReferrerAddress(referrer, referrerAddress);
     }
@@ -285,7 +286,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     }
 
     /// @inheritdoc IBunniHub
-    function getReferrerAddress(uint16 referrer) external view override returns (address) {
+    function getReferrerAddress(uint24 referrer) external view override returns (address) {
         return s.referrerAddress[referrer];
     }
 

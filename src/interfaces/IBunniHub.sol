@@ -71,7 +71,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @notice Emitted when a new referrer is set
     /// @param referrer The referrer ID
     /// @param referrerAddress The referrer address
-    event SetReferrerAddress(uint16 indexed referrer, address indexed referrerAddress);
+    event SetReferrerAddress(uint24 indexed referrer, address indexed referrerAddress);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
@@ -99,7 +99,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
         uint256 vaultFee0;
         uint256 vaultFee1;
         uint256 deadline;
-        uint16 referrer;
+        uint24 referrer;
     }
 
     /// @notice Increases the amount of liquidity in a position, with tokens paid by the `msg.sender`
@@ -251,7 +251,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @notice Sets the address that corresponds to a referrer ID. Only callable by the owner or the current referrer address.
     /// @param referrer The referrer ID
     /// @param referrerAddress The address of the referrer
-    function setReferrerAddress(uint16 referrer, address referrerAddress) external;
+    function setReferrerAddress(uint24 referrer, address referrerAddress) external;
 
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
@@ -275,5 +275,5 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1);
 
     /// @notice The address that corresponds to a given referrer ID.
-    function getReferrerAddress(uint16 referrer) external view returns (address);
+    function getReferrerAddress(uint24 referrer) external view returns (address);
 }

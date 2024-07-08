@@ -6,6 +6,7 @@ pragma abicoder v2;
 error BunniHub__ZeroInput();
 error BunniHub__PastDeadline();
 error BunniHub__Unauthorized();
+error BunniHub__InvalidReferrer();
 error BunniHub__LDFCannotBeZero();
 error BunniHub__MaxNonceReached();
 error BunniHub__SlippageTooHigh();

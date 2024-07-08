@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "forge-std/Test.sol";
 
+import "../src/base/Constants.sol";
 import "./mocks/ERC20ReferrerMock.sol";
 
 contract ERC20ReferrerTest is Test {
@@ -14,8 +15,9 @@ contract ERC20ReferrerTest is Test {
         token = new ERC20ReferrerMock();
     }
 
-    function test_mint_single(uint256 amount, uint16 referrer) external {
-        amount = bound(amount, 0, type(uint240).max);
+    function test_mint_single(uint256 amount, uint24 referrer) external {
+        amount = bound(amount, 0, type(uint232).max);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // initial score of referrer is 0
         assertEq(token.scoreOf(referrer), 0, "initial score not 0");
@@ -36,9 +38,10 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), amount, "total supply not equal to amount");
     }
 
-    function test_mint_double_sameReferrer(uint256 amount0, uint256 amount1, uint16 referrer) external {
-        amount0 = bound(amount0, 0, type(uint240).max);
-        amount1 = bound(amount1, 0, type(uint240).max - amount0);
+    function test_mint_double_sameReferrer(uint256 amount0, uint256 amount1, uint24 referrer) external {
+        amount0 = bound(amount0, 0, type(uint232).max);
+        amount1 = bound(amount1, 0, type(uint232).max - amount0);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // initial score of referrer is 0
         assertEq(token.scoreOf(referrer), 0, "initial score not 0");
@@ -62,12 +65,14 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), amount0 + amount1, "total supply not equal to amount0 + amount1");
     }
 
-    function test_mint_double_differentReferrer(uint256 amount0, uint256 amount1, uint16 referrer0, uint16 referrer1)
+    function test_mint_double_differentReferrer(uint256 amount0, uint256 amount1, uint24 referrer0, uint24 referrer1)
         external
     {
+        amount0 = bound(amount0, 0, type(uint232).max);
+        amount1 = bound(amount1, 0, type(uint232).max - amount0);
+        referrer0 = uint24(bound(referrer0, 0, MAX_REFERRER));
+        referrer1 = uint24(bound(referrer1, 0, MAX_REFERRER));
         vm.assume(referrer0 != referrer1);
-        amount0 = bound(amount0, 0, type(uint240).max);
-        amount1 = bound(amount1, 0, type(uint240).max - amount0);
 
         // initial score of referrer0 is 0
         assertEq(token.scoreOf(referrer0), 0, "initial score not 0");
@@ -97,11 +102,13 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), amount0 + amount1, "total supply not equal to amount0 + amount1");
     }
 
-    function test_mint_twoAccounts(uint256 amountBob, uint256 amountEve, uint16 referrerBob, uint16 referrerEve)
+    function test_mint_twoAccounts(uint256 amountBob, uint256 amountEve, uint24 referrerBob, uint24 referrerEve)
         external
     {
-        amountBob = bound(amountBob, 0, type(uint240).max);
-        amountEve = bound(amountEve, 0, type(uint240).max);
+        amountBob = bound(amountBob, 0, type(uint232).max);
+        amountEve = bound(amountEve, 0, type(uint232).max);
+        referrerBob = uint24(bound(referrerBob, 0, MAX_REFERRER));
+        referrerEve = uint24(bound(referrerEve, 0, MAX_REFERRER));
 
         // initial score of referrer is 0
         assertEq(token.scoreOf(referrerBob), 0, "initial bob referrer score not 0");
@@ -143,9 +150,10 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), amountBob + amountEve, "total supply not equal to amountBob + amountEve");
     }
 
-    function test_transfer_sameAccount(uint256 mintAmount, uint256 amount, uint16 referrer) external {
-        mintAmount = bound(mintAmount, 0, type(uint240).max);
+    function test_transfer_sameAccount(uint256 mintAmount, uint256 amount, uint24 referrer) external {
+        mintAmount = bound(mintAmount, 0, type(uint232).max);
         amount = bound(amount, 0, mintAmount);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer`
         token.mint(bob, mintAmount, referrer);
@@ -167,9 +175,10 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), mintAmount, "total supply not equal to mintAmount");
     }
 
-    function test_transfer_differentAccountSameReferrer(uint256 mintAmount, uint256 amount, uint16 referrer) external {
-        mintAmount = bound(mintAmount, 0, type(uint240).max / 2);
+    function test_transfer_differentAccountSameReferrer(uint256 mintAmount, uint256 amount, uint24 referrer) external {
+        mintAmount = bound(mintAmount, 0, type(uint232).max / 2);
         amount = bound(amount, 0, mintAmount);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer`
         token.mint(bob, mintAmount, referrer);
@@ -203,11 +212,13 @@ contract ERC20ReferrerTest is Test {
     function test_transfer_differentAccountDifferentReferrer(
         uint256 mintAmount,
         uint256 amount,
-        uint16 referrer0,
-        uint16 referrer1
+        uint24 referrer0,
+        uint24 referrer1
     ) external {
-        mintAmount = bound(mintAmount, 0, type(uint240).max / 2);
+        mintAmount = bound(mintAmount, 0, type(uint232).max / 2);
         amount = bound(amount, 0, mintAmount);
+        referrer0 = uint24(bound(referrer0, 0, MAX_REFERRER));
+        referrer1 = uint24(bound(referrer1, 0, MAX_REFERRER));
         vm.assume(referrer0 != referrer1);
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer0`
@@ -242,9 +253,10 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), 2 * mintAmount, "total supply incorrect");
     }
 
-    function test_transferFrom_sameAccount(uint256 mintAmount, uint256 amount, uint16 referrer) external {
-        mintAmount = bound(mintAmount, 0, type(uint240).max);
+    function test_transferFrom_sameAccount(uint256 mintAmount, uint256 amount, uint24 referrer) external {
+        mintAmount = bound(mintAmount, 0, type(uint232).max);
         amount = bound(amount, 0, mintAmount);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer`
         token.mint(bob, mintAmount, referrer);
@@ -269,11 +281,12 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), mintAmount, "total supply not equal to mintAmount");
     }
 
-    function test_transferFrom_differentAccountSameReferrer(uint256 mintAmount, uint256 amount, uint16 referrer)
+    function test_transferFrom_differentAccountSameReferrer(uint256 mintAmount, uint256 amount, uint24 referrer)
         external
     {
-        mintAmount = bound(mintAmount, 0, type(uint240).max / 2);
+        mintAmount = bound(mintAmount, 0, type(uint232).max / 2);
         amount = bound(amount, 0, mintAmount);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer`
         token.mint(bob, mintAmount, referrer);
@@ -310,11 +323,13 @@ contract ERC20ReferrerTest is Test {
     function test_transferFrom_differentAccountDifferentReferrer(
         uint256 mintAmount,
         uint256 amount,
-        uint16 referrer0,
-        uint16 referrer1
+        uint24 referrer0,
+        uint24 referrer1
     ) external {
-        mintAmount = bound(mintAmount, 0, type(uint240).max / 2);
+        mintAmount = bound(mintAmount, 0, type(uint232).max / 2);
         amount = bound(amount, 0, mintAmount);
+        referrer0 = uint24(bound(referrer0, 0, MAX_REFERRER));
+        referrer1 = uint24(bound(referrer1, 0, MAX_REFERRER));
         vm.assume(referrer0 != referrer1);
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer0`
@@ -352,9 +367,10 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), 2 * mintAmount, "total supply incorrect");
     }
 
-    function test_burn_single(uint256 mintAmount, uint256 burnAmount, uint16 referrer) external {
-        mintAmount = bound(mintAmount, 0, type(uint240).max);
+    function test_burn_single(uint256 mintAmount, uint256 burnAmount, uint24 referrer) external {
+        mintAmount = bound(mintAmount, 0, type(uint232).max);
         burnAmount = bound(burnAmount, 0, mintAmount);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer`
         token.mint(bob, mintAmount, referrer);
@@ -376,10 +392,11 @@ contract ERC20ReferrerTest is Test {
         assertEq(token.totalSupply(), mintAmount - burnAmount, "total supply incorrect");
     }
 
-    function test_burn_double(uint256 mintAmount, uint256 burnAmount0, uint256 burnAmount1, uint16 referrer) external {
-        mintAmount = bound(mintAmount, 0, type(uint240).max);
+    function test_burn_double(uint256 mintAmount, uint256 burnAmount0, uint256 burnAmount1, uint24 referrer) external {
+        mintAmount = bound(mintAmount, 0, type(uint232).max);
         burnAmount0 = bound(burnAmount0, 0, mintAmount);
         burnAmount1 = bound(burnAmount1, 0, mintAmount - burnAmount0);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
 
         // mint `mintAmount` tokens to `bob` with referrer `referrer`
         token.mint(bob, mintAmount, referrer);
@@ -410,13 +427,15 @@ contract ERC20ReferrerTest is Test {
         uint256 mintAmountEve,
         uint256 burnAmountBob,
         uint256 burnAmountEve,
-        uint16 referrerBob,
-        uint16 referrerEve
+        uint24 referrerBob,
+        uint24 referrerEve
     ) external {
-        mintAmountBob = bound(mintAmountBob, 0, type(uint240).max);
-        mintAmountEve = bound(mintAmountEve, 0, type(uint240).max);
+        mintAmountBob = bound(mintAmountBob, 0, type(uint232).max);
+        mintAmountEve = bound(mintAmountEve, 0, type(uint232).max);
         burnAmountBob = bound(burnAmountBob, 0, mintAmountBob);
         burnAmountEve = bound(burnAmountEve, 0, mintAmountEve);
+        referrerBob = uint24(bound(referrerBob, 0, MAX_REFERRER));
+        referrerEve = uint24(bound(referrerEve, 0, MAX_REFERRER));
 
         // mint `mintAmountBob` tokens to `bob` with referrer `referrerBob`
         token.mint(bob, mintAmountBob, referrerBob);
