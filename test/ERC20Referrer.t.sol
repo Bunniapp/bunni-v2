@@ -5,14 +5,18 @@ import "forge-std/Test.sol";
 
 import "../src/base/Constants.sol";
 import "./mocks/ERC20ReferrerMock.sol";
+import "./mocks/ERC20UnlockerMock.sol";
+import {IERC20Lockable} from "../src/interfaces/IERC20Lockable.sol";
 
 contract ERC20ReferrerTest is Test {
     ERC20ReferrerMock token;
+    ERC20UnlockerMock unlocker;
     address bob = makeAddr("bob");
     address eve = makeAddr("eve");
 
     function setUp() public {
         token = new ERC20ReferrerMock();
+        unlocker = new ERC20UnlockerMock(token);
     }
 
     function test_mint_single(uint256 amount, uint24 referrer) external {
@@ -487,5 +491,128 @@ contract ERC20ReferrerTest is Test {
         assertEq(
             token.totalSupply(), mintAmountBob - burnAmountBob + mintAmountEve - burnAmountEve, "total supply incorrect"
         );
+    }
+
+    function test_lockable_lock(uint256 amount, uint24 referrer, bytes calldata data) external {
+        amount = bound(amount, 0, type(uint232).max);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
+
+        // mint `amount` tokens to `bob` with referrer `referrer`
+        token.mint(bob, amount, referrer);
+
+        // lock account as `bob`
+        vm.prank(bob);
+        token.lock(unlocker, data);
+
+        // check isLocked
+        assertTrue(token.isLocked(bob), "isLocked returned false");
+
+        // check unlocker
+        assertEq(address(token.unlockerOf(bob)), address(unlocker), "unlocker incorrect");
+
+        // check balance
+        assertEq(token.balanceOf(bob), amount, "balance incorrect");
+
+        // check referrer
+        assertEq(token.referrerOf(bob), referrer, "referrer incorrect");
+
+        vm.startPrank(bob);
+
+        // transfer from `bob` should fail
+        vm.expectRevert(IERC20Lockable.AccountLocked.selector);
+        token.transfer(eve, amount);
+
+        // calling lock again should fail
+        vm.expectRevert(IERC20Lockable.AlreadyLocked.selector);
+        token.lock(unlocker, data);
+
+        // calling unlock() directly should fail
+        vm.expectRevert(IERC20Lockable.NotUnlocker.selector);
+        token.unlock(bob);
+
+        // burning should fail
+        vm.expectRevert(IERC20Lockable.AccountLocked.selector);
+        token.burn(amount);
+
+        vm.stopPrank();
+
+        // unlocker should have up to date info
+        assertEq(unlocker.lockedBalances(bob), amount, "locked balance incorrect");
+        assertEq(keccak256(unlocker.lockDatas(bob)), keccak256(data), "lock data incorrect");
+    }
+
+    function test_lockable_transferToLockedAccount(uint256 amount, uint24 referrer, bytes calldata data) external {
+        amount = bound(amount, 0, type(uint232).max / 2);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
+
+        // mint `amount` tokens to `bob` with referrer `referrer`
+        token.mint(bob, amount, referrer);
+
+        // lock account as `eve`
+        vm.prank(eve);
+        token.lock(unlocker, data);
+
+        // transfer to locked account should succeed
+        vm.prank(bob);
+        token.transfer(eve, amount);
+
+        // minting to locked account should succeed
+        token.mint(eve, amount, referrer);
+
+        // unlocker should have up to date info
+        assertEq(unlocker.lockedBalances(eve), amount * 2, "locked balance incorrect");
+        assertEq(keccak256(unlocker.lockDatas(eve)), keccak256(data), "lock data incorrect");
+
+        // check balance
+        assertEq(token.balanceOf(eve), amount * 2, "balance incorrect");
+
+        // check referrer
+        assertEq(token.referrerOf(eve), referrer, "referrer incorrect");
+
+        // check isLocked
+        assertTrue(token.isLocked(eve), "isLocked returned false");
+    }
+
+    function test_lockable_unlock(uint256 amount, uint24 referrer, bytes calldata data) external {
+        amount = bound(amount, 0, type(uint232).max);
+        referrer = uint24(bound(referrer, 0, MAX_REFERRER));
+
+        // mint `amount` tokens to `bob` with referrer `referrer`
+        token.mint(bob, amount, referrer);
+
+        // lock account as `bob`
+        vm.prank(bob);
+        token.lock(unlocker, data);
+
+        // unlock `bob`
+        unlocker.unlock(bob);
+
+        // check isLocked
+        assertFalse(token.isLocked(bob), "isLocked returned true after unlocking");
+
+        // check balance
+        assertEq(token.balanceOf(bob), amount, "balance incorrect");
+
+        // check referrer
+        assertEq(token.referrerOf(bob), referrer, "referrer incorrect");
+
+        // transfer from `bob` should succeed
+        vm.prank(bob);
+        token.transfer(eve, amount / 2);
+        assertEq(token.balanceOf(bob), amount - amount / 2, "balance incorrect after sending tokens");
+        assertEq(token.balanceOf(eve), amount / 2, "balance incorrect after receiving tokens");
+
+        // burning from `bob` should succeed
+        vm.prank(bob);
+        token.burn(amount - amount / 2);
+        assertEq(token.balanceOf(bob), 0, "balance incorrect after burning");
+
+        // calling unlock() again should fail
+        vm.expectRevert(IERC20Lockable.AlreadyUnlocked.selector);
+        unlocker.unlock(bob);
+
+        // unlocker should have up to date info
+        assertEq(unlocker.lockedBalances(bob), 0, "locked balance incorrect");
+        assertEq(keccak256(unlocker.lockDatas(bob)), keccak256(bytes("")), "lock data incorrect");
     }
 }

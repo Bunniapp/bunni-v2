@@ -8,8 +8,9 @@ pragma solidity >=0.5.0;
 interface IERC20Unlocker {
     /// @notice Called when an account calls `IERC20Lockable.lock()` and specifies this contract as the unlocker.
     /// @param account The account that called `IERC20Lockable.lock()`.
+    /// @param balance The balance of the account after the lock.
     /// @param data The data passed to `IERC20Lockable.lock()`.
-    function lockCallback(address account, bytes calldata data) external;
+    function lockCallback(address account, uint256 balance, bytes calldata data) external;
 
     /// @notice Called when a locked account with this contract as the unlocker receives tokens.
     /// @param account The account that received tokens.

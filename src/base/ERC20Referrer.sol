@@ -77,6 +77,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
     /// @inheritdoc IERC20Lockable
     function lock(IERC20Unlocker unlocker, bytes calldata data) external override {
         address account = LibMulticaller.senderOrSigner();
+        uint256 accountBalance;
 
         /// @solidity memory-safe-assembly
         assembly {
@@ -89,6 +90,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             mstore(0x00, account)
             let balanceSlot := keccak256(0x0c, 0x20)
             let balanceSlotValue := sload(balanceSlot)
+            accountBalance := and(balanceSlotValue, _BALANCE_MASK)
 
             // ensure account is not already locked
             if and(balanceSlotValue, _LOCKED_MASK) {
@@ -114,7 +116,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
         /// External calls
         /// -----------------------------------------------------------------------
 
-        unlocker.lockCallback(account, data);
+        unlocker.lockCallback(account, accountBalance, data);
 
         emit Lock(account, unlocker);
     }
