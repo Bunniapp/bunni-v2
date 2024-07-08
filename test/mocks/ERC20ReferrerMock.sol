@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import {ERC20Referrer} from "../../src/base/ERC20Referrer.sol";
 
 contract ERC20ReferrerMock is ERC20Referrer {
-    function mint(address to, uint256 amount, uint16 referrer) public {
+    function mint(address to, uint256 amount, uint24 referrer) public {
         _mint(to, amount, referrer);
     }
 

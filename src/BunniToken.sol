@@ -42,19 +42,19 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     uint256 public referrerRewardPerToken0;
 
     /// @notice The referrer reward per token0 paid
-    mapping(uint16 => uint256) public referrerRewardPerTokenPaid0;
+    mapping(uint24 => uint256) public referrerRewardPerTokenPaid0;
 
     /// @notice The referrer reward in token0 unclaimed
-    mapping(uint16 => uint256) public referrerRewardUnclaimed0;
+    mapping(uint24 => uint256) public referrerRewardUnclaimed0;
 
     /// @notice The referrer reward per token1 stored
     uint256 public referrerRewardPerToken1;
 
     /// @notice The referrer reward per token1 paid
-    mapping(uint16 => uint256) public referrerRewardPerTokenPaid1;
+    mapping(uint24 => uint256) public referrerRewardPerTokenPaid1;
 
     /// @notice The referrer reward in token1 unclaimed
-    mapping(uint16 => uint256) public referrerRewardUnclaimed1;
+    mapping(uint24 => uint256) public referrerRewardUnclaimed1;
 
     /// -----------------------------------------------------------------------
     /// Immutable params
@@ -99,7 +99,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     /// Minting & burning
     /// -----------------------------------------------------------------------
 
-    function mint(address to, uint256 amount, uint16 referrer) external override {
+    function mint(address to, uint256 amount, uint24 referrer) external override {
         if (msg.sender != address(hub())) revert BunniToken__NotBunniHub();
 
         _mint(to, amount, referrer);
@@ -152,7 +152,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     }
 
     /// @inheritdoc IBunniToken
-    function claimReferralRewards(uint16 referrer) external override returns (uint256 reward0, uint256 reward1) {
+    function claimReferralRewards(uint24 referrer) external override returns (uint256 reward0, uint256 reward1) {
         /// -----------------------------------------------------------------------
         /// Validation
         /// -----------------------------------------------------------------------
@@ -196,7 +196,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     }
 
     /// @inheritdoc IBunniToken
-    function getClaimableReferralRewards(uint16 referrer)
+    function getClaimableReferralRewards(uint24 referrer)
         external
         view
         override
@@ -246,8 +246,8 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         uint256 rewardPerToken0 = referrerRewardPerToken0;
         uint256 rewardPerToken1 = referrerRewardPerToken1;
 
-        uint16 fromReferrer;
-        uint16 toReferrer;
+        uint24 fromReferrer;
+        uint24 toReferrer;
 
         if (from != address(0)) {
             fromReferrer = referrerOf(from);

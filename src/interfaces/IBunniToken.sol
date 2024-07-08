@@ -10,11 +10,12 @@ import {IERC20} from "./IERC20.sol";
 import {IOwnable} from "./IOwnable.sol";
 import {IBunniHub} from "./IBunniHub.sol";
 import {IERC20Referrer} from "./IERC20Referrer.sol";
+import {IERC20Lockable} from "./IERC20Lockable.sol";
 
 /// @title BunniToken
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
-interface IBunniToken is IERC20, IERC20Referrer, IOwnable, IUnlockCallback {
+interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlockCallback {
     event SetMetadataURI(string newURI);
 
     function hub() external view returns (IBunniHub);
@@ -25,7 +26,7 @@ interface IBunniToken is IERC20, IERC20Referrer, IOwnable, IUnlockCallback {
 
     function poolManager() external view returns (IPoolManager);
 
-    function mint(address to, uint256 amount, uint16 referrer) external;
+    function mint(address to, uint256 amount, uint24 referrer) external;
 
     function burn(address from, uint256 amount) external;
 
@@ -50,11 +51,11 @@ interface IBunniToken is IERC20, IERC20Referrer, IOwnable, IUnlockCallback {
     /// @param referrer The referrer ID to claim rewards for
     /// @return reward0 The amount of token0 rewards claimed
     /// @return reward1 The amount of token1 rewards claimed
-    function claimReferralRewards(uint16 referrer) external returns (uint256 reward0, uint256 reward1);
+    function claimReferralRewards(uint24 referrer) external returns (uint256 reward0, uint256 reward1);
 
     /// @notice Returns the amount of referral rewards claimable by a given referrer ID.
     /// @param referrer The referrer ID to check rewards for
     /// @return reward0 The amount of token0 rewards claimable
     /// @return reward1 The amount of token1 rewards claimable
-    function getClaimableReferralRewards(uint16 referrer) external view returns (uint256 reward0, uint256 reward1);
+    function getClaimableReferralRewards(uint24 referrer) external view returns (uint256 reward0, uint256 reward1);
 }

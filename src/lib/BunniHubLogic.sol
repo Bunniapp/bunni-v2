@@ -551,7 +551,7 @@ library BunniHubLogic {
         uint256 existingAmount0,
         uint256 addedAmount1,
         uint256 existingAmount1,
-        uint16 referrer
+        uint24 referrer
     ) internal returns (uint256 shares) {
         uint256 existingShareSupply = shareToken.totalSupply();
         if (existingShareSupply == 0) {

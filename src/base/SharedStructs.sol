@@ -36,7 +36,7 @@ struct HubStorage {
     mapping(bytes32 bunniSubspace => uint24) nonce;
     mapping(IBunniToken bunniToken => PoolId) poolIdOfBunniToken;
     mapping(PoolId poolId => mapping(address => QueuedWithdrawal)) queuedWithdrawals;
-    mapping(uint16 => address) referrerAddress;
+    mapping(uint24 => address) referrerAddress;
 }
 
 /// @notice The decoded hook params for a given pool

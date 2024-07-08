@@ -174,9 +174,9 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         poolManager.setOperator(address(bunniToken), true);
     }
 
-    function test_distribute_singleDistro_singleReferrer(bool isToken0, uint256 amount, uint16 referrer) public {
-        vm.assume(referrer != 0);
+    function test_distribute_singleDistro_singleReferrer(bool isToken0, uint256 amount, uint24 referrer) public {
         amount = bound(amount, 1e5, 1e36);
+        referrer = uint24(bound(referrer, 1, MAX_REFERRER));
 
         // register referrer
         address referrerAddress = makeAddr("referrer");
@@ -216,11 +216,11 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         bool isToken0,
         uint256 amountFirst,
         uint256 amountSecond,
-        uint16 referrer
+        uint24 referrer
     ) public {
-        vm.assume(referrer != 0);
         amountFirst = bound(amountFirst, 1e5, 1e36);
         amountSecond = bound(amountSecond, 1e5, 1e36);
+        referrer = uint24(bound(referrer, 1, MAX_REFERRER));
 
         // register referrer
         address referrerAddress = makeAddr("referrer");
@@ -265,7 +265,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         address[] memory referrerAddresses = new address[](numReferrers);
         for (uint256 i; i < numReferrers; i++) {
             // register referrer
-            uint16 referrer = uint16(i + 1);
+            uint24 referrer = uint24(i + 1);
             referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(referrer).toString()));
             hub.setReferrerAddress(referrer, referrerAddresses[i]);
 
@@ -283,7 +283,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         uint256 totalScore = bunniToken.totalSupply();
         for (uint256 i; i < numReferrers; i++) {
-            uint16 referrer = uint16(i + 1);
+            uint24 referrer = uint24(i + 1);
 
             // check claimable amounts
             uint256 referrerScore = bunniToken.scoreOf(referrer);
@@ -325,7 +325,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         address[] memory referrerAddresses = new address[](numReferrers);
         for (uint256 i; i < numReferrers; i++) {
             // register referrer
-            uint16 referrer = uint16(i + 1);
+            uint24 referrer = uint24(i + 1);
             referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(referrer).toString()));
             hub.setReferrerAddress(referrer, referrerAddresses[i]);
 
@@ -345,7 +345,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         uint256 totalScore = bunniToken.totalSupply();
         for (uint256 i; i < numReferrers; i++) {
-            uint16 referrer = uint16(i + 1);
+            uint24 referrer = uint24(i + 1);
 
             // check claimable amounts
             uint256 referrerScore = bunniToken.scoreOf(referrer);
@@ -385,7 +385,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         address[] memory referrerAddresses = new address[](numReferrers);
         for (uint256 i; i < numReferrers; i++) {
             // register referrer
-            uint16 referrer = uint16(i + 1);
+            uint24 referrer = uint24(i + 1);
             referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(referrer).toString()));
             hub.setReferrerAddress(referrer, referrerAddresses[i]);
 
@@ -404,7 +404,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         uint256 totalScore = bunniToken.totalSupply();
         for (uint256 i; i < numReferrers; i++) {
-            uint16 referrer = uint16(i + 1);
+            uint24 referrer = uint24(i + 1);
 
             // check claimable amounts
             uint256 referrerScore = bunniToken.scoreOf(referrer);
@@ -694,7 +694,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         uint256 depositAmount0,
         uint256 depositAmount1,
         address depositor,
-        uint16 referrer
+        uint24 referrer
     ) internal returns (uint256 shares) {
         // mint tokens
         uint256 value;
