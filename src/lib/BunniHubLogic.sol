@@ -504,12 +504,11 @@ library BunniHubLogic {
         s.nonce[bunniSubspace] = nonce_ + 1;
 
         // set immutable params
-        s.poolState[poolId].immutableParamsPointer = abi.encodePacked(
+        bytes memory immutableParams = abi.encodePacked(
             params.liquidityDensityFunction,
             token,
             params.twapSecondsAgo,
             params.ldfParams,
-            params.hookParams,
             params.vault0,
             params.vault1,
             params.statefulLdf,
@@ -519,7 +518,10 @@ library BunniHubLogic {
             params.minRawTokenRatio1,
             params.targetRawTokenRatio1,
             params.maxRawTokenRatio1
-        ).write();
+        );
+        immutableParams =
+            bytes.concat(immutableParams, abi.encodePacked(params.hookParams.length.toUint16(), params.hookParams));
+        s.poolState[poolId].immutableParamsPointer = immutableParams.write();
 
         /// -----------------------------------------------------------------------
         /// External calls

@@ -17,13 +17,15 @@ abstract contract ReentrancyGuard {
     function _nonReentrantBefore() internal {
         uint256 statusSlot = STATUS_SLOT;
         uint256 status;
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             status := tload(statusSlot)
         }
         if (status == ENTERED) revert ReentrancyGuard__ReentrantCall();
 
         uint256 entered = ENTERED;
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             tstore(statusSlot, entered)
         }
     }
@@ -31,7 +33,8 @@ abstract contract ReentrancyGuard {
     function _nonReentrantAfter() internal {
         uint256 statusSlot = STATUS_SLOT;
         uint256 notEntered = NOT_ENTERED;
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             tstore(statusSlot, notEntered)
         }
     }

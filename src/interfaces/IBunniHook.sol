@@ -135,7 +135,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @notice Validates if the given hook params are valid
     /// @param hookParams The hook params
     /// @return isValid True if the hook params are valid
-    function isValidParams(bytes32 hookParams) external view returns (bool);
+    function isValidParams(bytes calldata hookParams) external view returns (bool);
 
     /// @notice The LDF state of a given pool. Used for evaluating the LDF.
     /// @param id The pool id

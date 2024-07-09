@@ -264,7 +264,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     }
 
     /// @inheritdoc IBunniHub
-    function hookParams(PoolId poolId) external view returns (bytes32) {
+    function hookParams(PoolId poolId) external view returns (bytes memory) {
         return _getHookParams(poolId);
     }
 
@@ -510,11 +510,10 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         bunniToken = IBunniToken(address(bytes20(rawValue)));
     }
 
-    function _getHookParams(PoolId poolId) internal view returns (bytes32) {
+    function _getHookParams(PoolId poolId) internal view returns (bytes memory result) {
         address ptr = s.poolState[poolId].immutableParamsPointer;
-        if (ptr == address(0)) return bytes32(0);
-        bytes memory rawValue = ptr.read({start: 75, end: 107});
-        return bytes32(rawValue);
+        if (ptr == address(0)) return bytes("");
+        result = ptr.read({start: 136});
     }
 
     function _updateBalance(uint256 balance, int256 delta) internal pure returns (uint256) {
