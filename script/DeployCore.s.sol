@@ -31,7 +31,6 @@ contract DeployCoreScript is CREATE3Script {
         uint32 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint32();
         uint32 referralRewardModifier = vm.envUint("REFERRAL_REWARD_MODIFIER").toUint32();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
-        uint32 oracleMinInterval = vm.envUint("ORACLE_MIN_INTERVAL").toUint32();
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -77,15 +76,7 @@ contract DeployCoreScript is CREATE3Script {
                     bytes.concat(
                         type(BunniHook).creationCode,
                         abi.encode(
-                            poolManager,
-                            hub,
-                            floodPlain,
-                            weth,
-                            zone,
-                            owner,
-                            hookFeeModifier,
-                            referralRewardModifier,
-                            oracleMinInterval
+                            poolManager, hub, floodPlain, weth, zone, owner, hookFeeModifier, referralRewardModifier
                         )
                     )
                 )
