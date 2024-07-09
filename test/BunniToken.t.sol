@@ -49,6 +49,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     uint16 internal constant VAULT_SURGE_THRESHOLD_1 = 1e3; // 0.1% change in share price
     uint32 internal constant HOOK_FEE_MODIFIER = 0.1e6;
     uint32 internal constant REFERRAL_REWARD_MODIFIER = 0.1e6;
+    uint16 internal constant REBALANCE_THRESHOLD = 100; // 1 / 100 = 1%
+    uint16 internal constant REBALANCE_MAX_SLIPPAGE = 1; // 5%
+    uint16 internal constant REBALANCE_TWAP_SECONDS_AGO = 1 hours;
+    uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
     uint32 internal constant ORACLE_MIN_INTERVAL = 1 hours;
     uint256 internal constant HOOK_FLAGS = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         + Hooks.BEFORE_SWAP_FLAG + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
@@ -88,15 +92,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
                 abi.encode(
-                    poolManager,
-                    hub,
-                    floodPlain,
-                    weth,
-                    zone,
-                    address(this),
-                    HOOK_FEE_MODIFIER,
-                    REFERRAL_REWARD_MODIFIER,
-                    ORACLE_MIN_INTERVAL
+                    poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
                 )
             );
             for (uint256 offset; offset < 100000; offset++) {
@@ -109,15 +105,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager,
-            hub,
-            floodPlain,
-            weth,
-            zone,
-            address(this),
-            HOOK_FEE_MODIFIER,
-            REFERRAL_REWARD_MODIFIER,
-            ORACLE_MIN_INTERVAL
+            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
         );
         vm.label(address(bunniHook), "BunniHook");
 
@@ -131,18 +119,22 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         // deploy BunniToken
         bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH));
-        bytes32 hookParams = bytes32(
-            abi.encodePacked(
-                FEE_MIN,
-                FEE_MAX,
-                FEE_QUADRATIC_MULTIPLIER,
-                FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
-                SURGE_HALFLIFE,
-                SURGE_AUTOSTART_TIME,
-                VAULT_SURGE_THRESHOLD_0,
-                VAULT_SURGE_THRESHOLD_1
-            )
+        bytes memory hookParams = abi.encodePacked(
+            FEE_MIN,
+            FEE_MAX,
+            FEE_QUADRATIC_MULTIPLIER,
+            FEE_TWAP_SECONDS_AGO,
+            SURGE_FEE,
+            SURGE_HALFLIFE,
+            SURGE_AUTOSTART_TIME,
+            VAULT_SURGE_THRESHOLD_0,
+            VAULT_SURGE_THRESHOLD_1,
+            REBALANCE_THRESHOLD,
+            REBALANCE_MAX_SLIPPAGE,
+            REBALANCE_TWAP_SECONDS_AGO,
+            REBALANCE_ORDER_TTL,
+            true, // amAmmEnabled
+            ORACLE_MIN_INTERVAL
         );
         (bunniToken, key) = hub.deployBunniToken(
             IBunniHub.DeployBunniTokenParams({

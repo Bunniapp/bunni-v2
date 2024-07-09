@@ -202,7 +202,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
         bool statefulLdf;
         bytes32 ldfParams;
         IBunniHook hooks;
-        bytes32 hookParams;
+        bytes hookParams;
         ERC4626 vault0;
         ERC4626 vault1;
         uint24 minRawTokenRatio0;
@@ -262,8 +262,8 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @notice The BunniToken of a given pool. address(0) if the pool is not a Bunni pool.
     function bunniTokenOfPool(PoolId poolId) external view returns (IBunniToken);
 
-    /// @notice The params of the given Bunni pool's hook. bytes32(0) if the pool is not a Bunni pool.
-    function hookParams(PoolId poolId) external view returns (bytes32);
+    /// @notice The params of the given Bunni pool's hook. bytes("") if the pool is not a Bunni pool.
+    function hookParams(PoolId poolId) external view returns (bytes memory);
 
     /// @notice The nonce of the given Bunni subspace.
     function nonce(bytes32 bunniSubspace) external view returns (uint24);

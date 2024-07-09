@@ -62,7 +62,6 @@ library BunniHookLogic {
         IZone floodZone;
         WETH weth;
         address permit2;
-        uint32 oracleMinInterval;
     }
 
     struct RebalanceInput {
@@ -90,8 +89,7 @@ library BunniHookLogic {
         uint160 sqrtPriceX96,
         int24 tick,
         bytes calldata hookData,
-        IBunniHub hub,
-        uint32 oracleMinInterval
+        IBunniHub hub
     ) external {
         if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from initializing a pool using this hook
         PoolId id = key.toId();
@@ -106,20 +104,20 @@ library BunniHookLogic {
 
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
-        uint32 maxTwapSecondsAgo;
-        {
-            (uint24 twapSecondsAgo, bytes32 hookParams) = abi.decode(hookData, (uint24, bytes32));
-            uint24 feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
-            uint16 rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
-            maxTwapSecondsAgo = uint32(
-                FixedPointMathLib.max(FixedPointMathLib.max(twapSecondsAgo, feeTwapSecondsAgo), rebalanceTwapSecondsAgo)
-            );
-            (s.states[id].intermediateObservation, s.states[id].cardinality, s.states[id].cardinalityNext) =
-                s.observations[id].initialize(uint32(block.timestamp - maxTwapSecondsAgo), tick);
-        }
+        (uint24 twapSecondsAgo, bytes memory hookParams) = abi.decode(hookData, (uint24, bytes));
+        DecodedHookParams memory hookParamsDecoded = _decodeParams(hookParams);
+        uint32 maxTwapSecondsAgo = uint32(
+            FixedPointMathLib.max(
+                FixedPointMathLib.max(twapSecondsAgo, hookParamsDecoded.feeTwapSecondsAgo),
+                hookParamsDecoded.rebalanceTwapSecondsAgo
+            )
+        );
+        (s.states[id].intermediateObservation, s.states[id].cardinality, s.states[id].cardinalityNext) =
+            s.observations[id].initialize(uint32(block.timestamp - maxTwapSecondsAgo), tick);
 
         // increase cardinality target based on maxTwapSecondsAgo
-        uint32 cardinalityNext = (maxTwapSecondsAgo + (oracleMinInterval >> 1)) / oracleMinInterval + 1; // round up + 1
+        uint32 cardinalityNext =
+            (maxTwapSecondsAgo + (hookParamsDecoded.oracleMinInterval >> 1)) / hookParamsDecoded.oracleMinInterval + 1; // round up + 1
         if (cardinalityNext > 1) {
             uint32 cardinalityNextNew = s.observations[id].grow(1, cardinalityNext);
             s.states[id].cardinalityNext = cardinalityNextNew;
@@ -173,7 +171,7 @@ library BunniHookLogic {
         // do it before we fetch the arithmeticMeanTick
         // which doesn't change the result but gives us updated index and cardinality
         (Oracle.Observation memory updatedIntermediate, uint32 updatedIndex, uint32 updatedCardinality) =
-            _updateOracle(s, id, slot0.tick, env.oracleMinInterval);
+            _updateOracle(s, id, slot0.tick, hookParams.oracleMinInterval);
 
         // get TWAP values
         int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0
@@ -433,7 +431,7 @@ library BunniHookLogic {
         }
     }
 
-    function decodeHookParams(bytes32 hookParams) external pure returns (DecodedHookParams memory p) {
+    function decodeHookParams(bytes calldata hookParams) external pure returns (DecodedHookParams memory p) {
         return _decodeParams(hookParams);
     }
 
@@ -759,23 +757,32 @@ library BunniHookLogic {
     }
 
     /// @dev Decodes hookParams into params used by this hook
-    /// @param hookParams The hook params raw bytes32
+    /// @param hookParams The hook params raw bytes
     /// @return p The decoded params struct
-    function _decodeParams(bytes32 hookParams) internal pure returns (DecodedHookParams memory p) {
+    function _decodeParams(bytes memory hookParams) internal pure returns (DecodedHookParams memory p) {
         // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
-        p.feeMin = uint24(bytes3(hookParams));
-        p.feeMax = uint24(bytes3(hookParams << 24));
-        p.feeQuadraticMultiplier = uint24(bytes3(hookParams << 48));
-        p.feeTwapSecondsAgo = uint24(bytes3(hookParams << 72));
-        p.surgeFee = uint24(bytes3(hookParams << 96));
-        p.surgeFeeHalfLife = uint16(bytes2(hookParams << 120));
-        p.surgeFeeAutostartThreshold = uint16(bytes2(hookParams << 136));
-        p.vaultSurgeThreshold0 = uint16(bytes2(hookParams << 152));
-        p.vaultSurgeThreshold1 = uint16(bytes2(hookParams << 168));
-        p.rebalanceThreshold = uint16(bytes2(hookParams << 184));
-        p.rebalanceMaxSlippage = uint16(bytes2(hookParams << 200));
-        p.rebalanceTwapSecondsAgo = uint16(bytes2(hookParams << 216));
-        p.rebalanceOrderTTL = uint16(bytes2(hookParams << 232));
-        p.amAmmEnabled = uint8(bytes1(hookParams << 248)) != 0;
+        bytes32 firstWord;
+        // | oracleMinInterval - 4 bytes |
+        bytes32 secondWord;
+        /// @solidity memory-safe-assembly
+        assembly {
+            firstWord := mload(add(hookParams, 32))
+            secondWord := mload(add(hookParams, 64))
+        }
+        p.feeMin = uint24(bytes3(firstWord));
+        p.feeMax = uint24(bytes3(firstWord << 24));
+        p.feeQuadraticMultiplier = uint24(bytes3(firstWord << 48));
+        p.feeTwapSecondsAgo = uint24(bytes3(firstWord << 72));
+        p.surgeFee = uint24(bytes3(firstWord << 96));
+        p.surgeFeeHalfLife = uint16(bytes2(firstWord << 120));
+        p.surgeFeeAutostartThreshold = uint16(bytes2(firstWord << 136));
+        p.vaultSurgeThreshold0 = uint16(bytes2(firstWord << 152));
+        p.vaultSurgeThreshold1 = uint16(bytes2(firstWord << 168));
+        p.rebalanceThreshold = uint16(bytes2(firstWord << 184));
+        p.rebalanceMaxSlippage = uint16(bytes2(firstWord << 200));
+        p.rebalanceTwapSecondsAgo = uint16(bytes2(firstWord << 216));
+        p.rebalanceOrderTTL = uint16(bytes2(firstWord << 232));
+        p.amAmmEnabled = uint8(bytes1(firstWord << 248)) != 0;
+        p.oracleMinInterval = uint32(bytes4(secondWord));
     }
 }

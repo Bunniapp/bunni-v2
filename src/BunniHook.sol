@@ -56,9 +56,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
 
-    /// @notice The minimum interval between the TWAP oracle observations.
-    uint32 internal immutable oracleMinInterval;
-
     /// -----------------------------------------------------------------------
     /// Storage variables
     /// -----------------------------------------------------------------------
@@ -94,8 +91,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         IZone floodZone_,
         address owner_,
         uint32 hookFeeModifier_,
-        uint32 referralRewardModifier_,
-        uint32 oracleMinInterval_
+        uint32 referralRewardModifier_
     ) BaseHook(poolManager_) {
         if (hookFeeModifier_ > MODIFIER_BASE || referralRewardModifier_ > MODIFIER_BASE) {
             revert BunniHook__InvalidModifier();
@@ -105,7 +101,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
-        oracleMinInterval = oracleMinInterval_;
 
         hookFeeModifier = hookFeeModifier_;
         referralRewardModifier = referralRewardModifier_;
@@ -321,7 +316,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// @inheritdoc IBunniHook
-    function isValidParams(bytes32 hookParams) external pure override returns (bool) {
+    function isValidParams(bytes calldata hookParams) external pure override returns (bool) {
         DecodedHookParams memory p = BunniHookLogic.decodeHookParams(hookParams);
         unchecked {
             return (p.feeMin <= p.feeMax) && (p.feeMax < SWAP_FEE_BASE)
@@ -383,7 +378,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         int24 tick,
         bytes calldata hookData
     ) external override(BaseHook, IBaseHook) poolManagerOnly returns (bytes4) {
-        BunniHookLogic.afterInitialize(s, caller, key, sqrtPriceX96, tick, hookData, hub, oracleMinInterval);
+        BunniHookLogic.afterInitialize(s, caller, key, sqrtPriceX96, tick, hookData, hub);
         return BunniHook.afterInitialize.selector;
     }
 
@@ -411,8 +406,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 poolManager: poolManager,
                 floodPlain: floodPlain,
                 weth: weth,
-                permit2: permit2,
-                oracleMinInterval: oracleMinInterval
+                permit2: permit2
             }),
             sender,
             key,
@@ -532,15 +526,25 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         if (globalOverride != BoolOverride.UNSET) return globalOverride == BoolOverride.TRUE;
 
-        bytes32 hookParams = hub.hookParams(id);
-        bool poolEnabled = uint8(bytes1(hookParams << 248)) != 0;
+        bytes memory hookParams = hub.hookParams(id);
+        bytes32 firstWord;
+        /// @solidity memory-safe-assembly
+        assembly {
+            firstWord := mload(add(hookParams, 32))
+        }
+        bool poolEnabled = uint8(bytes1(firstWord << 248)) != 0;
         return poolEnabled;
     }
 
     function _payloadIsValid(PoolId id, bytes7 payload) internal view virtual override returns (bool) {
         // use feeMax from hookParams
-        bytes32 hookParams = hub.hookParams(id);
-        uint24 maxSwapFee = uint24(bytes3(hookParams << 24));
+        bytes memory hookParams = hub.hookParams(id);
+        bytes32 firstWord;
+        /// @solidity memory-safe-assembly
+        assembly {
+            firstWord := mload(add(hookParams, 32))
+        }
+        uint24 maxSwapFee = uint24(bytes3(firstWord << 24));
 
         // payload is valid if swapFee0For1 and swapFee1For0 are at most maxSwapFee
         (uint24 swapFee0For1, uint24 swapFee1For0,) = decodeAmAmmPayload(payload);

@@ -58,6 +58,7 @@ struct HubStorage {
 /// @member rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
 /// @member rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
 /// @member amAmmEnabled Whether the am-AMM is enabled for this pool
+/// @member oracleMinInterval The minimum interval between TWAP oracle updates, in seconds
 struct DecodedHookParams {
     uint24 feeMin;
     uint24 feeMax;
@@ -73,6 +74,7 @@ struct DecodedHookParams {
     uint16 rebalanceTwapSecondsAgo;
     uint16 rebalanceOrderTTL;
     bool amAmmEnabled;
+    uint32 oracleMinInterval;
 }
 
 /// @notice Contains mappings used by both BunniHook and BunniLogic. Makes passing

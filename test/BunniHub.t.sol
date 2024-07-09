@@ -43,6 +43,7 @@ import {BunniToken} from "../src/BunniToken.sol";
 import {Uniswapper} from "./mocks/Uniswapper.sol";
 import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
+import {PoolState} from "../src/types/PoolState.sol";
 import {ERC20TaxMock} from "./mocks/ERC20TaxMock.sol";
 import {UniswapperTax} from "./mocks/UniswapperTax.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
@@ -191,15 +192,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
                 abi.encode(
-                    poolManager,
-                    hub,
-                    floodPlain,
-                    weth,
-                    zone,
-                    address(this),
-                    HOOK_FEE_MODIFIER,
-                    REFERRAL_REWARD_MODIFIER,
-                    ORACLE_MIN_INTERVAL
+                    poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
                 )
             );
             for (uint256 offset; offset < 100000; offset++) {
@@ -212,15 +205,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager,
-            hub,
-            floodPlain,
-            weth,
-            zone,
-            address(this),
-            HOOK_FEE_MODIFIER,
-            REFERRAL_REWARD_MODIFIER,
-            ORACLE_MIN_INTERVAL
+            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
         );
         vm.label(address(bunniHook), "BunniHook");
 
@@ -750,18 +735,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             vault1_,
             new GeometricDistribution(),
             bytes32(abi.encodePacked(int24(-3), int16(6), uint32(5e7), uint8(0))),
-            bytes32(
-                abi.encodePacked(
-                    FEE_MIN,
-                    FEE_MAX,
-                    FEE_QUADRATIC_MULTIPLIER,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -1223,19 +1212,24 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         Currency currency0 = Currency.wrap(address(token0));
         Currency currency1 = Currency.wrap(address(token1));
         bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH));
-        bytes32 hookParams = bytes32(
-            abi.encodePacked(
-                FEE_MIN,
-                FEE_MAX,
-                FEE_QUADRATIC_MULTIPLIER,
-                FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
-                SURGE_HALFLIFE,
-                SURGE_AUTOSTART_TIME,
-                VAULT_SURGE_THRESHOLD_0,
-                VAULT_SURGE_THRESHOLD_1
-            )
+        bytes memory hookParams = abi.encodePacked(
+            FEE_MIN,
+            FEE_MAX,
+            FEE_QUADRATIC_MULTIPLIER,
+            FEE_TWAP_SECONDS_AGO,
+            SURGE_FEE,
+            SURGE_HALFLIFE,
+            SURGE_AUTOSTART_TIME,
+            VAULT_SURGE_THRESHOLD_0,
+            VAULT_SURGE_THRESHOLD_1,
+            REBALANCE_THRESHOLD,
+            REBALANCE_MAX_SLIPPAGE,
+            REBALANCE_TWAP_SECONDS_AGO,
+            REBALANCE_ORDER_TTL,
+            true, // amAmmEnabled
+            ORACLE_MIN_INTERVAL
         );
+
         bytes32 name_ = bytes32(bytes(name));
         bytes32 symbol_ = bytes32(bytes(symbol));
 
@@ -1273,6 +1267,25 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(Currency.unwrap(key.currency1), Currency.unwrap(currency1), "currency1 not set");
         assertEq(key.tickSpacing, TICK_SPACING, "tickSpacing not set");
         assertEq(address(key.hooks), address(bunniHook), "hooks not set");
+
+        // verify pool state
+        PoolId id = key.toId();
+        PoolState memory state = hub.poolState(id);
+        assertEq(address(state.liquidityDensityFunction), address(ldf), "ldf incorrect");
+        assertEq(address(state.bunniToken), address(bunniToken), "bunniToken incorrect");
+        assertEq(state.twapSecondsAgo, TWAP_SECONDS_AGO, "twapSecondsAgo incorrect");
+        assertEq(state.ldfParams, ldfParams, "ldfParams incorrect");
+        assertEq(state.hookParams, hookParams, "hookParams incorrect");
+        assertEq(hub.hookParams(id), hookParams, "hub.hookParams() incorrect");
+        assertEq(address(state.vault0), address(0), "vault0 incorrect");
+        assertEq(address(state.vault1), address(0), "vault1 incorrect");
+        assertEq(state.statefulLdf, true, "statefulLdf incorrect");
+        assertEq(state.minRawTokenRatio0, 0.08e6, "minRawTokenRatio0 incorrect");
+        assertEq(state.targetRawTokenRatio0, 0.1e6, "targetRawTokenRatio0 incorrect");
+        assertEq(state.maxRawTokenRatio0, 0.12e6, "maxRawTokenRatio0 incorrect");
+        assertEq(state.minRawTokenRatio1, 0.08e6, "minRawTokenRatio1 incorrect");
+        assertEq(state.targetRawTokenRatio1, 0.1e6, "targetRawTokenRatio1 incorrect");
+        assertEq(state.maxRawTokenRatio1, 0.12e6, "maxRawTokenRatio1 incorrect");
     }
 
     function test_hookHasInsufficientTokens() external {
@@ -1331,18 +1344,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -1421,18 +1438,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -1513,18 +1534,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -1653,18 +1678,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             ERC4626(address(0)),
             ldf_,
             ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -1760,23 +1789,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1,
-                    REBALANCE_THRESHOLD,
-                    REBALANCE_MAX_SLIPPAGE,
-                    REBALANCE_TWAP_SECONDS_AGO,
-                    REBALANCE_ORDER_TTL,
-                    amAmmEnabled
-                )
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                amAmmEnabled,
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -1835,18 +1863,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -1903,22 +1935,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
-            bytes32(
-                abi.encodePacked(
-                    feeMin,
-                    feeMax,
-                    feeQuadraticMultiplier,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1,
-                    REBALANCE_THRESHOLD,
-                    REBALANCE_MAX_SLIPPAGE,
-                    REBALANCE_TWAP_SECONDS_AGO,
-                    REBALANCE_ORDER_TTL
-                )
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
 
@@ -2025,23 +2057,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             ERC4626(address(0)),
             ERC4626(address(0)),
             bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH)),
-            bytes32(
-                abi.encodePacked(
-                    FEE_MIN,
-                    FEE_MAX,
-                    FEE_QUADRATIC_MULTIPLIER,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1,
-                    REBALANCE_THRESHOLD,
-                    REBALANCE_MAX_SLIPPAGE,
-                    REBALANCE_TWAP_SECONDS_AGO,
-                    REBALANCE_ORDER_TTL,
-                    poolEnabled
-                )
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                poolEnabled, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
         PoolId id = key.toId();
@@ -2231,18 +2262,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             vault1_,
             ldf,
             bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH)),
-            bytes32(
-                abi.encodePacked(
-                    FEE_MIN,
-                    FEE_MAX,
-                    FEE_QUADRATIC_MULTIPLIER,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
     }
@@ -2261,18 +2296,22 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             vault1_,
             ldf_,
             bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH)),
-            bytes32(
-                abi.encodePacked(
-                    FEE_MIN,
-                    FEE_MAX,
-                    FEE_QUADRATIC_MULTIPLIER,
-                    FEE_TWAP_SECONDS_AGO,
-                    SURGE_FEE,
-                    SURGE_HALFLIFE,
-                    SURGE_AUTOSTART_TIME,
-                    VAULT_SURGE_THRESHOLD_0,
-                    VAULT_SURGE_THRESHOLD_1
-                )
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
             )
         );
     }
@@ -2283,7 +2322,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         ERC4626 vault0_,
         ERC4626 vault1_,
         bytes32 ldfParams,
-        bytes32 hookParams
+        bytes memory hookParams
     ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
         return _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_, ldf, ldfParams, hookParams);
     }
@@ -2295,7 +2334,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         ERC4626 vault1_,
         ILiquidityDensityFunction ldf_,
         bytes32 ldfParams,
-        bytes32 hookParams
+        bytes memory hookParams
     ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
         // initialize bunni
         (bunniToken, key) = hub.deployBunniToken(

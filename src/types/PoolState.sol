@@ -28,7 +28,6 @@ using SSTORE2 for address;
 /// @member minRawTokenRatio1 The minimum (rawBalance / balance) ratio for currency1
 /// @member targetRawTokenRatio1 The target (rawBalance / balance) ratio for currency1
 /// @member maxRawTokenRatio1 The maximum (rawBalance / balance) ratio for currency1
-/// @member amAmmEnabled Whether the am-AMM is enabled for this pool. Can be overriden by governance.
 /// @member rawBalance0 The raw token balance of currency0. Raw just means it's not stored in a ERC4626 vault.
 /// @member rawBalance1 The raw token balance of currency1. Raw just means it's not stored in a ERC4626 vault.
 /// @member reserve0 The vault share tokens owned in vault0
@@ -38,7 +37,7 @@ struct PoolState {
     IBunniToken bunniToken;
     uint24 twapSecondsAgo;
     bytes32 ldfParams;
-    bytes32 hookParams;
+    bytes hookParams;
     ERC4626 vault0;
     ERC4626 vault1;
     bool statefulLdf;
@@ -48,7 +47,6 @@ struct PoolState {
     uint24 minRawTokenRatio1;
     uint24 targetRawTokenRatio1;
     uint24 maxRawTokenRatio1;
-    bool amAmmEnabled;
     uint256 rawBalance0;
     uint256 rawBalance1;
     uint256 reserve0;
@@ -71,7 +69,8 @@ function getPoolParams(address ptr) view returns (PoolState memory state) {
     bytes memory immutableParams = ptr.read();
     {
         ILiquidityDensityFunction liquidityDensityFunction;
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             liquidityDensityFunction := shr(96, mload(add(immutableParams, 32)))
         }
         state.liquidityDensityFunction = liquidityDensityFunction;
@@ -79,7 +78,8 @@ function getPoolParams(address ptr) view returns (PoolState memory state) {
 
     {
         IBunniToken bunniToken;
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             bunniToken := shr(96, mload(add(immutableParams, 52)))
         }
         state.bunniToken = bunniToken;
@@ -87,7 +87,8 @@ function getPoolParams(address ptr) view returns (PoolState memory state) {
 
     {
         uint24 twapSecondsAgo;
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             twapSecondsAgo := shr(232, mload(add(immutableParams, 72)))
         }
         state.twapSecondsAgo = twapSecondsAgo;
@@ -95,90 +96,103 @@ function getPoolParams(address ptr) view returns (PoolState memory state) {
 
     {
         bytes32 ldfParams;
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             ldfParams := mload(add(immutableParams, 75))
         }
         state.ldfParams = ldfParams;
     }
 
     {
-        bytes32 hookParams_;
-        assembly ("memory-safe") {
-            hookParams_ := mload(add(immutableParams, 107))
-        }
-        state.hookParams = hookParams_;
-    }
-
-    {
         ERC4626 vault0;
-        assembly ("memory-safe") {
-            vault0 := shr(96, mload(add(immutableParams, 139)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            vault0 := shr(96, mload(add(immutableParams, 107)))
         }
         state.vault0 = vault0;
     }
 
     {
         ERC4626 vault1;
-        assembly ("memory-safe") {
-            vault1 := shr(96, mload(add(immutableParams, 159)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            vault1 := shr(96, mload(add(immutableParams, 127)))
         }
         state.vault1 = vault1;
     }
 
     {
         bool statefulLdf;
-        assembly ("memory-safe") {
-            statefulLdf := shr(248, mload(add(immutableParams, 179)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            statefulLdf := shr(248, mload(add(immutableParams, 147)))
         }
         state.statefulLdf = statefulLdf;
     }
 
     {
         uint24 minRawTokenRatio0;
-        assembly ("memory-safe") {
-            minRawTokenRatio0 := shr(232, mload(add(immutableParams, 180)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            minRawTokenRatio0 := shr(232, mload(add(immutableParams, 148)))
         }
         state.minRawTokenRatio0 = minRawTokenRatio0;
     }
 
     {
         uint24 targetRawTokenRatio0;
-        assembly ("memory-safe") {
-            targetRawTokenRatio0 := shr(232, mload(add(immutableParams, 183)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            targetRawTokenRatio0 := shr(232, mload(add(immutableParams, 151)))
         }
         state.targetRawTokenRatio0 = targetRawTokenRatio0;
     }
 
     {
         uint24 maxRawTokenRatio0;
-        assembly ("memory-safe") {
-            maxRawTokenRatio0 := shr(232, mload(add(immutableParams, 186)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            maxRawTokenRatio0 := shr(232, mload(add(immutableParams, 154)))
         }
         state.maxRawTokenRatio0 = maxRawTokenRatio0;
     }
 
     {
         uint24 minRawTokenRatio1;
-        assembly ("memory-safe") {
-            minRawTokenRatio1 := shr(232, mload(add(immutableParams, 189)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            minRawTokenRatio1 := shr(232, mload(add(immutableParams, 157)))
         }
         state.minRawTokenRatio1 = minRawTokenRatio1;
     }
 
     {
         uint24 targetRawTokenRatio1;
-        assembly ("memory-safe") {
-            targetRawTokenRatio1 := shr(232, mload(add(immutableParams, 192)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            targetRawTokenRatio1 := shr(232, mload(add(immutableParams, 160)))
         }
         state.targetRawTokenRatio1 = targetRawTokenRatio1;
     }
 
     {
         uint24 maxRawTokenRatio1;
-        assembly ("memory-safe") {
-            maxRawTokenRatio1 := shr(232, mload(add(immutableParams, 195)))
+        /// @solidity memory-safe-assembly
+        assembly {
+            maxRawTokenRatio1 := shr(232, mload(add(immutableParams, 163)))
         }
         state.maxRawTokenRatio1 = maxRawTokenRatio1;
+    }
+
+    {
+        bytes memory hookParams;
+        /// @solidity memory-safe-assembly
+        assembly {
+            let hookParamsLen := shr(240, mload(add(immutableParams, 166))) // uint16
+            hookParams := add(immutableParams, 136)
+            mstore(hookParams, hookParamsLen) // overwrite length field of `bytes memory hookParams`
+        }
+        state.hookParams = hookParams;
     }
 }
 
