@@ -332,7 +332,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                             p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0 && p.rebalanceTwapSecondsAgo != 0
                                 && p.rebalanceOrderTTL != 0
                         )
-                );
+                ) && (p.oracleMinInterval != 0);
         }
     }
 
