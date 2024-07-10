@@ -14,7 +14,6 @@ error BunniHub__HookCannotBeZero();
 error BunniHub__ZeroSharesMinted();
 error BunniHub__InvalidLDFParams();
 error BunniHub__InvalidHookParams();
-error BunniHub__TokenTaxIncorrect();
 error BunniHub__VaultFeeIncorrect();
 error BunniHub__VaultAssetMismatch();
 error BunniHub__GracePeriodExpired();

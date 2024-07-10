@@ -442,7 +442,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // pull input tokens from BunniHub to BunniHook
         // received in the form of PoolManager claim tokens
         // then unwrap claim tokens
-        // NOTE: tax-on-transfer tokens are not supported due to this unwrap since we need exactly args.amount tokens upon return
         poolManager.unlock(
             abi.encode(
                 HookUnlockCallbackType.REBALANCE_PREHOOK,
@@ -499,7 +498,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
 
         // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
-        // NOTE: tax-on-transfer tokens are not supported because we need exactly orderOutputAmount tokens
         poolManager.sync(args.currency);
         if (!args.currency.isNative()) {
             Currency.unwrap(args.currency).safeTransfer(address(poolManager), orderOutputAmount);
