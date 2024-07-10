@@ -305,8 +305,6 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         uint256 msgValue;
         uint256 rawAmount0;
         uint256 rawAmount1;
-        uint256 tax0;
-        uint256 tax1;
     }
 
     struct WithdrawCallbackInputData {
@@ -349,15 +347,8 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
                 if (msgValue < rawAmount0) revert BunniHub__MsgValueInsufficient();
                 paid0 = poolManager.settle{value: rawAmount0}(key.currency0);
             } else {
-                key.currency0.safeTransferFromPermit2(
-                    permit2, msgSender, address(poolManager), rawAmount0.divWadUp(WAD - data.tax0)
-                );
+                key.currency0.safeTransferFromPermit2(permit2, msgSender, address(poolManager), rawAmount0);
                 paid0 = poolManager.settle(key.currency0);
-            }
-
-            // ensure tax value was correct
-            if (percentDelta(paid0, rawAmount0) > MAX_TAX_ERROR) {
-                revert BunniHub__TokenTaxIncorrect();
             }
 
             poolManager.mint(address(this), key.currency0.toId(), paid0);
@@ -371,15 +362,8 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
                 if (msgValue < rawAmount1) revert BunniHub__MsgValueInsufficient();
                 paid1 = poolManager.settle{value: rawAmount1}(key.currency1);
             } else {
-                key.currency1.safeTransferFromPermit2(
-                    permit2, msgSender, address(poolManager), rawAmount1.divWadUp(WAD - data.tax1)
-                );
+                key.currency1.safeTransferFromPermit2(permit2, msgSender, address(poolManager), rawAmount1);
                 paid1 = poolManager.settle(key.currency1);
-            }
-
-            // ensure tax value was correct
-            if (percentDelta(paid1, rawAmount1) > MAX_TAX_ERROR) {
-                revert BunniHub__TokenTaxIncorrect();
             }
 
             poolManager.mint(address(this), key.currency1.toId(), paid1);
@@ -432,8 +416,6 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             poolManager.burn(address(this), currency.toId(), absAmount);
 
             // take tokens from poolManager
-            // NOTE: if the token has a transfer tax then the subsequent vault.deposit() will fail
-            // since we have less token than needed
             poolManager.take(currency, address(this), absAmount);
 
             // deposit tokens into vault

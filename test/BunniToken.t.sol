@@ -708,8 +708,6 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             deadline: block.timestamp,
             recipient: depositor,
             refundRecipient: depositor,
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             referrer: referrer

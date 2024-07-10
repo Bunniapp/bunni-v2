@@ -80,8 +80,6 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @param amount1Desired The desired amount of token1 to be spent,
     /// @param amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// @param amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
-    /// @param tax0 When token0 is transferred the amount is multiplied by WAD / (WAD - tax0),
-    /// @param tax1 When token1 is transferred the amount is multiplied by WAD / (WAD - tax1),
     /// @param vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
     /// @param vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// @param deadline The time by which the transaction must be included to effect the change
@@ -94,8 +92,6 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
         uint256 amount1Desired;
         uint256 amount0Min;
         uint256 amount1Min;
-        uint256 tax0;
-        uint256 tax1;
         uint256 vaultFee0;
         uint256 vaultFee1;
         uint256 deadline;
@@ -112,8 +108,6 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// amount1Desired The desired amount of token1 to be spent,
     /// amount0Min The minimum amount of token0 to spend, which serves as a slippage check,
     /// amount1Min The minimum amount of token1 to spend, which serves as a slippage check,
-    /// tax0 When token0 is transferred the amount is multiplied by WAD / (WAD - tax0),
-    /// tax1 When token1 is transferred the amount is multiplied by WAD / (WAD - tax1),
     /// vaultFee0 When we deposit token0 into vault0, the deposit amount is multiplied by WAD / (WAD - vaultFee0),
     /// vaultFee1 When we deposit token1 into vault1, the deposit amount is multiplied by WAD / (WAD - vaultFee1),
     /// deadline The time by which the transaction must be included to effect the change

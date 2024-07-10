@@ -44,8 +44,6 @@ import {Uniswapper} from "./mocks/Uniswapper.sol";
 import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {PoolState} from "../src/types/PoolState.sol";
-import {ERC20TaxMock} from "./mocks/ERC20TaxMock.sol";
-import {UniswapperTax} from "./mocks/UniswapperTax.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
@@ -88,7 +86,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
     uint16 internal constant VAULT_SURGE_THRESHOLD_0 = 1e4; // 0.01% change in share price
     uint16 internal constant VAULT_SURGE_THRESHOLD_1 = 1e3; // 0.1% change in share price
-    uint256 internal constant TOKEN_TAX = 0.05e18;
     uint256 internal constant VAULT_FEE = 0.03e18;
     uint16 internal constant REBALANCE_THRESHOLD = 100; // 1 / 100 = 1%
     uint16 internal constant REBALANCE_MAX_SLIPPAGE = 1; // 5%
@@ -112,10 +109,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     BunniQuoter internal quoter;
     ILiquidityDensityFunction internal ldf;
     Uniswapper internal swapper;
-    UniswapperTax internal swapperWithTax;
     WETH internal weth;
     IPermit2 internal permit2;
-    ERC20TaxMock internal tokenWithTax;
     IFloodPlain internal floodPlain;
     BunniLens internal lens;
     BunniZone internal zone;
@@ -136,7 +131,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         if (address(token0) >= address(token1)) {
             (token0, token1) = (token1, token0);
         }
-        tokenWithTax = new ERC20TaxMock();
         poolManager = new PoolManager(1e7);
 
         // deploy vaults
@@ -178,7 +172,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // deploy swapper
         swapper = new Uniswapper(poolManager);
-        swapperWithTax = new UniswapperTax(poolManager);
 
         // initialize bunni hub
         hub = new BunniHub(poolManager, weth, permit2, new BunniToken(), address(this));
@@ -228,15 +221,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         weth.approve(address(permit2), type(uint256).max);
         weth.approve(address(swapper), type(uint256).max);
         weth.approve(address(floodPlain), type(uint256).max);
-        tokenWithTax.approve(address(permit2), type(uint256).max);
-        tokenWithTax.approve(address(swapperWithTax), type(uint256).max);
-        tokenWithTax.approve(address(floodPlain), type(uint256).max);
 
         // permit2 approve tokens to hub
         permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
         permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
         permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(tokenWithTax), address(hub), type(uint160).max, type(uint48).max);
 
         // whitelist address(this) as fulfiller
         zone.setIsWhitelisted(address(this), true);
@@ -293,13 +282,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         // make deposit
-        (uint256 shares, uint256 amount0, uint256 amount1) = _makeDepositWithTax({
+        (uint256 shares, uint256 amount0, uint256 amount1) = _makeDepositWithFee({
             key_: key,
             depositAmount0: depositAmount0,
             depositAmount1: depositAmount1,
             depositor: address(this),
-            tax0: 0,
-            tax1: 0,
             vaultFee0: address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vaultWethWithFee)
                 ? 0.03e18
                 : 0,
@@ -350,13 +337,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
 
         // make deposit
-        (uint256 shares,,) = _makeDepositWithTax({
+        (uint256 shares,,) = _makeDepositWithFee({
             key_: key,
             depositAmount0: depositAmount0,
             depositAmount1: depositAmount1,
             depositor: address(this),
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             snapLabel: ""
@@ -404,13 +389,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
 
         // make deposit
-        (uint256 shares,,) = _makeDepositWithTax({
+        (uint256 shares,,) = _makeDepositWithFee({
             key_: key,
             depositAmount0: depositAmount0,
             depositAmount1: depositAmount1,
             depositor: address(this),
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             snapLabel: ""
@@ -462,13 +445,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
 
         // make deposit
-        (uint256 shares,,) = _makeDepositWithTax({
+        (uint256 shares,,) = _makeDepositWithFee({
             key_: key,
             depositAmount0: depositAmount0,
             depositAmount1: depositAmount1,
             depositor: address(this),
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             snapLabel: ""
@@ -512,13 +493,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
 
         // make deposit
-        (uint256 shares,,) = _makeDepositWithTax({
+        (uint256 shares,,) = _makeDepositWithFee({
             key_: key,
             depositAmount0: depositAmount0,
             depositAmount1: depositAmount1,
             depositor: address(this),
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             snapLabel: ""
@@ -563,86 +542,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // withdraw
         hub.withdraw(withdrawParams);
-    }
-
-    function test_tokenWithTax_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
-        (Currency currency0, Currency currency1) =
-            (Currency.wrap(address(token0)), Currency.wrap(address(tokenWithTax)));
-        if (currency0 > currency1) (currency0, currency1) = (currency1, currency0);
-        (IBunniToken bunniToken, PoolKey memory key) =
-            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
-
-        // make deposit
-        (uint256 shares, uint256 amount0, uint256 amount1) = _makeDepositWithTax({
-            key_: key,
-            depositAmount0: depositAmount0,
-            depositAmount1: depositAmount1,
-            depositor: address(this),
-            tax0: 0,
-            tax1: TOKEN_TAX,
-            vaultFee0: 0,
-            vaultFee1: 0,
-            snapLabel: ""
-        });
-
-        // withdraw
-        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
-            poolKey: key,
-            recipient: address(this),
-            shares: shares,
-            amount0Min: 0,
-            amount1Min: 0,
-            deadline: block.timestamp,
-            useQueuedWithdrawal: false
-        });
-        IBunniHub hub_ = hub;
-        (uint256 beforeBalance0, uint256 beforeBalance1) =
-            (key.currency0.balanceOf(address(this)), key.currency1.balanceOf(address(this)));
-        (uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
-
-        uint256 maxError = 100;
-
-        if (Currency.unwrap(currency0) == address(tokenWithTax)) {
-            uint256 amount0PostTax = amount0 * tokenWithTax.TAX_MULTIPLIER() / 100;
-            assertApproxEqAbs(withdrawAmount0, amount0, maxError, "withdrawAmount0 incorrect (tax token)");
-            assertApproxEqAbs(
-                key.currency0.balanceOf(address(this)) - beforeBalance0,
-                amount0PostTax,
-                maxError,
-                "token0 balance incorrect (tax token)"
-            );
-        } else {
-            assertApproxEqAbs(withdrawAmount0, amount0, maxError, "withdrawAmount0 incorrect (not tax token)");
-            assertApproxEqAbs(
-                key.currency0.balanceOf(address(this)) - beforeBalance0,
-                withdrawAmount0,
-                maxError,
-                "token0 balance incorrect (not tax token)"
-            );
-        }
-
-        if (Currency.unwrap(currency1) == address(tokenWithTax)) {
-            uint256 amount1PostTax = amount1 * tokenWithTax.TAX_MULTIPLIER() / 100;
-            assertApproxEqAbs(withdrawAmount1, amount1, maxError, "withdrawAmount1 incorrect (tax token)");
-            assertApproxEqAbs(
-                key.currency1.balanceOf(address(this)) - beforeBalance1,
-                amount1PostTax,
-                maxError,
-                "token1 balance incorrect (tax token)"
-            );
-        } else {
-            assertApproxEqAbs(withdrawAmount1, amount1, maxError, "withdrawAmount1 incorrect (not tax token)");
-            assertApproxEqAbs(
-                key.currency1.balanceOf(address(this)) - beforeBalance1,
-                withdrawAmount1,
-                maxError,
-                "token1 balance incorrect (not tax token)"
-            );
-        }
-
-        assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
     }
 
     function test_swap_zeroForOne_noTickCrossing() public {
@@ -1141,8 +1040,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 deadline: block.timestamp,
                 recipient: address(this),
                 refundRecipient: address(this),
-                tax0: 0,
-                tax1: 0,
                 vaultFee0: 0,
                 vaultFee1: 0,
                 referrer: 0
@@ -1159,8 +1056,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 deadline: block.timestamp,
                 recipient: address(this),
                 refundRecipient: address(this),
-                tax0: 0,
-                tax1: 0,
                 vaultFee0: 0,
                 vaultFee1: 0,
                 referrer: 0
@@ -1652,117 +1547,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         );
     }
 
-    function test_tokenWithTax_fuzz_swapNoArb_exactIn(
-        uint256 swapAmount,
-        bool zeroForOneFirstSwap,
-        bool useVault0,
-        uint256 waitTime,
-        uint32 alpha,
-        uint24 feeMin,
-        uint24 feeMax,
-        uint24 feeQuadraticMultiplier
-    ) external {
-        swapAmount = bound(swapAmount, 1e6, 1e36);
-        waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 6);
-        feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
-        alpha = uint32(bound(alpha, 1e3, 12e8));
-
-        GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            Currency.wrap(address(token0)),
-            Currency.wrap(address(tokenWithTax)),
-            useVault0 ? vault0 : ERC4626(address(0)),
-            ERC4626(address(0)),
-            ldf_,
-            ldfParams,
-            abi.encodePacked(
-                feeMin,
-                feeMax,
-                feeQuadraticMultiplier,
-                FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
-                SURGE_HALFLIFE,
-                SURGE_AUTOSTART_TIME,
-                VAULT_SURGE_THRESHOLD_0,
-                VAULT_SURGE_THRESHOLD_1,
-                REBALANCE_THRESHOLD,
-                REBALANCE_MAX_SLIPPAGE,
-                REBALANCE_TWAP_SECONDS_AGO,
-                REBALANCE_ORDER_TTL,
-                true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
-            )
-        );
-
-        // execute first swap
-        (Currency firstSwapInputToken, Currency firstSwapOutputToken) =
-            zeroForOneFirstSwap ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
-        _mint(firstSwapInputToken, address(this), swapAmount * 2);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: zeroForOneFirstSwap,
-            amountSpecified: -int256(
-                Currency.unwrap(firstSwapInputToken) == address(tokenWithTax)
-                    ? swapAmount * tokenWithTax.TAX_MULTIPLIER() / 100
-                    : swapAmount
-            ),
-            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
-        });
-        uint256 firstSwapInputAmount;
-        uint256 firstSwapOutputAmount;
-        {
-            uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
-            uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
-            if (Currency.unwrap(firstSwapInputToken) == address(tokenWithTax)) {
-                swapperWithTax.swap(key, params, type(uint256).max, 0, TOKEN_TAX);
-            } else {
-                _swap(key, params, 0, "");
-            }
-            firstSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
-            firstSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
-        }
-
-        console2.log("firstSwapInputAmount", firstSwapInputAmount);
-        console2.log("firstSwapOutputAmount", firstSwapOutputAmount);
-
-        // wait for some time
-        skip(waitTime);
-
-        // execute second swap
-        params = IPoolManager.SwapParams({
-            zeroForOne: !zeroForOneFirstSwap,
-            amountSpecified: -int256(
-                int256(
-                    Currency.unwrap(firstSwapOutputToken) == address(tokenWithTax)
-                        ? firstSwapOutputAmount * tokenWithTax.TAX_MULTIPLIER() / 100
-                        : firstSwapOutputAmount
-                )
-            ),
-            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
-        });
-        uint256 secondSwapInputAmount;
-        uint256 secondSwapOutputAmount;
-        {
-            uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
-            uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
-            if (Currency.unwrap(firstSwapOutputToken) == address(tokenWithTax)) {
-                swapperWithTax.swap(key, params, type(uint256).max, 0, TOKEN_TAX);
-            } else {
-                _swap(key, params, 0, "");
-            }
-            secondSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
-            secondSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
-        }
-
-        console2.log("secondSwapInputAmount", secondSwapInputAmount);
-        console2.log("secondSwapOutputAmount", secondSwapOutputAmount);
-
-        // verify no profits
-        assertLeDecimal(secondSwapOutputAmount, firstSwapInputAmount, 18, "arb has profit");
-    }
-
     function test_fuzz_quoter_quoteSwap(
         uint256 swapAmount,
         bool zeroForOne,
@@ -1892,8 +1676,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             deadline: block.timestamp,
             recipient: address(this),
             refundRecipient: address(this),
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             referrer: 0
@@ -2099,13 +1881,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
 
         // make deposit
-        (uint256 shares,,) = _makeDepositWithTax({
+        (uint256 shares,,) = _makeDepositWithFee({
             key_: key,
             depositAmount0: 1 ether,
             depositAmount1: 1 ether,
             depositor: address(this),
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             snapLabel: ""
@@ -2162,8 +1942,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             deadline: block.timestamp,
             recipient: depositor,
             refundRecipient: depositor,
-            tax0: 0,
-            tax1: 0,
             vaultFee0: 0,
             vaultFee1: 0,
             referrer: 0
@@ -2180,13 +1958,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         vm.stopPrank();
     }
 
-    function _makeDepositWithTax(
+    function _makeDepositWithFee(
         PoolKey memory key_,
         uint256 depositAmount0,
         uint256 depositAmount1,
         address depositor,
-        uint256 tax0,
-        uint256 tax1,
         uint256 vaultFee0,
         uint256 vaultFee1,
         string memory snapLabel
@@ -2198,8 +1974,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         } else if (key_.currency1.isNative()) {
             value = depositAmount1.divWadUp(WAD - vaultFee1);
         }
-        _mint(key_.currency0, depositor, depositAmount0.divWadUp(WAD - tax0).divWadUp(WAD - vaultFee0));
-        _mint(key_.currency1, depositor, depositAmount1.divWadUp(WAD - tax1).divWadUp(WAD - vaultFee1));
+        _mint(key_.currency0, depositor, depositAmount0.divWadUp(WAD - vaultFee0));
+        _mint(key_.currency1, depositor, depositAmount1.divWadUp(WAD - vaultFee1));
 
         // deposit tokens
         IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
@@ -2211,8 +1987,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             deadline: block.timestamp,
             recipient: depositor,
             refundRecipient: depositor,
-            tax0: tax0,
-            tax1: tax1,
             vaultFee0: vaultFee0,
             vaultFee1: vaultFee1,
             referrer: 0
@@ -2371,19 +2145,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         token0.approve(address(permit2), type(uint256).max);
         token1.approve(address(permit2), type(uint256).max);
         weth.approve(address(permit2), type(uint256).max);
-        tokenWithTax.approve(address(permit2), type(uint256).max);
         permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
         permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
         permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(tokenWithTax), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
-        uint256 tax0 = Currency.unwrap(currency0) == address(tokenWithTax) ? TOKEN_TAX : 0;
-        uint256 tax1 = Currency.unwrap(currency1) == address(tokenWithTax) ? TOKEN_TAX : 0;
         uint256 vaultFee0 = address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
             || address(vault0_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
         uint256 vaultFee1 = address(vault1_) == address(vault0WithFee) || address(vault1_) == address(vault1WithFee)
             || address(vault1_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
-        _makeDepositWithTax(key, depositAmount0, depositAmount1, address(0x6969), tax0, tax1, vaultFee0, vaultFee1, "");
+        _makeDepositWithFee(key, depositAmount0, depositAmount1, address(0x6969), vaultFee0, vaultFee1, "");
     }
 
     function _execTestAcrossScenarios(
