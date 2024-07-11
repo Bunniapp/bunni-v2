@@ -176,29 +176,6 @@ library LibUniformDistribution {
         }
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        bool useTwap = twapSecondsAgo > 0;
-        int24 tickLower;
-        int24 tickUpper;
-        if (useTwap) {
-            // | offset - 3 bytes | length - 3 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // offset (in rounded ticks) of tickLower from the twap tick
-            int24 length = int24(uint24(bytes3(ldfParams << 24))); // length of the position in rounded ticks
-            uint8 shiftMode = uint8(bytes1(ldfParams << 48));
-
-            return length > 0 && int256(offset) * int256(tickSpacing) <= type(int24).max
-                && int256(length) * int256(tickSpacing) <= type(int24).max && shiftMode <= uint8(type(ShiftMode).max);
-        } else {
-            // | tickLower - 3 bytes | tickUpper - 3 bytes |
-            tickLower = int24(uint24(bytes3(ldfParams)));
-            tickUpper = int24(uint24(bytes3(ldfParams << 24)));
-            (int24 minUsableTick, int24 maxUsableTick) =
-                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-            return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper
-                && tickLower >= minUsableTick && tickUpper <= maxUsableTick;
-        }
-    }
-
     function liquidityDensityX96(int24 roundedTick, int24 tickSpacing, int24 tickLower, int24 tickUpper)
         internal
         pure
@@ -327,19 +304,42 @@ library LibUniformDistribution {
         }
     }
 
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        uint8 shiftMode = uint8(bytes1(ldfParams)); // use uint8 since we don't know if the value is in range yet
+        if (shiftMode != uint8(ShiftMode.STATIC)) {
+            // Shifting
+            // | shiftMode - 1 byte | offset - 3 bytes | length - 3 bytes |
+            int24 offset = int24(uint24(bytes3(ldfParams << 8))); // offset (in rounded ticks) of tickLower from the twap tick
+            int24 length = int24(uint24(bytes3(ldfParams << 32))); // length of the position in rounded ticks
+
+            return twapSecondsAgo != 0 && length > 0 && offset % tickSpacing == 0
+                && int256(length) * int256(tickSpacing) <= type(int24).max && shiftMode <= uint8(type(ShiftMode).max);
+        } else {
+            // Static
+            // | shiftMode - 1 byte | tickLower - 3 bytes | tickUpper - 3 bytes |
+            int24 tickLower = int24(uint24(bytes3(ldfParams << 8)));
+            int24 tickUpper = int24(uint24(bytes3(ldfParams << 32)));
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper
+                && tickLower >= minUsableTick && tickUpper <= maxUsableTick;
+        }
+    }
+
     /// @return tickLower The lower tick of the distribution
     /// @return tickUpper The upper tick of the distribution
-    function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+    function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
         internal
         pure
         returns (int24 tickLower, int24 tickUpper, ShiftMode shiftMode)
     {
-        if (useTwap) {
-            // | offset - 3 bytes | length - 3 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // offset (in rounded ticks) of tickLower from the twap tick
-            int24 length = int24(uint24(bytes3(ldfParams << 24))); // length of the position in rounded ticks
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 48)));
-            tickLower = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
+        shiftMode = ShiftMode(uint8(bytes1(ldfParams)));
+
+        if (shiftMode != ShiftMode.STATIC) {
+            // | shiftMode - 1 byte | offset - 3 bytes | length - 3 bytes |
+            int24 offset = int24(uint24(bytes3(ldfParams << 8))); // offset of tickLower from the twap tick
+            int24 length = int24(uint24(bytes3(ldfParams << 32))); // length of the position in rounded ticks
+            tickLower = roundTickSingle(twapTick + offset, tickSpacing);
             tickUpper = tickLower + length * tickSpacing;
 
             // bound distribution to be within the range of usable ticks
@@ -355,9 +355,9 @@ library LibUniformDistribution {
                 tickLower = int24(FixedPointMathLib.max(tickUpper - tickLength, minUsableTick));
             }
         } else {
-            // | tickLower - 3 bytes | tickUpper - 3 bytes |
-            tickLower = int24(uint24(bytes3(ldfParams)));
-            tickUpper = int24(uint24(bytes3(ldfParams << 24)));
+            // | shiftMode - 1 byte | tickLower - 3 bytes | tickUpper - 3 bytes |
+            tickLower = int24(uint24(bytes3(ldfParams << 8)));
+            tickUpper = int24(uint24(bytes3(ldfParams << 32)));
         }
     }
 }

@@ -251,19 +251,6 @@ library LibCarpetedGeometricDistribution {
         return true;
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams)));
-        int24 length = int24(int16(uint16(bytes2(ldfParams << 24))));
-        uint32 alpha = uint32(bytes4(ldfParams << 40));
-        uint32 weightMain = uint32(bytes4(ldfParams << 72));
-        uint8 shiftMode = uint8(bytes1(ldfParams << 104));
-        bytes32 geometricLdfParams = bytes32(abi.encodePacked(minTickOrOffset, int16(length), alpha, shiftMode));
-
-        return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, geometricLdfParams)
-            && weightMain != 0 && weightMain < WEIGHT_BASE
-            && checkMinLiquidityDensity(tickSpacing, length, alpha, weightMain);
-    }
-
     function liquidityDensityX96(
         int24 roundedTick,
         int24 tickSpacing,
@@ -410,45 +397,6 @@ library LibCarpetedGeometricDistribution {
         }
     }
 
-    /// @return minTick The minimum rounded tick of the distribution
-    /// @return length The length of the geometric distribution in number of rounded ticks
-    /// @return alphaX96 The alpha of the geometric distribution
-    /// @return weightMain The weight of the geometric distribution, 9 decimals
-    /// @return shiftMode The shift mode of the distribution
-    function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
-        internal
-        pure
-        returns (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode)
-    {
-        length = int24(int16(uint16(bytes2(ldfParams << 24))));
-        uint256 alpha = uint32(bytes4(ldfParams << 40));
-        weightMain = uint32(bytes4(ldfParams << 72));
-
-        alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
-
-        if (useTwap) {
-            // use rounded TWAP value + offset as minTick
-            // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
-            minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 104)));
-
-            // bound distribution to be within the range of usable ticks
-            (int24 minUsableTick, int24 maxUsableTick) =
-                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-            if (minTick < minUsableTick) {
-                minTick = minUsableTick;
-            } else if (minTick > maxUsableTick - length * tickSpacing) {
-                minTick = maxUsableTick - length * tickSpacing;
-            }
-        } else {
-            // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
-            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            shiftMode = ShiftMode.BOTH;
-        }
-    }
-
     function getCarpetedLiquidity(
         uint256 totalLiquidity,
         int24 tickSpacing,
@@ -477,5 +425,30 @@ library LibCarpetedGeometricDistribution {
             uint24((maxUsableTick - minTick) / tickSpacing - length), uint24(numRoundedTicksCarpeted)
         );
         leftCarpetLiquidity = carpetLiquidity - rightCarpetLiquidity;
+    }
+
+    /// @return minTick The minimum rounded tick of the distribution
+    /// @return length The length of the geometric distribution in number of rounded ticks
+    /// @return alphaX96 The alpha of the geometric distribution
+    /// @return weightMain The weight of the geometric distribution, 9 decimals
+    /// @return shiftMode The shift mode of the distribution
+    function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
+        internal
+        pure
+        returns (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode)
+    {
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
+        (minTick, length, alphaX96, shiftMode) = LibGeometricDistribution.decodeParams(twapTick, tickSpacing, ldfParams);
+        weightMain = uint32(bytes4(ldfParams << 80));
+    }
+
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
+        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint32 alpha = uint32(bytes4(ldfParams << 48));
+        uint32 weightMain = uint32(bytes4(ldfParams << 80));
+
+        return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightMain != 0
+            && weightMain < WEIGHT_BASE && checkMinLiquidityDensity(tickSpacing, length, alpha, weightMain);
     }
 }

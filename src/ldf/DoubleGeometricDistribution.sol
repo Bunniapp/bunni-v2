@@ -20,7 +20,6 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -44,7 +43,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
             uint256 weight0,
             uint256 weight1,
             ShiftMode shiftMode
-        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
@@ -67,7 +66,6 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         bool exactIn,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -85,7 +83,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
             uint256 weight0,
             uint256 weight1,
             ShiftMode shiftMode
-        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
@@ -108,23 +106,12 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
     }
 
     /// @inheritdoc ILiquidityDensityFunction
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
-        external
-        pure
-        override
-        returns (bool)
-    {
-        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
-    }
-
-    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
@@ -137,7 +124,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
             uint256 weight0,
             uint256 weight1,
             ShiftMode shiftMode
-        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
@@ -164,7 +151,6 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
@@ -177,7 +163,7 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
             uint256 weight0,
             uint256 weight1,
             ShiftMode shiftMode
-        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
@@ -195,6 +181,16 @@ contract DoubleGeometricDistribution is ILiquidityDensityFunction {
             weight0,
             weight1
         );
+    }
+
+    /// @inheritdoc ILiquidityDensityFunction
+    function isValidParams(PoolKey calldata key, uint24 twapSecondsAgo, bytes32 ldfParams)
+        external
+        pure
+        override
+        returns (bool)
+    {
+        return LibDoubleGeometricDistribution.isValidParams(key.tickSpacing, twapSecondsAgo, ldfParams);
     }
 
     function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMinTick) {

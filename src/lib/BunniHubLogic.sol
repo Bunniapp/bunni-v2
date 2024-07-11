@@ -222,7 +222,6 @@ library BunniHubLogic {
                 sqrtPriceX96: inputData.sqrtPriceX96,
                 tick: inputData.currentTick,
                 arithmeticMeanTick: arithmeticMeanTick,
-                useTwap: useTwap,
                 ldf: inputData.state.liquidityDensityFunction,
                 ldfParams: inputData.state.ldfParams,
                 ldfState: ldfState,
@@ -431,16 +430,22 @@ library BunniHubLogic {
         // since Univ4 pool key is deterministic based on poolKey, we use dynamic fee so that the lower 20 bits of `poolKey.fee` is used
         // as nonce to differentiate the BunniTokens
         // each "subspace" has its own nonce that's incremented whenever a BunniToken is deployed with the same tokens & tick spacing & hooks
-        // nonce can be at most 2^20 - 1 = 1048575 after which the deployment will fail
+        // nonce can be at most 1e6 after which the deployment will fail
         bytes32 bunniSubspace =
             keccak256(abi.encode(params.currency0, params.currency1, params.tickSpacing, params.hooks));
         uint24 nonce_ = s.nonce[bunniSubspace];
-        if (nonce_ + 1 > MAX_NONCE) revert BunniHub__MaxNonceReached();
+        if (nonce_ > MAX_NONCE) revert BunniHub__MaxNonceReached();
 
         // ensure LDF params are valid
+        key = PoolKey({
+            currency0: params.currency0,
+            currency1: params.currency1,
+            fee: nonce_,
+            tickSpacing: params.tickSpacing,
+            hooks: IHooks(address(params.hooks))
+        });
         if (address(params.liquidityDensityFunction) == address(0)) revert BunniHub__LDFCannotBeZero();
-        if (!params.liquidityDensityFunction.isValidParams(params.tickSpacing, params.twapSecondsAgo, params.ldfParams))
-        {
+        if (!params.liquidityDensityFunction.isValidParams(key, params.twapSecondsAgo, params.ldfParams)) {
             revert BunniHub__InvalidLDFParams();
         }
 
@@ -488,13 +493,6 @@ library BunniHubLogic {
         );
         token.initialize(params.owner, params.metadataURI);
 
-        key = PoolKey({
-            currency0: params.currency0,
-            currency1: params.currency1,
-            fee: nonce_,
-            tickSpacing: params.tickSpacing,
-            hooks: IHooks(address(params.hooks))
-        });
         PoolId poolId = key.toId();
         s.poolIdOfBunniToken[token] = poolId;
 

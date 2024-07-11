@@ -254,53 +254,6 @@ library LibDoubleGeometricDistribution {
         return true;
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 2 bytes | weight1 - 4 bytes | shiftMode - 1 byte |
-        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams)));
-        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
-        uint32 alpha0 = uint32(bytes4(ldfParams << 40));
-        uint256 weight0 = uint32(bytes4(ldfParams << 72));
-        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 104))));
-        uint32 alpha1 = uint32(bytes4(ldfParams << 120));
-        uint256 weight1 = uint32(bytes4(ldfParams << 152));
-
-        // ensure length doesn't overflow when multiplied by tickSpacing
-        // ensure length can be contained between minUsableTick and maxUsableTick
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        int24 length = length0 + length1;
-        if (
-            int256(length) * int256(tickSpacing) > type(int24).max || length > maxUsableTick / tickSpacing
-                || -length < minUsableTick / tickSpacing
-        ) return false;
-
-        bool useTwap = twapSecondsAgo != 0;
-        if (useTwap) {
-            uint8 shiftMode = uint8(bytes1(ldfParams << 184));
-
-            // ensure shiftMode is within the valid range
-            if (shiftMode > uint8(type(ShiftMode).max)) {
-                return false;
-            }
-        }
-
-        return LibGeometricDistribution.isValidParams(
-            tickSpacing, twapSecondsAgo, bytes32(abi.encodePacked(minTickOrOffset, int16(length1), alpha1))
-        )
-            && LibGeometricDistribution.isValidParams(
-                tickSpacing,
-                twapSecondsAgo,
-                bytes32(
-                    abi.encodePacked(
-                        useTwap ? minTickOrOffset + length1 : minTickOrOffset + length1 * tickSpacing,
-                        int16(length0),
-                        alpha0
-                    )
-                )
-            ) && weight0 != 0 && weight1 != 0
-            && checkMinLiquidityDensity(Q96, tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1);
-    }
-
     function liquidityDensityX96(
         int24 roundedTick,
         int24 tickSpacing,
@@ -497,6 +450,38 @@ library LibDoubleGeometricDistribution {
         }
     }
 
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 2 bytes | weight1 - 4 bytes |
+        uint8 shiftMode = uint8(bytes1(ldfParams));
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
+        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint32 alpha0 = uint32(bytes4(ldfParams << 48));
+        uint256 weight0 = uint32(bytes4(ldfParams << 80));
+        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
+        uint32 alpha1 = uint32(bytes4(ldfParams << 128));
+        uint256 weight1 = uint32(bytes4(ldfParams << 160));
+
+        // ensure length doesn't overflow when multiplied by tickSpacing
+        // ensure length can be contained between minUsableTick and maxUsableTick
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        int24 length = length0 + length1;
+        if (
+            int256(length) * int256(tickSpacing) > type(int24).max || length > maxUsableTick / tickSpacing
+                || -length < minUsableTick / tickSpacing
+        ) return false;
+
+        return LibGeometricDistribution.isValidParams(
+            tickSpacing, twapSecondsAgo, bytes32(abi.encodePacked(shiftMode, minTickOrOffset, int16(length1), alpha1))
+        )
+            && LibGeometricDistribution.isValidParams(
+                tickSpacing,
+                twapSecondsAgo,
+                bytes32(abi.encodePacked(shiftMode, minTickOrOffset + length1 * tickSpacing, int16(length0), alpha0))
+            ) && weight0 != 0 && weight1 != 0
+            && checkMinLiquidityDensity(Q96, tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1);
+    }
+
     /// @return minTick The minimum rounded tick of the distribution
     /// @return length0 The length of the right distribution in number of rounded ticks
     /// @return length1 The length of the left distribution in number of rounded ticks
@@ -505,7 +490,7 @@ library LibDoubleGeometricDistribution {
     /// @return weight0 The weight of the right distribution
     /// @return weight1 The weight of the left distribution
     /// @return shiftMode The shift mode of the distribution
-    function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+    function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
         internal
         pure
         returns (
@@ -519,22 +504,22 @@ library LibDoubleGeometricDistribution {
             ShiftMode shiftMode
         )
     {
-        length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
-        uint256 alpha0 = uint32(bytes4(ldfParams << 40));
-        weight0 = uint32(bytes4(ldfParams << 72));
-        length1 = int24(int16(uint16(bytes2(ldfParams << 104))));
-        uint256 alpha1 = uint32(bytes4(ldfParams << 120));
-        weight1 = uint32(bytes4(ldfParams << 152));
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes |
+        shiftMode = ShiftMode(uint8(bytes1(ldfParams)));
+        length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint256 alpha0 = uint32(bytes4(ldfParams << 48));
+        weight0 = uint32(bytes4(ldfParams << 80));
+        length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
+        uint256 alpha1 = uint32(bytes4(ldfParams << 128));
+        weight1 = uint32(bytes4(ldfParams << 160));
 
         alpha0X96 = alpha0.mulDiv(Q96, ALPHA_BASE);
         alpha1X96 = alpha1.mulDiv(Q96, ALPHA_BASE);
 
-        if (useTwap) {
+        if (shiftMode != ShiftMode.STATIC) {
             // use rounded TWAP value + offset as minTick
-            // | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
-            minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 184)));
+            int24 offset = int24(uint24(bytes3(ldfParams << 8))); // the offset applied to the twap tick to get the minTick
+            minTick = roundTickSingle(twapTick + offset, tickSpacing);
 
             // bound distribution to be within the range of usable ticks
             (int24 minUsableTick, int24 maxUsableTick) =
@@ -546,9 +531,7 @@ library LibDoubleGeometricDistribution {
             }
         } else {
             // static minTick set in params
-            // | minTick - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes |
-            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            shiftMode = ShiftMode.BOTH;
+            minTick = int24(uint24(bytes3(ldfParams << 8))); // must be aligned to tickSpacing
         }
     }
 }

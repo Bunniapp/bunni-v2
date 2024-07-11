@@ -109,7 +109,6 @@ contract BunniQuoter is IBunniQuoter {
             sqrtPriceX96: sqrtPriceX96,
             tick: currentTick,
             arithmeticMeanTick: arithmeticMeanTick,
-            useTwap: bunniState.twapSecondsAgo != 0,
             ldf: bunniState.liquidityDensityFunction,
             ldfParams: bunniState.ldfParams,
             ldfState: ldfState,
@@ -134,7 +133,6 @@ contract BunniQuoter is IBunniQuoter {
                 currentTick: currentTick,
                 liquidityDensityFunction: bunniState.liquidityDensityFunction,
                 arithmeticMeanTick: arithmeticMeanTick,
-                useTwap: bunniState.twapSecondsAgo != 0,
                 ldfParams: bunniState.ldfParams,
                 ldfState: ldfState,
                 swapParams: params
@@ -351,7 +349,6 @@ contract BunniQuoter is IBunniQuoter {
                 sqrtPriceX96: inputData.sqrtPriceX96,
                 tick: inputData.currentTick,
                 arithmeticMeanTick: arithmeticMeanTick,
-                useTwap: useTwap,
                 ldf: inputData.state.liquidityDensityFunction,
                 ldfParams: inputData.state.ldfParams,
                 ldfState: ldfState,

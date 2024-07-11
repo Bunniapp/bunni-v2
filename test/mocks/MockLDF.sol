@@ -20,7 +20,6 @@ contract MockLDF is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -36,7 +35,7 @@ contract MockLDF is ILiquidityDensityFunction {
         )
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         minTick = _minTick;
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -57,7 +56,6 @@ contract MockLDF is ILiquidityDensityFunction {
         bool exactIn,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -67,7 +65,7 @@ contract MockLDF is ILiquidityDensityFunction {
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         minTick = _minTick;
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -86,27 +84,17 @@ contract MockLDF is ILiquidityDensityFunction {
         );
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
-        external
-        pure
-        override
-        returns (bool)
-    {
-        return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
-    }
-
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external view override returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         minTick = _minTick;
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -124,12 +112,11 @@ contract MockLDF is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external view override returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         minTick = _minTick;
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -139,6 +126,15 @@ contract MockLDF is ILiquidityDensityFunction {
         return LibGeometricDistribution.cumulativeAmount1(
             roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96
         );
+    }
+
+    function isValidParams(PoolKey calldata key, uint24 twapSecondsAgo, bytes32 ldfParams)
+        external
+        pure
+        override
+        returns (bool)
+    {
+        return LibGeometricDistribution.isValidParams(key.tickSpacing, twapSecondsAgo, ldfParams);
     }
 
     function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMinTick) {

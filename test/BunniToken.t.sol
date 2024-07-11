@@ -118,7 +118,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         ldf = new GeometricDistribution();
 
         // deploy BunniToken
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-30), int16(6), ALPHA));
         bytes memory hookParams = abi.encodePacked(
             FEE_MIN,
             FEE_MAX,

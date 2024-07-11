@@ -20,7 +20,6 @@ contract UniformDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -36,7 +35,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         )
     {
         (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
-            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
         if (initialized) {
             int24 tickLength = tickUpper - tickLower;
@@ -59,7 +58,6 @@ contract UniformDistribution is ILiquidityDensityFunction {
         bool exactIn,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -69,7 +67,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
-            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
         if (initialized) {
             int24 tickLength = tickUpper - tickLower;
@@ -83,28 +81,17 @@ contract UniformDistribution is ILiquidityDensityFunction {
     }
 
     /// @inheritdoc ILiquidityDensityFunction
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
-        external
-        pure
-        override
-        returns (bool)
-    {
-        return LibUniformDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
-    }
-
-    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
-            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
         if (initialized) {
             int24 tickLength = tickUpper - tickLower;
@@ -123,12 +110,11 @@ contract UniformDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
-            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
         if (initialized) {
             int24 tickLength = tickUpper - tickLower;
@@ -138,6 +124,16 @@ contract UniformDistribution is ILiquidityDensityFunction {
 
         return
             LibUniformDistribution.cumulativeAmount1(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
+    }
+
+    /// @inheritdoc ILiquidityDensityFunction
+    function isValidParams(PoolKey calldata key, uint24 twapSecondsAgo, bytes32 ldfParams)
+        external
+        pure
+        override
+        returns (bool)
+    {
+        return LibUniformDistribution.isValidParams(key.tickSpacing, twapSecondsAgo, ldfParams);
     }
 
     function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastTickLower) {

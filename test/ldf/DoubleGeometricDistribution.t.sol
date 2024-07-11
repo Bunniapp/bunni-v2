@@ -49,10 +49,21 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight0", weight0);
         console2.log("weight1", weight1);
 
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
         _test_liquidityDensity_sumUpToOne(tickSpacing, ldfParams);
     }
 
@@ -93,10 +104,21 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight0", weight0);
         console2.log("weight1", weight1);
 
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         currentTick = int24(bound(currentTick, minUsableTick, maxUsableTick));
         _test_query_cumulativeAmounts(currentTick, tickSpacing, ldfParams);
@@ -141,10 +163,21 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight0", weight0);
         console2.log("weight1", weight1);
 
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint256 alpha0X96 = (alpha0 << 96) / 1e8;
         uint256 alpha1X96 = (alpha1 << 96) / 1e8;
@@ -238,10 +271,21 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight0", weight0);
         console2.log("weight1", weight1);
 
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint256 alpha0X96 = (alpha0 << 96) / 1e8;
         uint256 alpha1X96 = (alpha1 << 96) / 1e8;
@@ -322,10 +366,21 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight0", weight0);
         console2.log("weight1", weight1);
 
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint256 alpha0X96 = (alpha0 << 96) / 1e8;
         uint256 alpha1X96 = (alpha1 << 96) / 1e8;
@@ -426,10 +481,21 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight0", weight0);
         console2.log("weight1", weight1);
 
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint256 alpha0X96 = (alpha0 << 96) / 1e8;
         uint256 alpha1X96 = (alpha1 << 96) / 1e8;
@@ -498,27 +564,56 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         uint32 alpha1 = 1.1e8;
         uint32 weight0 = 1;
         uint32 weight1 = 1;
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         // invalid when minTick < minUsableTick
         (int24 minTick, int24 length0, int24 length1) = (minUsableTick - tickSpacing, 1, 1);
         bytes32 ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        assertFalse(ldf.isValidParams(key, 0, ldfParams));
 
         // invalid when maxTick > maxUsableTick
         (minTick, length0, length1) = (maxUsableTick - tickSpacing, 1, 1);
         ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        assertFalse(ldf.isValidParams(key, 0, ldfParams));
 
         // valid test
         (minTick, length0, length1) = (0, 1, 1);
         ldfParams = bytes32(
-            abi.encodePacked(minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1)
+            abi.encodePacked(
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1
+            )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        assertTrue(ldf.isValidParams(key, 0, ldfParams));
     }
 
     function test_boundary_dynamic_boundedWhenDecoding(int24 tickSpacing) external view {
@@ -530,29 +625,31 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         uint32 weight0 = 1;
         uint32 weight1 = 1;
         ShiftMode shiftMode = ShiftMode.RIGHT;
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         // bounded when minTick < minUsableTick
-        (int24 offset, int24 length0, int24 length1) = (minUsableTick / tickSpacing - 1, 1, 1);
+        (int24 offset, int24 length0, int24 length1) = (minUsableTick - tickSpacing, 1, 1);
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
-                offset, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1, shiftMode
+                shiftMode, offset, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1
             )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams));
+        assertTrue(ldf.isValidParams(key, 1, ldfParams), "invalid params 0");
         (int24 minTick,,,,,,, ShiftMode decodedShiftMode) =
-            LibDoubleGeometricDistribution.decodeParams(0, tickSpacing, true, ldfParams);
+            LibDoubleGeometricDistribution.decodeParams(0, tickSpacing, ldfParams);
         assertEq(minTick, minUsableTick, "minTick incorrect");
         assertTrue(shiftMode == decodedShiftMode, "shiftMode incorrect");
 
         // bounded when maxTick > maxUsableTick
-        (offset, length0, length1) = (maxUsableTick / tickSpacing - 1, 1, 1);
+        (offset, length0, length1) = (maxUsableTick - tickSpacing, 1, 1);
         ldfParams = ldfParams = bytes32(
             abi.encodePacked(
-                offset, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1, shiftMode
+                shiftMode, offset, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1
             )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams));
-        (minTick,,,,,,, decodedShiftMode) = LibDoubleGeometricDistribution.decodeParams(0, tickSpacing, true, ldfParams);
+        assertTrue(ldf.isValidParams(key, 1, ldfParams), "invalid params 1");
+        (minTick,,,,,,, decodedShiftMode) = LibDoubleGeometricDistribution.decodeParams(0, tickSpacing, ldfParams);
         assertEq(minTick + (length0 + length1) * tickSpacing, maxUsableTick, "maxTick incorrect");
         assertTrue(shiftMode == decodedShiftMode, "shiftMode incorrect");
     }

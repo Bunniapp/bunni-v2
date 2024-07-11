@@ -21,7 +21,6 @@ using FixedPointMathLib for uint256;
 /// @param sqrtPriceX96 The current sqrt price of the pool
 /// @param tick The current tick of the pool
 /// @param arithmeticMeanTick The TWAP oracle value
-/// @param useTwap Whether to use the TWAP oracle value
 /// @param ldf The liquidity density function
 /// @param ldfParams The parameters for the liquidity density function
 /// @param ldfState The current state of the liquidity density function
@@ -38,7 +37,6 @@ function queryLDF(
     uint160 sqrtPriceX96,
     int24 tick,
     int24 arithmeticMeanTick,
-    bool useTwap,
     ILiquidityDensityFunction ldf,
     bytes32 ldfParams,
     bytes32 ldfState,
@@ -66,7 +64,7 @@ function queryLDF(
         density1LeftOfRoundedTickX96,
         newLdfState,
         shouldSurge
-    ) = ldf.query(key, roundedTick, arithmeticMeanTick, tick, useTwap, ldfParams, ldfState);
+    ) = ldf.query(key, roundedTick, arithmeticMeanTick, tick, ldfParams, ldfState);
 
     (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
         sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, uint128(liquidityDensityOfRoundedTickX96), false
