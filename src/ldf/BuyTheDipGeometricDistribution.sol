@@ -19,7 +19,6 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -74,7 +73,6 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         bool exactIn,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
         bytes32 ldfParams,
         bytes32 /* ldfState */
     )
@@ -125,7 +123,6 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
         bytes32 ldfParams,
         bytes32 /* ldfState */
     ) external pure override returns (uint256) {
@@ -159,7 +156,6 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool, /* useTwap */
         bytes32 ldfParams,
         bytes32 /* ldfState */
     ) external pure override returns (uint256) {

@@ -21,7 +21,6 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -37,7 +36,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         )
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
@@ -58,7 +57,6 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         bool exactIn,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -68,7 +66,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
@@ -103,12 +101,11 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);
@@ -126,12 +123,11 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
-            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             minTick = enforceShiftMode(minTick, lastMinTick, shiftMode);

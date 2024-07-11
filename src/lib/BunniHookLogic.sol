@@ -70,7 +70,6 @@ library BunniHookLogic {
         int24 updatedTick;
         uint160 updatedSqrtPriceX96;
         int24 arithmeticMeanTick;
-        bool useTwap;
         bytes32 newLdfState;
         DecodedHookParams hookParams;
         Oracle.Observation updatedIntermediate;
@@ -207,7 +206,6 @@ library BunniHookLogic {
             sqrtPriceX96: sqrtPriceX96,
             tick: slot0.tick,
             arithmeticMeanTick: arithmeticMeanTick,
-            useTwap: bunniState.twapSecondsAgo != 0,
             ldf: bunniState.liquidityDensityFunction,
             ldfParams: bunniState.ldfParams,
             ldfState: ldfState,
@@ -233,7 +231,6 @@ library BunniHookLogic {
                 currentTick: slot0.tick,
                 liquidityDensityFunction: bunniState.liquidityDensityFunction,
                 arithmeticMeanTick: arithmeticMeanTick,
-                useTwap: bunniState.twapSecondsAgo != 0,
                 ldfParams: bunniState.ldfParams,
                 ldfState: ldfState,
                 swapParams: params
@@ -420,7 +417,6 @@ library BunniHookLogic {
                     updatedTick: updatedTick,
                     updatedSqrtPriceX96: updatedSqrtPriceX96,
                     arithmeticMeanTick: arithmeticMeanTick,
-                    useTwap: bunniState.twapSecondsAgo != 0,
                     newLdfState: newLdfState,
                     hookParams: hookParams,
                     updatedIntermediate: updatedIntermediate,
@@ -529,7 +525,6 @@ library BunniHookLogic {
             sqrtPriceX96: input.updatedSqrtPriceX96,
             tick: input.updatedTick,
             arithmeticMeanTick: input.arithmeticMeanTick,
-            useTwap: input.useTwap,
             ldf: bunniState.liquidityDensityFunction,
             ldfParams: bunniState.ldfParams,
             ldfState: input.newLdfState,
@@ -554,7 +549,6 @@ library BunniHookLogic {
                     WAD,
                     input.arithmeticMeanTick,
                     input.updatedTick,
-                    input.useTwap,
                     bunniState.ldfParams,
                     input.newLdfState
                 )
@@ -568,7 +562,6 @@ library BunniHookLogic {
                     WAD,
                     input.arithmeticMeanTick,
                     input.updatedTick,
-                    input.useTwap,
                     bunniState.ldfParams,
                     input.newLdfState
                 )
@@ -601,7 +594,6 @@ library BunniHookLogic {
             sqrtPriceX96: rebalanceSpotPriceSqrtRatioX96,
             tick: rebalanceSpotPriceTick,
             arithmeticMeanTick: input.arithmeticMeanTick,
-            useTwap: input.useTwap,
             ldf: bunniState.liquidityDensityFunction,
             ldfParams: bunniState.ldfParams,
             ldfState: input.newLdfState,

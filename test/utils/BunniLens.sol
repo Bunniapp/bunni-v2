@@ -31,8 +31,7 @@ contract BunniLens {
         (uint160 updatedSqrtPriceX96, int24 updatedTick,,) = hook.slot0s(id);
 
         int24 arithmeticMeanTick;
-        bool useTwap = bunniState.twapSecondsAgo != 0;
-        if (useTwap) {
+        if (bunniState.twapSecondsAgo != 0) {
             arithmeticMeanTick = _getTwap(key, bunniState.twapSecondsAgo);
         }
         bytes32 newLdfState = hook.ldfStates(id);
@@ -59,7 +58,7 @@ contract BunniLens {
             uint256 density1LeftOfRoundedTickX96,
             ,
         ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
+            key, roundedTick, arithmeticMeanTick, updatedTick, bunniState.ldfParams, newLdfState
         );
         {
             (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
@@ -102,14 +101,14 @@ contract BunniLens {
         excessLiquidity0 = balance0 > currentActiveBalance0
             ? (balance0 - currentActiveBalance0).divWad(
                 bunniState.liquidityDensityFunction.cumulativeAmount0(
-                    key, minUsableTick, WAD, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
+                    key, minUsableTick, WAD, arithmeticMeanTick, updatedTick, bunniState.ldfParams, newLdfState
                 )
             )
             : 0;
         excessLiquidity1 = balance1 > currentActiveBalance1
             ? (balance1 - currentActiveBalance1).divWad(
                 bunniState.liquidityDensityFunction.cumulativeAmount1(
-                    key, maxUsableTick, WAD, arithmeticMeanTick, updatedTick, useTwap, bunniState.ldfParams, newLdfState
+                    key, maxUsableTick, WAD, arithmeticMeanTick, updatedTick, bunniState.ldfParams, newLdfState
                 )
             )
             : 0;

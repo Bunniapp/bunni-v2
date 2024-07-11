@@ -16,9 +16,8 @@ interface ILiquidityDensityFunction {
     /// Returns the density of the rounded tick, cumulative token densities at adjacent ticks, and state relevant info.
     /// @param key The key of the Uniswap v4 pool
     /// @param roundedTick The rounded tick to query
-    /// @param twapTick The TWAP tick to use. Not used if `useTwap` is false.
+    /// @param twapTick The TWAP tick. Is 0 if `twapSecondsAgo` is 0. It's up to `isValidParams` to ensure `twapSecondsAgo != 0` if the LDF uses the TWAP.
     /// @param spotPriceTick The spot price tick.
-    /// @param useTwap Whether to use the TWAP tick
     /// @param ldfParams The parameters for the liquidity density function
     /// @param ldfState The current state of the liquidity density function
     /// @return liquidityDensityX96 The density of the rounded tick, scaled by Q96
@@ -31,7 +30,6 @@ interface ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24 spotPriceTick,
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -54,9 +52,8 @@ interface ILiquidityDensityFunction {
     /// @param totalLiquidity The total liquidity in the pool
     /// @param zeroForOne Whether the input token is token0
     /// @param exactIn Whether it's an exact input swap or an exact output swap
-    /// @param twapTick The TWAP tick to use. Not used if `useTwap` is false.
+    /// @param twapTick The TWAP tick. Is 0 if `twapSecondsAgo` is 0. It's up to `isValidParams` to ensure `twapSecondsAgo != 0` if the LDF uses the TWAP.
     /// @param spotPriceTick The spot price tick.
-    /// @param useTwap Whether to use the TWAP tick
     /// @param ldfParams The parameters for the liquidity density function
     /// @param ldfState The current state of the liquidity density function
     /// @return success Whether the swap computation was successful
@@ -71,7 +68,6 @@ interface ILiquidityDensityFunction {
         bool exactIn,
         int24 twapTick,
         int24 spotPriceTick,
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external view returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity);
@@ -87,9 +83,8 @@ interface ILiquidityDensityFunction {
     /// @param key The key of the Uniswap v4 pool
     /// @param roundedTick The rounded tick to query
     /// @param totalLiquidity The total liquidity in the pool
-    /// @param twapTick The TWAP tick to use. Not used if `useTwap` is false.
+    /// @param twapTick The TWAP tick. Is 0 if `twapSecondsAgo` is 0. It's up to `isValidParams` to ensure `twapSecondsAgo != 0` if the LDF uses the TWAP.
     /// @param spotPriceTick The spot price tick.
-    /// @param useTwap Whether to use the TWAP tick
     /// @param ldfParams The parameters for the liquidity density function
     /// @param ldfState The current state of the liquidity density function
     /// @return The cumulative amount of token0 in the rounded ticks [roundedTick, maxUsableTick]
@@ -99,7 +94,6 @@ interface ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24 spotPriceTick,
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external view returns (uint256);
@@ -108,9 +102,8 @@ interface ILiquidityDensityFunction {
     /// @param key The key of the Uniswap v4 pool
     /// @param roundedTick The rounded tick to query
     /// @param totalLiquidity The total liquidity in the pool
-    /// @param twapTick The TWAP tick to use. Not used if `useTwap` is false.
+    /// @param twapTick The TWAP tick. Is 0 if `twapSecondsAgo` is 0. It's up to `isValidParams` to ensure `twapSecondsAgo != 0` if the LDF uses the TWAP.
     /// @param spotPriceTick The spot price tick.
-    /// @param useTwap Whether to use the TWAP tick
     /// @param ldfParams The parameters for the liquidity density function
     /// @param ldfState The current state of the liquidity density function
     /// @return The cumulative amount of token1 in the rounded ticks [minUsableTick, roundedTick]
@@ -120,7 +113,6 @@ interface ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24 spotPriceTick,
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external view returns (uint256);

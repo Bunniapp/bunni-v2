@@ -222,7 +222,6 @@ library BunniHubLogic {
                 sqrtPriceX96: inputData.sqrtPriceX96,
                 tick: inputData.currentTick,
                 arithmeticMeanTick: arithmeticMeanTick,
-                useTwap: useTwap,
                 ldf: inputData.state.liquidityDensityFunction,
                 ldfParams: inputData.state.ldfParams,
                 ldfState: ldfState,

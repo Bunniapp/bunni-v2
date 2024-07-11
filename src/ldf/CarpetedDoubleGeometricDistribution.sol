@@ -20,7 +20,6 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -36,7 +35,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         )
     {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             params.minTick = enforceShiftMode(params.minTick, lastMinTick, params.shiftMode);
@@ -57,7 +56,6 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         bool exactIn,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -67,7 +65,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             params.minTick = enforceShiftMode(params.minTick, lastMinTick, params.shiftMode);
@@ -95,12 +93,11 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             params.minTick = enforceShiftMode(params.minTick, lastMinTick, params.shiftMode);
@@ -118,12 +115,11 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         uint256 totalLiquidity,
         int24 twapTick,
         int24, /* spotPriceTick */
-        bool useTwap,
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, useTwap, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
             params.minTick = enforceShiftMode(params.minTick, lastMinTick, params.shiftMode);

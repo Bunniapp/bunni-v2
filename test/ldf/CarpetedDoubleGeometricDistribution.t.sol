@@ -55,6 +55,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
+                ShiftMode.STATIC,
                 minTick,
                 int16(length0),
                 uint32(alpha0),
@@ -111,6 +112,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
+                ShiftMode.STATIC,
                 minTick,
                 int16(length0),
                 uint32(alpha0),
@@ -171,6 +173,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
+                ShiftMode.STATIC,
                 minTick,
                 int16(length0),
                 uint32(alpha0),
@@ -189,7 +192,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         console2.log("roundedTick", roundedTick);
 
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, false, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
 
         uint256 cumulativeAmount0DensityX96 =
             LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, params);
@@ -250,6 +253,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
+                ShiftMode.STATIC,
                 minTick,
                 int16(length0),
                 uint32(alpha0),
@@ -268,7 +272,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         console2.log("roundedTick", roundedTick);
 
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, false, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
 
         uint256 cumulativeAmount1DensityX96 =
             LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, params);
@@ -330,6 +334,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
+                ShiftMode.STATIC,
                 minTick,
                 int16(length0),
                 uint32(alpha0),
@@ -348,7 +353,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         console2.log("roundedTick", roundedTick);
 
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, false, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
 
         uint256 cumulativeAmount0DensityX96 =
             LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, params);
@@ -424,6 +429,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
+                ShiftMode.STATIC,
                 minTick,
                 int16(length0),
                 uint32(alpha0),
@@ -442,7 +448,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         console2.log("roundedTick", roundedTick);
 
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, false, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
 
         uint256 cumulativeAmount1DensityX96 =
             LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, params);
@@ -489,7 +495,15 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         (int24 minTick, int24 length0, int24 length1) = (minUsableTick - tickSpacing, 1, 1);
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
-                minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1, weightMain
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1,
+                weightMain
             )
         );
         assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
@@ -498,7 +512,15 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         (minTick, length0, length1) = (maxUsableTick - tickSpacing, 1, 1);
         ldfParams = bytes32(
             abi.encodePacked(
-                minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1, weightMain
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1,
+                weightMain
             )
         );
         assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
@@ -507,7 +529,15 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         (minTick, length0, length1) = (0, 1, 1);
         ldfParams = bytes32(
             abi.encodePacked(
-                minTick, int16(length0), uint32(alpha0), weight0, int16(length1), uint32(alpha1), weight1, weightMain
+                ShiftMode.STATIC,
+                minTick,
+                int16(length0),
+                uint32(alpha0),
+                weight0,
+                int16(length1),
+                uint32(alpha1),
+                weight1,
+                weightMain
             )
         );
         assertTrue(ldf.isValidParams(tickSpacing, 0, ldfParams));
@@ -525,9 +555,10 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         ShiftMode shiftMode = ShiftMode.RIGHT;
 
         // bounded when minTick < minUsableTick
-        (int24 offset, int24 length0, int24 length1) = (minUsableTick / tickSpacing - 1, 1, 1);
+        (int24 offset, int24 length0, int24 length1) = (minUsableTick - tickSpacing, 1, 1);
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
+                shiftMode,
                 offset,
                 int16(length0),
                 uint32(alpha0),
@@ -535,20 +566,20 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                weightMain,
-                shiftMode
+                weightMain
             )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams));
+        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams), "invalid params 0");
         LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(0, tickSpacing, true, ldfParams);
+            LibCarpetedDoubleGeometricDistribution.decodeParams(0, tickSpacing, ldfParams);
         assertEq(params.minTick, minUsableTick, "minTick incorrect");
         assertTrue(params.shiftMode == shiftMode, "shiftMode incorrect");
 
         // bounded when maxTick > maxUsableTick
-        (offset, length0, length1) = (maxUsableTick / tickSpacing - 1, 1, 1);
+        (offset, length0, length1) = (maxUsableTick - tickSpacing, 1, 1);
         ldfParams = ldfParams = bytes32(
             abi.encodePacked(
+                shiftMode,
                 offset,
                 int16(length0),
                 uint32(alpha0),
@@ -556,12 +587,11 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                weightMain,
-                shiftMode
+                weightMain
             )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams));
-        params = LibCarpetedDoubleGeometricDistribution.decodeParams(0, tickSpacing, true, ldfParams);
+        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams), "invalid params 1");
+        params = LibCarpetedDoubleGeometricDistribution.decodeParams(0, tickSpacing, ldfParams);
         assertEq(params.minTick + (length0 + length1) * tickSpacing, maxUsableTick, "maxTick incorrect");
         assertTrue(params.shiftMode == shiftMode, "shiftMode incorrect");
     }

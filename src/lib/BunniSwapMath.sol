@@ -33,7 +33,6 @@ library BunniSwapMath {
         int24 currentTick;
         ILiquidityDensityFunction liquidityDensityFunction;
         int24 arithmeticMeanTick;
-        bool useTwap;
         bytes32 ldfParams;
         bytes32 ldfState;
         IPoolManager.SwapParams swapParams;
@@ -188,7 +187,6 @@ library BunniSwapMath {
                 exactIn,
                 input.arithmeticMeanTick,
                 input.currentTick,
-                input.useTwap,
                 input.ldfParams,
                 input.ldfState
             );
@@ -256,7 +254,6 @@ library BunniSwapMath {
                                         input.totalLiquidity,
                                         input.arithmeticMeanTick,
                                         updatedTick,
-                                        input.useTwap,
                                         input.ldfParams,
                                         input.ldfState
                                     )
@@ -270,7 +267,6 @@ library BunniSwapMath {
                                         input.totalLiquidity,
                                         input.arithmeticMeanTick,
                                         updatedTick,
-                                        input.useTwap,
                                         input.ldfParams,
                                         input.ldfState
                                     )
@@ -284,7 +280,6 @@ library BunniSwapMath {
                                     input.totalLiquidity,
                                     input.arithmeticMeanTick,
                                     updatedTick,
-                                    input.useTwap,
                                     input.ldfParams,
                                     input.ldfState
                                 ) - naiveSwapAmountOut - currentActiveBalance0,
@@ -297,7 +292,6 @@ library BunniSwapMath {
                                     input.totalLiquidity,
                                     input.arithmeticMeanTick,
                                     updatedTick,
-                                    input.useTwap,
                                     input.ldfParams,
                                     input.ldfState
                                 ) - naiveSwapAmountOut - currentActiveBalance1,
@@ -319,7 +313,6 @@ library BunniSwapMath {
                 sqrtPriceX96: updatedSqrtPriceX96,
                 tick: updatedTick,
                 arithmeticMeanTick: input.arithmeticMeanTick,
-                useTwap: input.useTwap,
                 ldf: input.liquidityDensityFunction,
                 ldfParams: input.ldfParams,
                 ldfState: input.ldfState,

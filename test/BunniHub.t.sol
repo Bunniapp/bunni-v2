@@ -633,7 +633,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             vault0_,
             vault1_,
             new GeometricDistribution(),
-            bytes32(abi.encodePacked(int24(-3), int16(6), uint32(5e7), uint8(0))),
+            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), uint32(5e7))),
             abi.encodePacked(
                 FEE_MIN,
                 FEE_MAX,
@@ -1106,7 +1106,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         Currency currency0 = Currency.wrap(address(token0));
         Currency currency1 = Currency.wrap(address(token1));
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA));
         bytes memory hookParams = abi.encodePacked(
             FEE_MIN,
             FEE_MAX,
@@ -1230,7 +1230,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
@@ -1324,7 +1324,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
@@ -1420,7 +1420,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
@@ -1564,7 +1564,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
@@ -1638,7 +1638,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
@@ -1707,7 +1707,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
         MockLDF ldf_ = new MockLDF();
-        bytes32 ldfParams = bytes32(abi.encodePacked(int24(-3), int16(6), alpha, uint8(0)));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
         ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
@@ -1838,7 +1838,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             Currency.wrap(address(token1)),
             ERC4626(address(0)),
             ERC4626(address(0)),
-            bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH)),
+            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
             abi.encodePacked(
                 FEE_MIN,
                 FEE_MAX,
@@ -2035,7 +2035,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             vault0_,
             vault1_,
             ldf,
-            bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH)),
+            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
             abi.encodePacked(
                 FEE_MIN,
                 FEE_MAX,
@@ -2069,7 +2069,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             vault0_,
             vault1_,
             ldf_,
-            bytes32(abi.encodePacked(int24(-3), int16(6), ALPHA, ShiftMode.BOTH)),
+            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
             abi.encodePacked(
                 FEE_MIN,
                 FEE_MAX,

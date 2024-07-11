@@ -279,30 +279,17 @@ library LibCarpetedDoubleGeometricDistribution {
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams)));
-        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
-        uint32 alpha0 = uint32(bytes4(ldfParams << 40));
-        uint32 weight0 = uint32(bytes4(ldfParams << 72));
-        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 104))));
-        uint32 alpha1 = uint32(bytes4(ldfParams << 120));
-        uint32 weight1 = uint32(bytes4(ldfParams << 152));
-        uint32 weightMain = uint32(bytes4(ldfParams << 184));
-        uint8 shiftMode = uint8(bytes1(ldfParams << 216));
-        bytes32 doubleGeometricLdfParams = bytes32(
-            abi.encodePacked(
-                minTickOrOffset,
-                int16(length0),
-                uint32(alpha0),
-                weight0,
-                int16(length1),
-                uint32(alpha1),
-                weight1,
-                shiftMode
-            )
-        );
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
+        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint32 alpha0 = uint32(bytes4(ldfParams << 48));
+        uint32 weight0 = uint32(bytes4(ldfParams << 80));
+        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
+        uint32 alpha1 = uint32(bytes4(ldfParams << 128));
+        uint32 weight1 = uint32(bytes4(ldfParams << 160));
+        uint32 weightMain = uint32(bytes4(ldfParams << 192));
 
-        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, doubleGeometricLdfParams)
-            && weightMain != 0 && weightMain < WEIGHT_BASE
+        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightMain != 0
+            && weightMain < WEIGHT_BASE
             && LibDoubleGeometricDistribution.checkMinLiquidityDensity(
                 Q96.mulDiv(weightMain, WEIGHT_BASE), tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1
             );
@@ -458,43 +445,23 @@ library LibCarpetedDoubleGeometricDistribution {
     /// weight1 The weight of the left distribution
     /// weightMain The weight of the main distribution, 9 decimals
     /// shiftMode The shift mode of the distribution
-    function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+    function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
         internal
         pure
         returns (Params memory params)
     {
-        params.length0 = int24(int16(uint16(bytes2(ldfParams << 24))));
-        uint256 alpha0 = uint32(bytes4(ldfParams << 40));
-        params.weight0 = uint32(bytes4(ldfParams << 72));
-        params.length1 = int24(int16(uint16(bytes2(ldfParams << 104))));
-        uint256 alpha1 = uint32(bytes4(ldfParams << 120));
-        params.weight1 = uint32(bytes4(ldfParams << 152));
-        params.weightMain = uint32(bytes4(ldfParams << 184));
-
-        params.alpha0X96 = alpha0.mulDiv(Q96, ALPHA_BASE);
-        params.alpha1X96 = alpha1.mulDiv(Q96, ALPHA_BASE);
-
-        if (useTwap) {
-            // use rounded TWAP value + offset as minTick
-            // | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
-            params.minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            params.shiftMode = ShiftMode(uint8(bytes1(ldfParams << 216)));
-
-            // bound distribution to be within the range of usable ticks
-            (int24 minUsableTick, int24 maxUsableTick) =
-                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-            if (params.minTick < minUsableTick) {
-                params.minTick = minUsableTick;
-            } else if (params.minTick > maxUsableTick - (params.length0 + params.length1) * tickSpacing) {
-                params.minTick = maxUsableTick - (params.length0 + params.length1) * tickSpacing;
-            }
-        } else {
-            // static minTick set in params
-            // | minTick - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
-            params.minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            params.shiftMode = ShiftMode.BOTH;
-        }
+        // | shiftMode - 1 byte | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
+        params.weightMain = uint32(bytes4(ldfParams << 192));
+        (
+            params.minTick,
+            params.length0,
+            params.length1,
+            params.alpha0X96,
+            params.alpha1X96,
+            params.weight0,
+            params.weight1,
+            params.shiftMode
+        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, tickSpacing, ldfParams);
     }
 
     function getCarpetedLiquidity(

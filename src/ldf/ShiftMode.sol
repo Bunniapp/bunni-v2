@@ -4,7 +4,8 @@ pragma solidity ^0.8.19;
 enum ShiftMode {
     BOTH,
     LEFT,
-    RIGHT
+    RIGHT,
+    STATIC
 }
 
 function enforceShiftMode(int24 tick, int24 lastTick, ShiftMode shiftMode) pure returns (int24) {

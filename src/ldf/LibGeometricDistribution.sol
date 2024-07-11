@@ -427,44 +427,45 @@ library LibGeometricDistribution {
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // ensure length > 0 and doesn't overflow when multiplied by tickSpacing
-        // ensure length can be contained between minUsableTick and maxUsableTick
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        int24 length = int24(int16(uint16(bytes2(ldfParams << 24))));
+
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes |
+        uint8 shiftMode = uint8(bytes1(ldfParams));
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
+        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint256 alpha = uint32(bytes4(ldfParams << 48));
+
+        // ensure shiftMode is within the valid range
+        if (shiftMode > uint8(type(ShiftMode).max)) {
+            return false;
+        }
+
+        // ensure twapSecondsAgo is non-zero if shiftMode is not static
+        if (shiftMode != uint8(ShiftMode.STATIC) && twapSecondsAgo == 0) {
+            return false;
+        }
+
+        // ensure minTickOrOffset is aligned to tickSpacing
+        if (minTickOrOffset % tickSpacing != 0) {
+            return false;
+        }
+
+        // ensure length > 0 and doesn't overflow when multiplied by tickSpacing
+        // ensure length can be contained between minUsableTick and maxUsableTick
         if (
             length <= 0 || int256(length) * int256(tickSpacing) > type(int24).max
                 || length > maxUsableTick / tickSpacing || -length < minUsableTick / tickSpacing
         ) return false;
 
         // ensure alpha is in range
-        uint256 alpha = uint32(bytes4(ldfParams << 40));
         if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
 
-        bool useTwap = twapSecondsAgo != 0;
-        int24 minTick;
-        if (useTwap) {
-            // use rounded TWAP value + offset as minTick
-            // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset (in rounded ticks) applied to the twap tick to get the minTick
-            uint8 shiftMode = uint8(bytes1(ldfParams << 72));
-
-            // ensure the following:
-            // - shiftMode is within the valid range
-            // - offset doesn't overflow when multiplied by tickSpacing
-            if (shiftMode > uint8(type(ShiftMode).max) || int256(offset) * int256(tickSpacing) > type(int24).max) {
-                return false;
-            }
-        } else {
+        // ensure the ticks are within the valid range
+        if (shiftMode == uint8(ShiftMode.STATIC)) {
             // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes |
-            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            int24 maxTick = minTick + length * tickSpacing;
-
-            // ensure the following:
-            // - minTick is aligned to tickSpacing and within the valid range
-            // - maxTick is within the valid range
-            if (minTick % tickSpacing != 0 || minTick < minUsableTick || maxTick > maxUsableTick) return false;
+            int24 maxTick = minTickOrOffset + length * tickSpacing;
+            if (minTickOrOffset < minUsableTick || maxTick > maxUsableTick) return false;
         }
 
         // ensure liquidity density is nowhere equal to zero
@@ -474,12 +475,14 @@ library LibGeometricDistribution {
         if (alpha > ALPHA_BASE) {
             // monotonically increasing
             // check left boundary
-            minLiquidityDensityX96 = liquidityDensityX96(minTick, tickSpacing, minTick, length, alphaX96);
+            minLiquidityDensityX96 =
+                liquidityDensityX96(minTickOrOffset, tickSpacing, minTickOrOffset, length, alphaX96);
         } else {
             // monotonically decreasing
             // check right boundary
-            minLiquidityDensityX96 =
-                liquidityDensityX96(minTick + (length - 1) * tickSpacing, tickSpacing, minTick, length, alphaX96);
+            minLiquidityDensityX96 = liquidityDensityX96(
+                minTickOrOffset + (length - 1) * tickSpacing, tickSpacing, minTickOrOffset, length, alphaX96
+            );
         }
         if (minLiquidityDensityX96 < MIN_LIQUIDITY_DENSITY) {
             return false;
@@ -638,21 +641,21 @@ library LibGeometricDistribution {
     /// @return minTick The minimum rounded tick of the distribution
     /// @return length The length of the distribution in number of rounded ticks (i.e. the number of ticks / tickSpacing)
     /// @return alphaX96 Parameter of the discrete laplace distribution, FixedPoint96
-    function decodeParams(int24 twapTick, int24 tickSpacing, bool useTwap, bytes32 ldfParams)
+    function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
         internal
         pure
         returns (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode)
     {
-        length = int24(int16(uint16(bytes2(ldfParams << 24))));
-        uint256 alpha = uint32(bytes4(ldfParams << 40));
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes |
+        shiftMode = ShiftMode(uint8(bytes1(ldfParams)));
+        length = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint256 alpha = uint32(bytes4(ldfParams << 48));
         alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
 
-        if (useTwap) {
+        if (shiftMode != ShiftMode.STATIC) {
             // use rounded TWAP value + offset as minTick
-            // | offset - 3 bytes | length - 2 bytes | alpha - 4 bytes | shiftMode - 1 byte |
-            int24 offset = int24(uint24(bytes3(ldfParams))); // the offset applied to the twap tick to get the minTick
-            minTick = roundTickSingle(twapTick + offset * tickSpacing, tickSpacing);
-            shiftMode = ShiftMode(uint8(bytes1(ldfParams << 72)));
+            int24 offset = int24(uint24(bytes3(ldfParams << 8))); // the offset applied to the twap tick to get the minTick
+            minTick = roundTickSingle(twapTick + offset, tickSpacing);
 
             // bound distribution to be within the range of usable ticks
             (int24 minUsableTick, int24 maxUsableTick) =
@@ -664,9 +667,7 @@ library LibGeometricDistribution {
             }
         } else {
             // static minTick set in params
-            // | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes |
-            minTick = int24(uint24(bytes3(ldfParams))); // must be aligned to tickSpacing
-            shiftMode = ShiftMode.BOTH;
+            minTick = int24(uint24(bytes3(ldfParams << 8))); // must be aligned to tickSpacing
         }
     }
 }
