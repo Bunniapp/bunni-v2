@@ -176,28 +176,6 @@ library LibUniformDistribution {
         }
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        uint8 shiftMode = uint8(bytes1(ldfParams)); // use uint8 since we don't know if the value is in range yet
-        if (shiftMode != uint8(ShiftMode.STATIC)) {
-            // Shifting
-            // | shiftMode - 1 byte | offset - 3 bytes | length - 3 bytes |
-            int24 offset = int24(uint24(bytes3(ldfParams << 8))); // offset (in rounded ticks) of tickLower from the twap tick
-            int24 length = int24(uint24(bytes3(ldfParams << 32))); // length of the position in rounded ticks
-
-            return twapSecondsAgo != 0 && length > 0 && offset % tickSpacing == 0
-                && int256(length) * int256(tickSpacing) <= type(int24).max && shiftMode <= uint8(type(ShiftMode).max);
-        } else {
-            // Static
-            // | shiftMode - 1 byte | tickLower - 3 bytes | tickUpper - 3 bytes |
-            int24 tickLower = int24(uint24(bytes3(ldfParams << 8)));
-            int24 tickUpper = int24(uint24(bytes3(ldfParams << 32)));
-            (int24 minUsableTick, int24 maxUsableTick) =
-                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-            return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper
-                && tickLower >= minUsableTick && tickUpper <= maxUsableTick;
-        }
-    }
-
     function liquidityDensityX96(int24 roundedTick, int24 tickSpacing, int24 tickLower, int24 tickUpper)
         internal
         pure
@@ -323,6 +301,28 @@ library LibUniformDistribution {
             //       ▼
             //      rick
             swapLiquidity = (liquidityDensityX96(roundedTick, tickSpacing, tickLower, tickUpper) * totalLiquidity) >> 96;
+        }
+    }
+
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        uint8 shiftMode = uint8(bytes1(ldfParams)); // use uint8 since we don't know if the value is in range yet
+        if (shiftMode != uint8(ShiftMode.STATIC)) {
+            // Shifting
+            // | shiftMode - 1 byte | offset - 3 bytes | length - 3 bytes |
+            int24 offset = int24(uint24(bytes3(ldfParams << 8))); // offset (in rounded ticks) of tickLower from the twap tick
+            int24 length = int24(uint24(bytes3(ldfParams << 32))); // length of the position in rounded ticks
+
+            return twapSecondsAgo != 0 && length > 0 && offset % tickSpacing == 0
+                && int256(length) * int256(tickSpacing) <= type(int24).max && shiftMode <= uint8(type(ShiftMode).max);
+        } else {
+            // Static
+            // | shiftMode - 1 byte | tickLower - 3 bytes | tickUpper - 3 bytes |
+            int24 tickLower = int24(uint24(bytes3(ldfParams << 8)));
+            int24 tickUpper = int24(uint24(bytes3(ldfParams << 32)));
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper
+                && tickLower >= minUsableTick && tickUpper <= maxUsableTick;
         }
     }
 

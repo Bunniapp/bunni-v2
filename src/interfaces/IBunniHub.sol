@@ -259,7 +259,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @notice The params of the given Bunni pool's hook. bytes("") if the pool is not a Bunni pool.
     function hookParams(PoolId poolId) external view returns (bytes memory);
 
-    /// @notice The nonce of the given Bunni subspace.
+    /// @notice The next available nonce of the given Bunni subspace.
     function nonce(bytes32 bunniSubspace) external view returns (uint24);
 
     /// @notice The PoolId of a given BunniToken.

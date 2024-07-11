@@ -19,6 +19,7 @@ import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -1231,7 +1232,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         GeometricDistribution ldf_ = new GeometricDistribution();
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        {
+            PoolKey memory key_;
+            key_.tickSpacing = TICK_SPACING;
+            vm.assume(ldf_.isValidParams(key_, TWAP_SECONDS_AGO, ldfParams));
+        }
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
@@ -1325,7 +1330,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         GeometricDistribution ldf_ = new GeometricDistribution();
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        {
+            PoolKey memory key_;
+            key_.tickSpacing = TICK_SPACING;
+            vm.assume(ldf_.isValidParams(key_, TWAP_SECONDS_AGO, ldfParams));
+        }
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
@@ -1421,7 +1430,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         GeometricDistribution ldf_ = new GeometricDistribution();
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        {
+            PoolKey memory key_;
+            key_.tickSpacing = TICK_SPACING;
+            vm.assume(ldf_.isValidParams(key_, TWAP_SECONDS_AGO, ldfParams));
+        }
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
@@ -1565,7 +1578,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         GeometricDistribution ldf_ = new GeometricDistribution();
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        {
+            PoolKey memory key_;
+            key_.tickSpacing = TICK_SPACING;
+            vm.assume(ldf_.isValidParams(key_, TWAP_SECONDS_AGO, ldfParams));
+        }
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
@@ -1639,7 +1656,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         GeometricDistribution ldf_ = new GeometricDistribution();
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        {
+            PoolKey memory key_;
+            key_.tickSpacing = TICK_SPACING;
+            vm.assume(ldf_.isValidParams(key_, TWAP_SECONDS_AGO, ldfParams));
+        }
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
@@ -1708,7 +1729,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         MockLDF ldf_ = new MockLDF();
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
-        vm.assume(ldf_.isValidParams(TICK_SPACING, TWAP_SECONDS_AGO, ldfParams));
+        {
+            PoolKey memory key_;
+            key_.tickSpacing = TICK_SPACING;
+            vm.assume(ldf_.isValidParams(key_, TWAP_SECONDS_AGO, ldfParams));
+        }
         ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),

@@ -72,13 +72,6 @@ interface ILiquidityDensityFunction {
         bytes32 ldfState
     ) external view returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity);
 
-    /// @notice Checks if the given LDF parameters are valid.
-    /// @param tickSpacing The tick spacing of the pool
-    /// @param twapSecondsAgo The time window for the TWAP
-    /// @param ldfParams The parameters for the liquidity density function
-    /// @return Whether the parameters are valid
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) external view returns (bool);
-
     /// @notice Computes the cumulative amount of token0 in the rounded ticks [roundedTick, maxUsableTick].
     /// @param key The key of the Uniswap v4 pool
     /// @param roundedTick The rounded tick to query
@@ -116,4 +109,14 @@ interface ILiquidityDensityFunction {
         bytes32 ldfParams,
         bytes32 ldfState
     ) external view returns (uint256);
+
+    /// @notice Checks if the given LDF parameters are valid.
+    /// @param key The key of the Uniswap v4 pool
+    /// @param twapSecondsAgo The time window for the TWAP
+    /// @param ldfParams The parameters for the liquidity density function
+    /// @return Whether the parameters are valid
+    function isValidParams(PoolKey calldata key, uint24 twapSecondsAgo, bytes32 ldfParams)
+        external
+        view
+        returns (bool);
 }

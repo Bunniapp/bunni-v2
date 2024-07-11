@@ -77,16 +77,6 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
     }
 
     /// @inheritdoc ILiquidityDensityFunction
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
-        external
-        pure
-        override
-        returns (bool)
-    {
-        return LibCarpetedDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
-    }
-
-    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
@@ -128,6 +118,16 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         return LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(
             roundedTick, totalLiquidity, key.tickSpacing, params
         );
+    }
+
+    /// @inheritdoc ILiquidityDensityFunction
+    function isValidParams(PoolKey calldata key, uint24 twapSecondsAgo, bytes32 ldfParams)
+        external
+        pure
+        override
+        returns (bool)
+    {
+        return LibCarpetedDoubleGeometricDistribution.isValidParams(key.tickSpacing, twapSecondsAgo, ldfParams);
     }
 
     function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMinTick) {

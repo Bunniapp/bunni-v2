@@ -254,38 +254,6 @@ library LibDoubleGeometricDistribution {
         return true;
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 2 bytes | weight1 - 4 bytes |
-        uint8 shiftMode = uint8(bytes1(ldfParams));
-        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
-        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
-        uint32 alpha0 = uint32(bytes4(ldfParams << 48));
-        uint256 weight0 = uint32(bytes4(ldfParams << 80));
-        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
-        uint32 alpha1 = uint32(bytes4(ldfParams << 128));
-        uint256 weight1 = uint32(bytes4(ldfParams << 160));
-
-        // ensure length doesn't overflow when multiplied by tickSpacing
-        // ensure length can be contained between minUsableTick and maxUsableTick
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        int24 length = length0 + length1;
-        if (
-            int256(length) * int256(tickSpacing) > type(int24).max || length > maxUsableTick / tickSpacing
-                || -length < minUsableTick / tickSpacing
-        ) return false;
-
-        return LibGeometricDistribution.isValidParams(
-            tickSpacing, twapSecondsAgo, bytes32(abi.encodePacked(shiftMode, minTickOrOffset, int16(length1), alpha1))
-        )
-            && LibGeometricDistribution.isValidParams(
-                tickSpacing,
-                twapSecondsAgo,
-                bytes32(abi.encodePacked(shiftMode, minTickOrOffset + length1 * tickSpacing, int16(length0), alpha0))
-            ) && weight0 != 0 && weight1 != 0
-            && checkMinLiquidityDensity(Q96, tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1);
-    }
-
     function liquidityDensityX96(
         int24 roundedTick,
         int24 tickSpacing,
@@ -480,6 +448,38 @@ library LibDoubleGeometricDistribution {
                 ) * totalLiquidity
             ) >> 96;
         }
+    }
+
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 2 bytes | weight1 - 4 bytes |
+        uint8 shiftMode = uint8(bytes1(ldfParams));
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
+        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint32 alpha0 = uint32(bytes4(ldfParams << 48));
+        uint256 weight0 = uint32(bytes4(ldfParams << 80));
+        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
+        uint32 alpha1 = uint32(bytes4(ldfParams << 128));
+        uint256 weight1 = uint32(bytes4(ldfParams << 160));
+
+        // ensure length doesn't overflow when multiplied by tickSpacing
+        // ensure length can be contained between minUsableTick and maxUsableTick
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        int24 length = length0 + length1;
+        if (
+            int256(length) * int256(tickSpacing) > type(int24).max || length > maxUsableTick / tickSpacing
+                || -length < minUsableTick / tickSpacing
+        ) return false;
+
+        return LibGeometricDistribution.isValidParams(
+            tickSpacing, twapSecondsAgo, bytes32(abi.encodePacked(shiftMode, minTickOrOffset, int16(length1), alpha1))
+        )
+            && LibGeometricDistribution.isValidParams(
+                tickSpacing,
+                twapSecondsAgo,
+                bytes32(abi.encodePacked(shiftMode, minTickOrOffset + length1 * tickSpacing, int16(length0), alpha0))
+            ) && weight0 != 0 && weight1 != 0
+            && checkMinLiquidityDensity(Q96, tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1);
     }
 
     /// @return minTick The minimum rounded tick of the distribution

@@ -186,69 +186,6 @@ library LibBuyTheDipGeometricDistribution {
         }
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // decode params
-        // | shiftMode - 1 byte | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | altAlpha - 4 bytes | altThreshold - 3 bytes | altThresholdDirection - 1 byte |
-        uint8 shiftMode = uint8(bytes1(ldfParams));
-        int24 minTick = int24(uint24(bytes3(ldfParams << 8)));
-        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
-        uint32 alpha = uint32(bytes4(ldfParams << 48));
-        uint32 altAlpha = uint32(bytes4(ldfParams << 80));
-        int24 altThreshold = int24(uint24(bytes3(ldfParams << 112)));
-
-        bytes32 altLdfParams = bytes32(abi.encodePacked(shiftMode, minTick, int16(length), altAlpha));
-
-        // validity conditions:
-        // - need TWAP to be enabled to trigger the alt alpha switch
-        // - shiftMode is static
-        // - both LDFs are valid
-        // - threshold makes sense i.e. both LDFs can be used at some point
-        // - alpha and altAlpha are on different sides of 1
-        return (twapSecondsAgo != 0) && (shiftMode == uint8(ShiftMode.STATIC))
-            && geometricIsValidParams(tickSpacing, ldfParams) && geometricIsValidParams(tickSpacing, altLdfParams)
-            && altThreshold < minTick + length * tickSpacing && altThreshold > minTick
-            && ((alpha < ALPHA_BASE) != (altAlpha < ALPHA_BASE));
-    }
-
-    /// @dev Should be the same as LibGeometricDistribution.isValidParams but without checks for minimum liquidity.
-    /// This LDF requires one end of the distribution to have essentially 0 liquidity so that when the alt LDF
-    /// is activated liquidity can move to a specified price to "buy the dip".
-    function geometricIsValidParams(int24 tickSpacing, bytes32 ldfParams) internal pure returns (bool) {
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-
-        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes |
-        uint8 shiftMode = uint8(bytes1(ldfParams));
-        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
-        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
-        uint256 alpha = uint32(bytes4(ldfParams << 48));
-
-        // ensure minTickOrOffset is aligned to tickSpacing
-        if (minTickOrOffset % tickSpacing != 0) {
-            return false;
-        }
-
-        // ensure length > 0 and doesn't overflow when multiplied by tickSpacing
-        // ensure length can be contained between minUsableTick and maxUsableTick
-        if (
-            length <= 0 || int256(length) * int256(tickSpacing) > type(int24).max
-                || length > maxUsableTick / tickSpacing || -length < minUsableTick / tickSpacing
-        ) return false;
-
-        // ensure alpha is in range
-        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
-
-        // ensure the ticks are within the valid range
-        if (shiftMode == uint8(ShiftMode.STATIC)) {
-            // static minTick set in params
-            int24 maxTick = minTickOrOffset + length * tickSpacing;
-            if (minTickOrOffset < minUsableTick || maxTick > maxUsableTick) return false;
-        }
-
-        // if all conditions are met, return true
-        return true;
-    }
-
     function liquidityDensityX96(
         int24 roundedTick,
         int24 tickSpacing,
@@ -448,6 +385,69 @@ library LibBuyTheDipGeometricDistribution {
                 ) * totalLiquidity
             ) >> 96;
         }
+    }
+
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        // decode params
+        // | shiftMode - 1 byte | minTick - 3 bytes | length - 2 bytes | alpha - 4 bytes | altAlpha - 4 bytes | altThreshold - 3 bytes | altThresholdDirection - 1 byte |
+        uint8 shiftMode = uint8(bytes1(ldfParams));
+        int24 minTick = int24(uint24(bytes3(ldfParams << 8)));
+        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint32 alpha = uint32(bytes4(ldfParams << 48));
+        uint32 altAlpha = uint32(bytes4(ldfParams << 80));
+        int24 altThreshold = int24(uint24(bytes3(ldfParams << 112)));
+
+        bytes32 altLdfParams = bytes32(abi.encodePacked(shiftMode, minTick, int16(length), altAlpha));
+
+        // validity conditions:
+        // - need TWAP to be enabled to trigger the alt alpha switch
+        // - shiftMode is static
+        // - both LDFs are valid
+        // - threshold makes sense i.e. both LDFs can be used at some point
+        // - alpha and altAlpha are on different sides of 1
+        return (twapSecondsAgo != 0) && (shiftMode == uint8(ShiftMode.STATIC))
+            && geometricIsValidParams(tickSpacing, ldfParams) && geometricIsValidParams(tickSpacing, altLdfParams)
+            && altThreshold < minTick + length * tickSpacing && altThreshold > minTick
+            && ((alpha < ALPHA_BASE) != (altAlpha < ALPHA_BASE));
+    }
+
+    /// @dev Should be the same as LibGeometricDistribution.isValidParams but without checks for minimum liquidity.
+    /// This LDF requires one end of the distribution to have essentially 0 liquidity so that when the alt LDF
+    /// is activated liquidity can move to a specified price to "buy the dip".
+    function geometricIsValidParams(int24 tickSpacing, bytes32 ldfParams) internal pure returns (bool) {
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes |
+        uint8 shiftMode = uint8(bytes1(ldfParams));
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
+        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint256 alpha = uint32(bytes4(ldfParams << 48));
+
+        // ensure minTickOrOffset is aligned to tickSpacing
+        if (minTickOrOffset % tickSpacing != 0) {
+            return false;
+        }
+
+        // ensure length > 0 and doesn't overflow when multiplied by tickSpacing
+        // ensure length can be contained between minUsableTick and maxUsableTick
+        if (
+            length <= 0 || int256(length) * int256(tickSpacing) > type(int24).max
+                || length > maxUsableTick / tickSpacing || -length < minUsableTick / tickSpacing
+        ) return false;
+
+        // ensure alpha is in range
+        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
+
+        // ensure the ticks are within the valid range
+        if (shiftMode == uint8(ShiftMode.STATIC)) {
+            // static minTick set in params
+            int24 maxTick = minTickOrOffset + length * tickSpacing;
+            if (minTickOrOffset < minUsableTick || maxTick > maxUsableTick) return false;
+        }
+
+        // if all conditions are met, return true
+        return true;
     }
 
     /// @return minTick The minimum rounded tick of the distribution

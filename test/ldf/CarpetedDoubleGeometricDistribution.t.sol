@@ -29,6 +29,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -66,7 +68,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 uint32(weightMain)
             )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
         _test_liquidityDensity_sumUpToOne(tickSpacing, ldfParams);
     }
 
@@ -85,6 +87,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -123,7 +127,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 uint32(weightMain)
             )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         currentTick = int24(bound(currentTick, minUsableTick, maxUsableTick));
         _test_query_cumulativeAmounts(currentTick, tickSpacing, ldfParams);
@@ -144,6 +148,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -184,7 +190,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 uint32(weightMain)
             )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint128 liquidity = 1 << 96;
         int24 roundedTick = roundTickSingle(tick, tickSpacing);
@@ -224,6 +230,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -264,7 +272,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 uint32(weightMain)
             )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint128 liquidity = 1 << 96;
         int24 roundedTick = roundTickSingle(tick, tickSpacing);
@@ -304,6 +312,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -345,7 +355,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 uint32(weightMain)
             )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint128 liquidity = 1 << 96;
         int24 roundedTick = roundTickSingle(tick, tickSpacing);
@@ -399,6 +409,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -440,7 +452,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 uint32(weightMain)
             )
         );
-        vm.assume(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         uint128 liquidity = 1 << 96;
         int24 roundedTick = roundTickSingle(tick, tickSpacing);
@@ -490,6 +502,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint32 weight0 = 1;
         uint32 weight1 = 1;
         uint32 weightMain = 0.9e9;
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         // invalid when minTick < minUsableTick
         (int24 minTick, int24 length0, int24 length1) = (minUsableTick - tickSpacing, 1, 1);
@@ -506,7 +520,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 weightMain
             )
         );
-        assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        assertFalse(ldf.isValidParams(key, 0, ldfParams));
 
         // invalid when maxTick > maxUsableTick
         (minTick, length0, length1) = (maxUsableTick - tickSpacing, 1, 1);
@@ -523,7 +537,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 weightMain
             )
         );
-        assertFalse(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        assertFalse(ldf.isValidParams(key, 0, ldfParams));
 
         // valid test
         (minTick, length0, length1) = (0, 1, 1);
@@ -540,7 +554,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 weightMain
             )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 0, ldfParams));
+        assertTrue(ldf.isValidParams(key, 0, ldfParams));
     }
 
     function test_boundary_dynamic_boundedWhenDecoding(int24 tickSpacing) external view {
@@ -553,6 +567,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint32 weight1 = 1;
         uint32 weightMain = 0.9e9;
         ShiftMode shiftMode = ShiftMode.RIGHT;
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
 
         // bounded when minTick < minUsableTick
         (int24 offset, int24 length0, int24 length1) = (minUsableTick - tickSpacing, 1, 1);
@@ -569,7 +585,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 weightMain
             )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams), "invalid params 0");
+        assertTrue(ldf.isValidParams(key, 1, ldfParams), "invalid params 0");
         LibCarpetedDoubleGeometricDistribution.Params memory params =
             LibCarpetedDoubleGeometricDistribution.decodeParams(0, tickSpacing, ldfParams);
         assertEq(params.minTick, minUsableTick, "minTick incorrect");
@@ -590,7 +606,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 weightMain
             )
         );
-        assertTrue(ldf.isValidParams(tickSpacing, 1, ldfParams), "invalid params 1");
+        assertTrue(ldf.isValidParams(key, 1, ldfParams), "invalid params 1");
         params = LibCarpetedDoubleGeometricDistribution.decodeParams(0, tickSpacing, ldfParams);
         assertEq(params.minTick + (length0 + length1) * tickSpacing, maxUsableTick, "maxTick incorrect");
         assertTrue(params.shiftMode == shiftMode, "shiftMode incorrect");

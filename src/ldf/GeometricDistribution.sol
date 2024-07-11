@@ -85,16 +85,6 @@ contract GeometricDistribution is ILiquidityDensityFunction {
     }
 
     /// @inheritdoc ILiquidityDensityFunction
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams)
-        external
-        pure
-        override
-        returns (bool)
-    {
-        return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams);
-    }
-
-    /// @inheritdoc ILiquidityDensityFunction
     function cumulativeAmount0(
         PoolKey calldata key,
         int24 roundedTick,
@@ -136,6 +126,16 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         return LibGeometricDistribution.cumulativeAmount1(
             roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96
         );
+    }
+
+    /// @inheritdoc ILiquidityDensityFunction
+    function isValidParams(PoolKey calldata key, uint24 twapSecondsAgo, bytes32 ldfParams)
+        external
+        pure
+        override
+        returns (bool)
+    {
+        return LibGeometricDistribution.isValidParams(key.tickSpacing, twapSecondsAgo, ldfParams);
     }
 
     function _decodeState(bytes32 ldfState) internal pure returns (bool initialized, int24 lastMinTick) {

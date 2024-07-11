@@ -426,72 +426,6 @@ library LibGeometricDistribution {
         }
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-
-        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes |
-        uint8 shiftMode = uint8(bytes1(ldfParams));
-        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
-        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
-        uint256 alpha = uint32(bytes4(ldfParams << 48));
-
-        // ensure shiftMode is within the valid range
-        if (shiftMode > uint8(type(ShiftMode).max)) {
-            return false;
-        }
-
-        // ensure twapSecondsAgo is non-zero if shiftMode is not static
-        if (shiftMode != uint8(ShiftMode.STATIC) && twapSecondsAgo == 0) {
-            return false;
-        }
-
-        // ensure minTickOrOffset is aligned to tickSpacing
-        if (minTickOrOffset % tickSpacing != 0) {
-            return false;
-        }
-
-        // ensure length > 0 and doesn't overflow when multiplied by tickSpacing
-        // ensure length can be contained between minUsableTick and maxUsableTick
-        if (
-            length <= 0 || int256(length) * int256(tickSpacing) > type(int24).max
-                || length > maxUsableTick / tickSpacing || -length < minUsableTick / tickSpacing
-        ) return false;
-
-        // ensure alpha is in range
-        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
-
-        // ensure the ticks are within the valid range
-        if (shiftMode == uint8(ShiftMode.STATIC)) {
-            // static minTick set in params
-            int24 maxTick = minTickOrOffset + length * tickSpacing;
-            if (minTickOrOffset < minUsableTick || maxTick > maxUsableTick) return false;
-        }
-
-        // ensure liquidity density is nowhere equal to zero
-        // can check boundaries since function is monotonic
-        uint256 alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
-        uint256 minLiquidityDensityX96;
-        if (alpha > ALPHA_BASE) {
-            // monotonically increasing
-            // check left boundary
-            minLiquidityDensityX96 =
-                liquidityDensityX96(minTickOrOffset, tickSpacing, minTickOrOffset, length, alphaX96);
-        } else {
-            // monotonically decreasing
-            // check right boundary
-            minLiquidityDensityX96 = liquidityDensityX96(
-                minTickOrOffset + (length - 1) * tickSpacing, tickSpacing, minTickOrOffset, length, alphaX96
-            );
-        }
-        if (minLiquidityDensityX96 < MIN_LIQUIDITY_DENSITY) {
-            return false;
-        }
-
-        // if all conditions are met, return true
-        return true;
-    }
-
     function liquidityDensityX96(int24 roundedTick, int24 tickSpacing, int24 minTick, int24 length, uint256 alphaX96)
         internal
         pure
@@ -636,6 +570,72 @@ library LibGeometricDistribution {
                 (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96;
             console2.log("liquidity success");
         }
+    }
+
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes |
+        uint8 shiftMode = uint8(bytes1(ldfParams));
+        int24 minTickOrOffset = int24(uint24(bytes3(ldfParams << 8)));
+        int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint256 alpha = uint32(bytes4(ldfParams << 48));
+
+        // ensure shiftMode is within the valid range
+        if (shiftMode > uint8(type(ShiftMode).max)) {
+            return false;
+        }
+
+        // ensure twapSecondsAgo is non-zero if shiftMode is not static
+        if (shiftMode != uint8(ShiftMode.STATIC) && twapSecondsAgo == 0) {
+            return false;
+        }
+
+        // ensure minTickOrOffset is aligned to tickSpacing
+        if (minTickOrOffset % tickSpacing != 0) {
+            return false;
+        }
+
+        // ensure length > 0 and doesn't overflow when multiplied by tickSpacing
+        // ensure length can be contained between minUsableTick and maxUsableTick
+        if (
+            length <= 0 || int256(length) * int256(tickSpacing) > type(int24).max
+                || length > maxUsableTick / tickSpacing || -length < minUsableTick / tickSpacing
+        ) return false;
+
+        // ensure alpha is in range
+        if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
+
+        // ensure the ticks are within the valid range
+        if (shiftMode == uint8(ShiftMode.STATIC)) {
+            // static minTick set in params
+            int24 maxTick = minTickOrOffset + length * tickSpacing;
+            if (minTickOrOffset < minUsableTick || maxTick > maxUsableTick) return false;
+        }
+
+        // ensure liquidity density is nowhere equal to zero
+        // can check boundaries since function is monotonic
+        uint256 alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
+        uint256 minLiquidityDensityX96;
+        if (alpha > ALPHA_BASE) {
+            // monotonically increasing
+            // check left boundary
+            minLiquidityDensityX96 =
+                liquidityDensityX96(minTickOrOffset, tickSpacing, minTickOrOffset, length, alphaX96);
+        } else {
+            // monotonically decreasing
+            // check right boundary
+            minLiquidityDensityX96 = liquidityDensityX96(
+                minTickOrOffset + (length - 1) * tickSpacing, tickSpacing, minTickOrOffset, length, alphaX96
+            );
+        }
+        if (minLiquidityDensityX96 < MIN_LIQUIDITY_DENSITY) {
+            return false;
+        }
+
+        // if all conditions are met, return true
+        return true;
     }
 
     /// @return minTick The minimum rounded tick of the distribution

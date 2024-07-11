@@ -278,23 +278,6 @@ library LibCarpetedDoubleGeometricDistribution {
         return (false, 0);
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
-        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
-        uint32 alpha0 = uint32(bytes4(ldfParams << 48));
-        uint32 weight0 = uint32(bytes4(ldfParams << 80));
-        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
-        uint32 alpha1 = uint32(bytes4(ldfParams << 128));
-        uint32 weight1 = uint32(bytes4(ldfParams << 160));
-        uint32 weightMain = uint32(bytes4(ldfParams << 192));
-
-        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightMain != 0
-            && weightMain < WEIGHT_BASE
-            && LibDoubleGeometricDistribution.checkMinLiquidityDensity(
-                Q96.mulDiv(weightMain, WEIGHT_BASE), tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1
-            );
-    }
-
     function liquidityDensityX96(int24 roundedTick, int24 tickSpacing, Params memory params)
         internal
         pure
@@ -435,35 +418,6 @@ library LibCarpetedDoubleGeometricDistribution {
         }
     }
 
-    /// @return params
-    /// minTick The minimum rounded tick of the distribution
-    /// length0 The length of the right distribution in number of rounded ticks
-    /// length1 The length of the left distribution in number of rounded ticks
-    /// alpha0X96 The alpha of the right distribution
-    /// alpha1X96 The alpha of the left distribution
-    /// weight0 The weight of the right distribution
-    /// weight1 The weight of the left distribution
-    /// weightMain The weight of the main distribution, 9 decimals
-    /// shiftMode The shift mode of the distribution
-    function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
-        internal
-        pure
-        returns (Params memory params)
-    {
-        // | shiftMode - 1 byte | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
-        params.weightMain = uint32(bytes4(ldfParams << 192));
-        (
-            params.minTick,
-            params.length0,
-            params.length1,
-            params.alpha0X96,
-            params.alpha1X96,
-            params.weight0,
-            params.weight1,
-            params.shiftMode
-        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, tickSpacing, ldfParams);
-    }
-
     function getCarpetedLiquidity(
         uint256 totalLiquidity,
         int24 tickSpacing,
@@ -492,5 +446,51 @@ library LibCarpetedDoubleGeometricDistribution {
             uint24((maxUsableTick - minTick) / tickSpacing - length), uint24(numRoundedTicksCarpeted)
         );
         leftCarpetLiquidity = carpetLiquidity - rightCarpetLiquidity;
+    }
+
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
+        int24 length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
+        uint32 alpha0 = uint32(bytes4(ldfParams << 48));
+        uint32 weight0 = uint32(bytes4(ldfParams << 80));
+        int24 length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
+        uint32 alpha1 = uint32(bytes4(ldfParams << 128));
+        uint32 weight1 = uint32(bytes4(ldfParams << 160));
+        uint32 weightMain = uint32(bytes4(ldfParams << 192));
+
+        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightMain != 0
+            && weightMain < WEIGHT_BASE
+            && LibDoubleGeometricDistribution.checkMinLiquidityDensity(
+                Q96.mulDiv(weightMain, WEIGHT_BASE), tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1
+            );
+    }
+
+    /// @return params
+    /// minTick The minimum rounded tick of the distribution
+    /// length0 The length of the right distribution in number of rounded ticks
+    /// length1 The length of the left distribution in number of rounded ticks
+    /// alpha0X96 The alpha of the right distribution
+    /// alpha1X96 The alpha of the left distribution
+    /// weight0 The weight of the right distribution
+    /// weight1 The weight of the left distribution
+    /// weightMain The weight of the main distribution, 9 decimals
+    /// shiftMode The shift mode of the distribution
+    function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
+        internal
+        pure
+        returns (Params memory params)
+    {
+        // | shiftMode - 1 byte | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
+        params.weightMain = uint32(bytes4(ldfParams << 192));
+        (
+            params.minTick,
+            params.length0,
+            params.length1,
+            params.alpha0X96,
+            params.alpha1X96,
+            params.weight0,
+            params.weight1,
+            params.shiftMode
+        ) = LibDoubleGeometricDistribution.decodeParams(twapTick, tickSpacing, ldfParams);
     }
 }
