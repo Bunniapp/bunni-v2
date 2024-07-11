@@ -20,6 +20,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
+        uint160 sqrtPriceX96,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -31,7 +32,8 @@ contract UniformDistribution is ILiquidityDensityFunction {
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
             bytes32 newLdfState,
-            bool shouldSurge
+            bool shouldSurge,
+            uint160 updatedSqrtPriceX96
         )
     {
         (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
@@ -47,6 +49,8 @@ contract UniformDistribution is ILiquidityDensityFunction {
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
             LibUniformDistribution.query(roundedTick, key.tickSpacing, tickLower, tickUpper);
         newLdfState = _encodeState(tickLower);
+
+        updatedSqrtPriceX96 = sqrtPriceX96;
     }
 
     /// @inheritdoc ILiquidityDensityFunction

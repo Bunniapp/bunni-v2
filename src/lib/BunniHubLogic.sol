@@ -216,7 +216,7 @@ library BunniHubLogic {
                 useTwap ? queryTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo) : int24(0);
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
             bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
-            (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,, bytes32 newLdfState,) =
+            (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,, bytes32 newLdfState,,) =
             queryLDF({
                 key: inputData.params.poolKey,
                 sqrtPriceX96: inputData.sqrtPriceX96,

@@ -308,7 +308,7 @@ library BunniSwapMath {
             updatedSqrtPriceX96 = sqrtPriceLimitX96;
             updatedTick = TickMath.getTickAtSqrtPrice(sqrtPriceLimitX96);
 
-            (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+            (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,,) = queryLDF({
                 key: input.key,
                 sqrtPriceX96: updatedSqrtPriceX96,
                 tick: updatedTick,

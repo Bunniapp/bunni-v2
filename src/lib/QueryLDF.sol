@@ -50,7 +50,8 @@ function queryLDF(
         uint256 totalDensity1X96,
         uint256 liquidityDensityOfRoundedTickX96,
         bytes32 newLdfState,
-        bool shouldSurge
+        bool shouldSurge,
+        uint160 updatedSqrtPriceX96
     )
 {
     (int24 roundedTick, int24 nextRoundedTick) = roundTick(tick, key.tickSpacing);
@@ -63,11 +64,16 @@ function queryLDF(
         density0RightOfRoundedTickX96,
         density1LeftOfRoundedTickX96,
         newLdfState,
-        shouldSurge
-    ) = ldf.query(key, roundedTick, arithmeticMeanTick, tick, ldfParams, ldfState);
+        shouldSurge,
+        updatedSqrtPriceX96
+    ) = ldf.query(key, roundedTick, arithmeticMeanTick, tick, sqrtPriceX96, ldfParams, ldfState);
 
     (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
-        sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, uint128(liquidityDensityOfRoundedTickX96), false
+        updatedSqrtPriceX96,
+        roundedTickSqrtRatio,
+        nextRoundedTickSqrtRatio,
+        uint128(liquidityDensityOfRoundedTickX96),
+        false
     );
     totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
     totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;

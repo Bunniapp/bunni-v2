@@ -19,6 +19,7 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
+        uint160 sqrtPriceX96,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -30,7 +31,8 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
             bytes32 newLdfState,
-            bool shouldSurge
+            bool shouldSurge,
+            uint160 updatedSqrtPriceX96
         )
     {
         (
@@ -62,6 +64,8 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
             altThresholdDirection
         );
         newLdfState = _encodeState(twapTick);
+
+        updatedSqrtPriceX96 = sqrtPriceX96;
     }
 
     /// @inheritdoc ILiquidityDensityFunction

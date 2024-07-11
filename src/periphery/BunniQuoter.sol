@@ -27,6 +27,7 @@ import {BunniHookLogic} from "../lib/BunniHookLogic.sol";
 import {LiquidityAmounts} from "../lib/LiquidityAmounts.sol";
 
 contract BunniQuoter is IBunniQuoter {
+    using TickMath for *;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using PoolIdLibrary for PoolKey;
@@ -61,17 +62,8 @@ contract BunniQuoter is IBunniQuoter {
         PoolId id = key.toId();
         IBunniHook hook = IBunniHook(address(key.hooks));
         (uint160 sqrtPriceX96, int24 currentTick, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp) = hook.slot0s(id);
-        if (
-            sqrtPriceX96 == 0
-                || (
-                    params.zeroForOne
-                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE)
-                )
-                || (
-                    !params.zeroForOne
-                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE)
-                )
-        ) {
+        if (sqrtPriceX96 == 0 || params.amountSpecified > type(int128).max || params.amountSpecified < type(int128).min)
+        {
             return (false, 0, 0, 0, 0, 0, 0);
         }
 
@@ -103,7 +95,8 @@ contract BunniQuoter is IBunniQuoter {
             uint256 totalDensity1X96,
             uint256 liquidityDensityOfRoundedTickX96,
             ,
-            bool shouldSurge
+            bool shouldSurge,
+            uint160 sqrtPriceX96_
         ) = queryLDF({
             key: key,
             sqrtPriceX96: sqrtPriceX96,
@@ -116,6 +109,31 @@ contract BunniQuoter is IBunniQuoter {
             balance1: balance1
         });
         totalLiquidity = totalLiquidity_;
+
+        if (sqrtPriceX96 != sqrtPriceX96_) {
+            // ensure swap makes sense after getting the updated sqrtPriceX96 from the LDF
+            if (
+                sqrtPriceX96_ == 0
+                    || (
+                        params.zeroForOne
+                            && (
+                                params.sqrtPriceLimitX96 >= sqrtPriceX96_ || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE
+                            )
+                    )
+                    || (
+                        !params.zeroForOne
+                            && (
+                                params.sqrtPriceLimitX96 <= sqrtPriceX96_ || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE
+                            )
+                    )
+            ) {
+                return (false, 0, 0, 0, 0, 0, 0);
+            }
+
+            // update current tick in the local state
+            currentTick = sqrtPriceX96_.getTickAtSqrtPrice();
+            sqrtPriceX96 = sqrtPriceX96_;
+        }
 
         // check surge based on vault share prices
         shouldSurge =
@@ -344,7 +362,7 @@ contract BunniQuoter is IBunniQuoter {
                 useTwap ? queryTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo) : int24(0);
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
             bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
-            (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+            (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,,) = queryLDF({
                 key: inputData.params.poolKey,
                 sqrtPriceX96: inputData.sqrtPriceX96,
                 tick: inputData.currentTick,

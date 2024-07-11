@@ -14,10 +14,13 @@ import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 interface ILiquidityDensityFunction {
     /// @notice Queries the liquidity density function for the given pool and rounded tick.
     /// Returns the density of the rounded tick, cumulative token densities at adjacent ticks, and state relevant info.
+    /// CAN OPTIONALLY update the pool's spot price via `updatedSqrtPriceX96`. If the price was updated, the returned liquidity distribution info
+    /// MUST use the updated price and tick and not the input `roundedTick`, `spotPriceTick`, or `sqrtPriceX96`.
     /// @param key The key of the Uniswap v4 pool
     /// @param roundedTick The rounded tick to query
     /// @param twapTick The TWAP tick. Is 0 if `twapSecondsAgo` is 0. It's up to `isValidParams` to ensure `twapSecondsAgo != 0` if the LDF uses the TWAP.
     /// @param spotPriceTick The spot price tick.
+    /// @param sqrtPriceX96 The current sqrt price of the pool, scaled by Q96
     /// @param ldfParams The parameters for the liquidity density function
     /// @param ldfState The current state of the liquidity density function
     /// @return liquidityDensityX96 The density of the rounded tick, scaled by Q96
@@ -25,11 +28,13 @@ interface ILiquidityDensityFunction {
     /// @return cumulativeAmount1DensityX96 The cumulative token1 density in rounded ticks [minUsableTick, roundedTick - tickSpacing], scaled by Q96
     /// @return newLdfState The new state of the liquidity density function
     /// @return shouldSurge Whether the pool should surge. Usually corresponds to whether the LDF has shifted / changed shape.
+    /// @return updatedSqrtPriceX96 The updated sqrt price of the pool, scaled by Q96. If the price wasn't updated simply return `sqrtPriceX96`.
     function query(
         PoolKey calldata key,
         int24 roundedTick,
         int24 twapTick,
         int24 spotPriceTick,
+        uint160 sqrtPriceX96,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -40,13 +45,15 @@ interface ILiquidityDensityFunction {
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
             bytes32 newLdfState,
-            bool shouldSurge
+            bool shouldSurge,
+            uint160 updatedSqrtPriceX96
         );
 
     /// @notice Aggregates LDF queries used during a swap.
     /// @dev A Bunni swap uses the inverseCumulativeAmount function to compute the rounded tick for which the cumulativeAmount is the closest to `inverseCumulativeAmountInput`
     /// and <= `inverseCumulativeAmountInput`. This rounded tick is the starting point for swapping the remaining tokens, which is done via Uniswap math (not done in this function though).
     /// `cumulativeAmount` is the closest to `inverseCumulativeAmountInput` and <= `inverseCumulativeAmountInput`. `swapLiquidity` is the liquidity used for the remainder swap.
+    /// MUST use the provided spot price information as is and not update it internally using a similar logic as query().
     /// @param key The key of the Uniswap v4 pool
     /// @param inverseCumulativeAmountInput The input to the inverseCumulativeAmount function
     /// @param totalLiquidity The total liquidity in the pool
@@ -73,6 +80,7 @@ interface ILiquidityDensityFunction {
     ) external view returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity);
 
     /// @notice Computes the cumulative amount of token0 in the rounded ticks [roundedTick, maxUsableTick].
+    /// @dev MUST use the provided spot price information as is and not update it internally using a similar logic as query().
     /// @param key The key of the Uniswap v4 pool
     /// @param roundedTick The rounded tick to query
     /// @param totalLiquidity The total liquidity in the pool
@@ -92,6 +100,7 @@ interface ILiquidityDensityFunction {
     ) external view returns (uint256);
 
     /// @notice Computes the cumulative amount of token1 in the rounded ticks [minUsableTick, roundedTick].
+    /// @dev MUST use the provided spot price information as is and not update it internally using a similar logic as query().
     /// @param key The key of the Uniswap v4 pool
     /// @param roundedTick The rounded tick to query
     /// @param totalLiquidity The total liquidity in the pool

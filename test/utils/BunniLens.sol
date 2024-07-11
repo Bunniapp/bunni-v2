@@ -7,6 +7,7 @@ import "../../src/types/PoolState.sol";
 import {LiquidityAmounts} from "../../src/lib/LiquidityAmounts.sol";
 
 contract BunniLens {
+    using TickMath for *;
     using SafeCastLib for *;
     using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
@@ -57,9 +58,14 @@ contract BunniLens {
             uint256 density0RightOfRoundedTickX96,
             uint256 density1LeftOfRoundedTickX96,
             ,
+            ,
+            uint160 sqrtPriceX96
         ) = bunniState.liquidityDensityFunction.query(
-            key, roundedTick, arithmeticMeanTick, updatedTick, bunniState.ldfParams, newLdfState
+            key, roundedTick, arithmeticMeanTick, updatedTick, updatedSqrtPriceX96, bunniState.ldfParams, newLdfState
         );
+        if (sqrtPriceX96 != updatedSqrtPriceX96) {
+            (updatedSqrtPriceX96, updatedTick) = (sqrtPriceX96, sqrtPriceX96.getTickAtSqrtPrice());
+        }
         {
             (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts
                 .getAmountsForLiquidity(

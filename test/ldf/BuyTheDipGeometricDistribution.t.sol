@@ -35,11 +35,12 @@ contract BuyTheDipGeometricDistributionTest is Test {
         assertTrue(ldf.isValidParams(key, 1 minutes, ldfParams), "LDF params are invalid");
 
         // make first query
-        (uint256 liquidityDensityX96,,, bytes32 ldfState, bool shouldSurge) = ldf.query({
+        (uint256 liquidityDensityX96,,, bytes32 ldfState, bool shouldSurge,) = ldf.query({
             key: key,
             roundedTick: 0,
             twapTick: 0,
             spotPriceTick: 0,
+            sqrtPriceX96: 0,
             ldfParams: ldfParams,
             ldfState: bytes32(0)
         });
@@ -47,11 +48,12 @@ contract BuyTheDipGeometricDistributionTest is Test {
 
         // make second query where the TWAP reaches the threshold
         uint256 newLiquidityDensityX96;
-        (newLiquidityDensityX96,,, ldfState, shouldSurge) = ldf.query({
+        (newLiquidityDensityX96,,, ldfState, shouldSurge,) = ldf.query({
             key: key,
             roundedTick: 0,
             twapTick: altThreshold,
             spotPriceTick: 0,
+            sqrtPriceX96: 0,
             ldfParams: ldfParams,
             ldfState: ldfState
         });
@@ -60,11 +62,12 @@ contract BuyTheDipGeometricDistributionTest is Test {
 
         // make third query where the TWAP stays below the threshold
         liquidityDensityX96 = newLiquidityDensityX96;
-        (newLiquidityDensityX96,,, ldfState, shouldSurge) = ldf.query({
+        (newLiquidityDensityX96,,, ldfState, shouldSurge,) = ldf.query({
             key: key,
             roundedTick: 0,
             twapTick: altThreshold - TICK_SPACING,
             spotPriceTick: 0,
+            sqrtPriceX96: 0,
             ldfParams: ldfParams,
             ldfState: ldfState
         });
@@ -73,11 +76,12 @@ contract BuyTheDipGeometricDistributionTest is Test {
 
         // make fourth query where the TWAP goes back above the threshold
         liquidityDensityX96 = newLiquidityDensityX96;
-        (newLiquidityDensityX96,,, ldfState, shouldSurge) = ldf.query({
+        (newLiquidityDensityX96,,, ldfState, shouldSurge,) = ldf.query({
             key: key,
             roundedTick: 0,
             twapTick: altThreshold + TICK_SPACING,
             spotPriceTick: 0,
+            sqrtPriceX96: 0,
             ldfParams: ldfParams,
             ldfState: ldfState
         });

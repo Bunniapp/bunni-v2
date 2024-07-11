@@ -20,6 +20,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         int24 roundedTick,
         int24 twapTick,
         int24, /* spotPriceTick */
+        uint160 sqrtPriceX96,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -31,7 +32,8 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
             uint256 cumulativeAmount0DensityX96,
             uint256 cumulativeAmount1DensityX96,
             bytes32 newLdfState,
-            bool shouldSurge
+            bool shouldSurge,
+            uint160 updatedSqrtPriceX96
         )
     {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
@@ -45,6 +47,8 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
             LibCarpetedDoubleGeometricDistribution.query(roundedTick, key.tickSpacing, params);
         newLdfState = _encodeState(params.minTick);
+
+        updatedSqrtPriceX96 = sqrtPriceX96;
     }
 
     /// @inheritdoc ILiquidityDensityFunction

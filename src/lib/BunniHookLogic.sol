@@ -42,6 +42,7 @@ import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 /// @title BunniHookLogic
 /// @notice Split from BunniHook to reduce contract size below the Spurious Dragon limit
 library BunniHookLogic {
+    using TickMath for *;
     using SafeCastLib for *;
     using SafeTransferLib for *;
     using FixedPointMathLib for *;
@@ -145,17 +146,9 @@ library BunniHookLogic {
         }
         PoolId id = key.toId();
         Slot0 memory slot0 = s.slot0s[id];
-        uint160 sqrtPriceX96 = slot0.sqrtPriceX96;
         if (
-            sqrtPriceX96 == 0
-                || (
-                    params.zeroForOne
-                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE)
-                )
-                || (
-                    !params.zeroForOne
-                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE)
-                ) || params.amountSpecified > type(int128).max || params.amountSpecified < type(int128).min
+            slot0.sqrtPriceX96 == 0 || params.amountSpecified > type(int128).max
+                || params.amountSpecified < type(int128).min
         ) {
             revert BunniHook__InvalidSwap();
         }
@@ -200,10 +193,11 @@ library BunniHookLogic {
             uint256 totalDensity1X96,
             uint256 liquidityDensityOfRoundedTickX96,
             bytes32 newLdfState,
-            bool shouldSurge
+            bool shouldSurge,
+            uint160 sqrtPriceX96
         ) = queryLDF({
             key: key,
-            sqrtPriceX96: sqrtPriceX96,
+            sqrtPriceX96: slot0.sqrtPriceX96,
             tick: slot0.tick,
             arithmeticMeanTick: arithmeticMeanTick,
             ldf: bunniState.liquidityDensityFunction,
@@ -212,6 +206,28 @@ library BunniHookLogic {
             balance0: balance0,
             balance1: balance1
         });
+
+        if (sqrtPriceX96 != slot0.sqrtPriceX96) {
+            // ensure swap makes sense after getting the updated sqrtPriceX96 from the LDF
+            if (
+                sqrtPriceX96 == 0
+                    || (
+                        params.zeroForOne
+                            && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE)
+                    )
+                    || (
+                        !params.zeroForOne
+                            && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE)
+                    )
+            ) {
+                revert BunniHook__InvalidSwap();
+            }
+
+            // update current tick in the local state
+            slot0.tick = sqrtPriceX96.getTickAtSqrtPrice();
+        }
+
+        // update LDF state
         if (bunniState.statefulLdf) s.ldfStates[id] = newLdfState;
 
         // check surge based on vault share prices
@@ -520,7 +536,8 @@ library BunniHookLogic {
         );
 
         // compute total liquidity and densities
-        (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+        (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,, uint160 updatedSqrtPriceX96) =
+        queryLDF({
             key: input.key,
             sqrtPriceX96: input.updatedSqrtPriceX96,
             tick: input.updatedTick,
@@ -531,6 +548,7 @@ library BunniHookLogic {
             balance0: balance0,
             balance1: balance1
         });
+        int24 updatedTick = updatedSqrtPriceX96.getTickAtSqrtPrice();
 
         // compute active balance, which is the balance implied by the total liquidity & the LDF
         (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
@@ -548,7 +566,7 @@ library BunniHookLogic {
                     minUsableTick,
                     WAD,
                     input.arithmeticMeanTick,
-                    input.updatedTick,
+                    updatedTick,
                     bunniState.ldfParams,
                     input.newLdfState
                 )
@@ -561,7 +579,7 @@ library BunniHookLogic {
                     maxUsableTick,
                     WAD,
                     input.arithmeticMeanTick,
-                    input.updatedTick,
+                    updatedTick,
                     bunniState.ldfParams,
                     input.newLdfState
                 )
@@ -580,16 +598,16 @@ library BunniHookLogic {
         int24 rebalanceSpotPriceTick = _getTwap(
             s,
             input.id,
-            input.updatedTick,
+            updatedTick,
             input.hookParams.rebalanceTwapSecondsAgo,
             input.updatedIntermediate,
             input.updatedIndex,
             input.updatedCardinality
         );
-        uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtPriceAtTick(rebalanceSpotPriceTick);
+        uint160 rebalanceSpotPriceSqrtRatioX96 = rebalanceSpotPriceTick.getSqrtPriceAtTick();
         // reusing totalDensity0X96 and totalDensity1X96 to store the token densities of the excess liquidity
         // after rebalancing
-        (, totalDensity0X96, totalDensity1X96,,,) = queryLDF({
+        (, totalDensity0X96, totalDensity1X96,,,,) = queryLDF({
             key: input.key,
             sqrtPriceX96: rebalanceSpotPriceSqrtRatioX96,
             tick: rebalanceSpotPriceTick,
