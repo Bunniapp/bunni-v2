@@ -515,8 +515,9 @@ library BunniHubLogic {
             params.targetRawTokenRatio1,
             params.maxRawTokenRatio1
         );
-        immutableParams =
-            bytes.concat(immutableParams, abi.encodePacked(params.hookParams.length.toUint16(), params.hookParams));
+        immutableParams = bytes.concat(
+            immutableParams, abi.encodePacked(params.hooklet, params.hookParams.length.toUint16(), params.hookParams)
+        );
         s.poolState[poolId].immutableParamsPointer = immutableParams.write();
 
         /// -----------------------------------------------------------------------

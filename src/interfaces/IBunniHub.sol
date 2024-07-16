@@ -15,6 +15,7 @@ import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import "../base/SharedStructs.sol";
 import {IERC20} from "./IERC20.sol";
+import {IHooklet} from "./IHooklet.sol";
 import {IOwnable} from "./IOwnable.sol";
 import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
@@ -171,6 +172,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @param tickSpacing The tick spacing of the Uniswap V4 pool
     /// @param twapSecondsAgo The TWAP time period to use for the liquidity density function
     /// @param liquidityDensityFunction The liquidity density function to use
+    /// @param hooklet The hooklet to use for the Bunni pool. If it's address(0), then a hooklet is not used.
     /// @param ldfParams The parameters for the liquidity density function
     /// @param hooks The hooks to use for the Uniswap V4 pool
     /// @param hookParams The parameters for the hooks
@@ -193,6 +195,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
         int24 tickSpacing;
         uint24 twapSecondsAgo;
         ILiquidityDensityFunction liquidityDensityFunction;
+        IHooklet hooklet;
         bool statefulLdf;
         bytes32 ldfParams;
         IBunniHook hooks;

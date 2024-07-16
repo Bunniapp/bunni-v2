@@ -7,6 +7,7 @@ import {SSTORE2} from "solady/utils/SSTORE2.sol";
 import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import "../base/Errors.sol";
+import {IHooklet} from "../interfaces/IHooklet.sol";
 import {HubStorage} from "../base/SharedStructs.sol";
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
@@ -16,6 +17,7 @@ using SSTORE2 for address;
 /// @notice The state of a Bunni pool
 /// @member liquidityDensityFunction The LDF that dictates how liquidity is distributed
 /// @member bunniToken The BunniToken for this pool
+/// @member hooklet The hooklet for this pool. Set to address(0) if the pool does not have a hooklet.
 /// @member twapSecondsAgo The time window for the TWAP used by the LDF. Set to 0 if the LDF does not use the TWAP.
 /// @member ldfParams The parameters for the LDF
 /// @member hookParams The hook parameters for the pool
@@ -35,6 +37,7 @@ using SSTORE2 for address;
 struct PoolState {
     ILiquidityDensityFunction liquidityDensityFunction;
     IBunniToken bunniToken;
+    IHooklet hooklet;
     uint24 twapSecondsAgo;
     bytes32 ldfParams;
     bytes hookParams;
@@ -185,11 +188,20 @@ function getPoolParams(address ptr) view returns (PoolState memory state) {
     }
 
     {
+        IHooklet hooklet;
+        /// @solidity memory-safe-assembly
+        assembly {
+            hooklet := shr(96, mload(add(immutableParams, 166)))
+        }
+        state.hooklet = hooklet;
+    }
+
+    {
         bytes memory hookParams;
         /// @solidity memory-safe-assembly
         assembly {
-            let hookParamsLen := shr(240, mload(add(immutableParams, 166))) // uint16
-            hookParams := add(immutableParams, 136)
+            let hookParamsLen := shr(240, mload(add(immutableParams, 186))) // uint16
+            hookParams := add(immutableParams, 156)
             mstore(hookParams, hookParamsLen) // overwrite length field of `bytes memory hookParams`
         }
         state.hookParams = hookParams;

@@ -46,6 +46,7 @@ import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {PoolState} from "../src/types/PoolState.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
+import {IHooklet} from "../src/interfaces/IHooklet.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
 import {Permit2Deployer} from "./utils/Permit2Deployer.sol";
@@ -1101,7 +1102,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         string calldata name,
         string calldata symbol,
         address owner,
-        string calldata metadataURI
+        string calldata metadataURI,
+        IHooklet hooklet_
     ) external {
         vm.assume(bytes(name).length <= 32 && bytes(symbol).length <= 32);
 
@@ -1136,6 +1138,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 tickSpacing: TICK_SPACING,
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: ldf,
+                hooklet: hooklet_,
                 statefulLdf: true,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
@@ -1182,6 +1185,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(state.minRawTokenRatio1, 0.08e6, "minRawTokenRatio1 incorrect");
         assertEq(state.targetRawTokenRatio1, 0.1e6, "targetRawTokenRatio1 incorrect");
         assertEq(state.maxRawTokenRatio1, 0.12e6, "maxRawTokenRatio1 incorrect");
+        assertEq(address(state.hooklet), address(hooklet_), "hooklet incorrect");
     }
 
     function test_hookHasInsufficientTokens() external {
@@ -2143,6 +2147,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 tickSpacing: TICK_SPACING,
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: ldf_,
+                hooklet: IHooklet(address(0)),
                 statefulLdf: true,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
