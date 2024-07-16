@@ -1094,7 +1094,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             Currency currency0 = CurrencyLibrary.NATIVE;
             Currency currency1 = Currency.wrap(address(token0));
             (, PoolKey memory key) =
-                _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)));
+                _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)), bytes32(i));
             assertEq(key.fee, i, "nonce not increasing");
         }
     }
@@ -1160,7 +1160,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 name: name_,
                 symbol: symbol_,
                 owner: owner,
-                metadataURI: metadataURI
+                metadataURI: metadataURI,
+                salt: bytes32(0)
             })
         );
         assertEq(bunniToken.owner(), owner, "owner not set");
@@ -2064,6 +2065,16 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         internal
         returns (IBunniToken bunniToken, PoolKey memory key)
     {
+        return _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_, bytes32(0));
+    }
+
+    function _deployPoolAndInitLiquidity(
+        Currency currency0,
+        Currency currency1,
+        ERC4626 vault0_,
+        ERC4626 vault1_,
+        bytes32 salt
+    ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
         return _deployPoolAndInitLiquidity(
             currency0,
             currency1,
@@ -2087,7 +2098,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL
-            )
+            ),
+            salt
         );
     }
 
@@ -2121,7 +2133,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL
-            )
+            ),
+            bytes32(0)
         );
     }
 
@@ -2133,7 +2146,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         bytes32 ldfParams,
         bytes memory hookParams
     ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
-        return _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_, ldf, ldfParams, hookParams);
+        return
+            _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_, ldf, ldfParams, hookParams, bytes32(0));
     }
 
     function _deployPoolAndInitLiquidity(
@@ -2144,6 +2158,20 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         ILiquidityDensityFunction ldf_,
         bytes32 ldfParams,
         bytes memory hookParams
+    ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
+        return
+            _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_, ldf_, ldfParams, hookParams, bytes32(0));
+    }
+
+    function _deployPoolAndInitLiquidity(
+        Currency currency0,
+        Currency currency1,
+        ERC4626 vault0_,
+        ERC4626 vault1_,
+        ILiquidityDensityFunction ldf_,
+        bytes32 ldfParams,
+        bytes memory hookParams,
+        bytes32 salt
     ) internal returns (IBunniToken bunniToken, PoolKey memory key) {
         // initialize bunni
         (bunniToken, key) = hub.deployBunniToken(
@@ -2170,7 +2198,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 name: bytes32("BunniToken"),
                 symbol: bytes32("BUNNI-LP"),
                 owner: address(this),
-                metadataURI: "metadataURI"
+                metadataURI: "metadataURI",
+                salt: salt
             })
         );
 

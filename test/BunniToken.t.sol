@@ -161,7 +161,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
                 name: "BunniToken",
                 symbol: "BUNNI",
                 owner: address(this),
-                metadataURI: ""
+                metadataURI: "",
+                salt: bytes32(0)
             })
         );
 

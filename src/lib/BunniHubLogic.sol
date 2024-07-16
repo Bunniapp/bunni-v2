@@ -528,10 +528,11 @@ library BunniHubLogic {
 
         // deploy BunniToken
         token = IBunniToken(
-            address(env.bunniTokenImplementation).clone({
+            address(env.bunniTokenImplementation).clone3({
                 data: abi.encodePacked(
                     address(this), params.currency0, params.currency1, params.name, params.symbol, env.poolManager
-                )
+                ),
+                salt: params.salt
             })
         );
         token.initialize(params.owner, params.metadataURI);
