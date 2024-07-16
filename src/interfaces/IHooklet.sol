@@ -143,6 +143,22 @@ interface IHooklet {
         external
         returns (bytes4 selector, bool feeOverriden, uint24 fee, bool priceOverridden, uint160 sqrtPriceX96);
 
+    /// @notice View version of beforeSwap(), used when computing swap quotes like in BunniQuoter.
+    /// Should always return the same values as beforeSwap().
+    /// @param sender The address of the account that initiated the swap.
+    /// @param key The Uniswap v4 pool's key.
+    /// @param params The swap's input parameters.
+    /// @return selector IHooklet.beforeSwap.selector if the call was successful.
+    /// @return feeOverriden If true, the swap fee is overridden. If the pool has an am-AMM manager
+    /// then the fee override is ignored.
+    /// @return fee The swap fee to use for the swap. 6 decimals.
+    /// @return priceOverridden If true, the pool's spot price is overridden.
+    /// @return sqrtPriceX96 The spot price to use for the swap. Q96 value.
+    function beforeSwapView(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
+        external
+        view
+        returns (bytes4 selector, bool feeOverriden, uint24 fee, bool priceOverridden, uint160 sqrtPriceX96);
+
     /// @notice Called after a swap operation.
     /// @param sender The address of the account that initiated the swap.
     /// @param key The Uniswap v4 pool's key.

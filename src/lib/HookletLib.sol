@@ -54,6 +54,37 @@ library HookletLib {
         if (decodedSelector != selector) HookletLib__InvalidHookletResponse.selector.revertWith();
     }
 
+    function staticcallHooklet(IHooklet self, bytes4 selector, bytes memory data)
+        internal
+        view
+        returns (bytes memory result)
+    {
+        bytes4 decodedSelector;
+        assembly ("memory-safe") {
+            if iszero(staticcall(gas(), self, add(data, 0x20), mload(data), 0, 0)) {
+                if iszero(returndatasize()) {
+                    // if the call failed without a revert reason, revert with `HookletLib__FailedHookletCall()`
+                    mstore(0, 0x855e32e7)
+                    revert(0x1c, 0x04)
+                }
+                // bubble up revert
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+            // allocate result byte array from the free memory pointer
+            result := mload(0x40)
+            // store new free memory pointer at the end of the array padded to 32 bytes
+            mstore(0x40, add(result, and(add(returndatasize(), 0x3f), not(0x1f))))
+            // store length in memory
+            mstore(result, returndatasize())
+            // copy return data to result
+            returndatacopy(add(result, 0x20), 0, returndatasize())
+            // get the selector from the return data
+            decodedSelector := mload(add(result, 0x20))
+        }
+        if (decodedSelector != selector) HookletLib__InvalidHookletResponse.selector.revertWith();
+    }
+
     modifier noSelfCall(IHooklet self, address sender) {
         if (sender != address(self)) {
             _;
@@ -164,6 +195,47 @@ library HookletLib {
                 feeOverridden = canOverrideFee && feeOverridden;
                 priceOverridden = canOverridePrice && priceOverridden;
             }
+        }
+    }
+
+    function hookletBeforeSwapView(
+        IHooklet self,
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params
+    )
+        internal
+        view
+        noSelfCall(self, sender)
+        returns (bool feeOverridden, uint24 fee, bool priceOverridden, uint160 sqrtPriceX96)
+    {
+        if (
+            self.hasPermission(BEFORE_SWAP_FLAG)
+                && (
+                    self.hasPermission(BEFORE_SWAP_OVERRIDE_FEE_FLAG) || self.hasPermission(BEFORE_SWAP_OVERRIDE_PRICE_FLAG)
+                )
+        ) {
+            bytes memory result = self.staticcallHooklet(
+                IHooklet.beforeSwapView.selector, abi.encodeCall(IHooklet.beforeSwapView, (sender, key, params))
+            );
+            (bool canOverrideFee, bool canOverridePrice) =
+                (self.hasPermission(BEFORE_SWAP_OVERRIDE_FEE_FLAG), self.hasPermission(BEFORE_SWAP_OVERRIDE_PRICE_FLAG));
+
+            // parse override data
+            // equivalent to the following Solidity code:
+            // (,feeOverridden, fee, priceOverridden, sqrtPriceX96) = abi.decode(result, (bytes4, bool, uint24, bool, uint160));
+            /// @solidity memory-safe-assembly
+            assembly {
+                feeOverridden := mload(add(result, 0x40))
+                fee := mload(add(result, 0x60))
+                priceOverridden := mload(add(result, 0x80))
+                sqrtPriceX96 := mload(add(result, 0xA0))
+            }
+
+            // ensure that the hooklet is allowed to override the fee and/or price
+            // if the hooklet doesn't have a permission but the override is set, the override is ignored
+            feeOverridden = canOverrideFee && feeOverridden;
+            priceOverridden = canOverridePrice && priceOverridden;
         }
     }
 

@@ -1378,7 +1378,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             amountSpecified: int256(swapAmount),
             sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
-        (,,, uint256 firstSwapInputAmount, uint256 firstSwapOutputAmount,,) = quoter.quoteSwap(key, params);
+        (,,, uint256 firstSwapInputAmount, uint256 firstSwapOutputAmount,,) =
+            quoter.quoteSwap(address(this), key, params);
         if (firstSwapOutputToken.balanceOf(address(poolManager)) >= swapAmount) {
             assertApproxEqAbs(firstSwapOutputAmount, swapAmount, 10, "firstSwapOutputAmount incorrect");
         }
@@ -1628,7 +1629,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         });
 
         // quote swap
-        (bool success,,, uint256 inputAmount, uint256 outputAmount,,) = quoter.quoteSwap(key, params);
+        (bool success,,, uint256 inputAmount, uint256 outputAmount,,) = quoter.quoteSwap(address(this), key, params);
         assertTrue(success, "quoteSwap failed");
 
         // execute swap

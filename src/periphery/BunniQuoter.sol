@@ -10,6 +10,7 @@ import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
+import {IHooklet} from "../interfaces/IHooklet.sol";
 import {IBunniHub} from "../interfaces/IBunniHub.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {IBunniQuoter} from "../interfaces/IBunniQuoter.sol";
@@ -23,12 +24,15 @@ import "../types/PoolState.sol";
 import "../lib/AmAmmPayload.sol";
 import "../lib/BunniSwapMath.sol";
 import "../base/SharedStructs.sol";
+import {HookletLib} from "../lib/HookletLib.sol";
 import {BunniHookLogic} from "../lib/BunniHookLogic.sol";
 import {LiquidityAmounts} from "../lib/LiquidityAmounts.sol";
 
 contract BunniQuoter is IBunniQuoter {
+    using TickMath for *;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
+    using HookletLib for IHooklet;
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for int256;
     using FixedPointMathLib for uint256;
@@ -43,7 +47,7 @@ contract BunniQuoter is IBunniQuoter {
     /// External functions
     /// -----------------------------------------------------------------------
 
-    function quoteSwap(PoolKey memory key, IPoolManager.SwapParams memory params)
+    function quoteSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
         external
         view
         override
@@ -57,10 +61,23 @@ contract BunniQuoter is IBunniQuoter {
             uint256 totalLiquidity
         )
     {
-        // ensure swap makes sense
+        // get pool state
         PoolId id = key.toId();
         IBunniHook hook = IBunniHook(address(key.hooks));
         (uint160 sqrtPriceX96, int24 currentTick, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp) = hook.slot0s(id);
+        PoolState memory bunniState = hub.poolState(id);
+
+        // hooklet call
+        (bool feeOverridden, uint24 feeOverride, bool priceOverridden, uint160 sqrtPriceX96Override) =
+            bunniState.hooklet.hookletBeforeSwapView(sender, key, params);
+
+        // override price if needed
+        if (priceOverridden) {
+            sqrtPriceX96 = sqrtPriceX96Override;
+            currentTick = sqrtPriceX96Override.getTickAtSqrtPrice();
+        }
+
+        // ensure swap makes sense
         if (
             sqrtPriceX96 == 0
                 || (
@@ -70,13 +87,10 @@ contract BunniQuoter is IBunniQuoter {
                 || (
                     !params.zeroForOne
                         && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE)
-                )
+                ) || params.amountSpecified > type(int128).max || params.amountSpecified < type(int128).min
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
         }
-
-        // get pool state
-        PoolState memory bunniState = hub.poolState(id);
 
         // decode hook params
         DecodedHookParams memory hookParams = BunniHookLogic.decodeHookParams(bunniState.hookParams);
@@ -84,7 +98,8 @@ contract BunniQuoter is IBunniQuoter {
         // get TWAP values
         int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0 ? queryTwap(key, bunniState.twapSecondsAgo) : int24(0);
         int24 feeMeanTick = (
-            !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
+            !feeOverridden && !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax
+                && hookParams.feeQuadraticMultiplier != 0
         ) ? queryTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
 
         // compute total token balances
@@ -178,6 +193,10 @@ contract BunniQuoter is IBunniQuoter {
         }
 
         // charge swap fee
+        // precedence:
+        // 1) am-AMM fee
+        // 2) hooklet override fee
+        // 3) dynamic fee
         uint256 swapFeeAmount;
         bool exactIn = params.amountSpecified < 0;
         bool useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
@@ -191,15 +210,19 @@ contract BunniQuoter is IBunniQuoter {
                     )
                     : amAmmSwapFee
             )
-            : computeDynamicSwapFee(
-                updatedSqrtPriceX96,
-                feeMeanTick,
-                lastSurgeTimestamp,
-                hookParams.feeMin,
-                hookParams.feeMax,
-                hookParams.feeQuadraticMultiplier,
-                hookParams.surgeFee,
-                hookParams.surgeFeeHalfLife
+            : (
+                feeOverridden
+                    ? feeOverride
+                    : computeDynamicSwapFee(
+                        updatedSqrtPriceX96,
+                        feeMeanTick,
+                        lastSurgeTimestamp,
+                        hookParams.feeMin,
+                        hookParams.feeMax,
+                        hookParams.feeQuadraticMultiplier,
+                        hookParams.surgeFee,
+                        hookParams.surgeFeeHalfLife
+                    )
             );
         if (exactIn) {
             swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
