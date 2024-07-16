@@ -5,12 +5,21 @@ pragma solidity ^0.8.0;
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import {IBunniHub} from "./IBunniHub.sol";
+import {IBunniToken} from "./IBunniToken.sol";
 
 /// @title Hooklet
 /// @notice Hooklets let developers execute custom logic before/after Bunni operations.
-/// Each Bunni pool can have one hooklet attached to it. The last byte of the hooklet's
+/// Each Bunni pool can have one hooklet attached to it. The least significant bits of the hooklet's
 /// address is used to flag which hooklet functions should be callled.
 interface IHooklet {
+    /// @notice Return data of an initialize operation.
+    /// @member bunniToken The BunniToken deployed.
+    /// @member key The Uniswap v4 pool's key.
+    struct InitializeReturnData {
+        IBunniToken bunniToken;
+        PoolKey key;
+    }
+
     /// @notice Return data of a deposit operation.
     /// @member shares The amount of shares minted.
     /// @member amount0 The amount of token0 deposited.
@@ -61,6 +70,25 @@ interface IHooklet {
         bool overridden;
         uint160 sqrtPriceX96;
     }
+
+    /// @notice Called before a pool is initialized.
+    /// @param sender The address of the account that initiated the initialization.
+    /// @param params The initialization's input parameters.
+    /// @return selector IHooklet.beforeInitialize.selector if the call was successful.
+    function beforeInitialize(address sender, IBunniHub.DeployBunniTokenParams calldata params)
+        external
+        returns (bytes4 selector);
+
+    /// @notice Called after a pool is initialized.
+    /// @param sender The address of the account that initiated the initialization.
+    /// @param params The initialization's input parameters.
+    /// @param returnData The initialization operation's return data.
+    /// @return selector IHooklet.afterInitialize.selector if the call was successful.
+    function afterInitialize(
+        address sender,
+        IBunniHub.DeployBunniTokenParams calldata params,
+        InitializeReturnData calldata returnData
+    ) external returns (bytes4 selector);
 
     /// @notice Called before a deposit operation.
     /// @param sender The address of the account that initiated the deposit.
