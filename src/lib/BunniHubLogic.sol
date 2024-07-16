@@ -35,9 +35,11 @@ import "../types/PoolState.sol";
 import "../base/SharedStructs.sol";
 import "../interfaces/IBunniHub.sol";
 import {BunniHub} from "../BunniHub.sol";
+import {HookletLib} from "./HookletLib.sol";
 import {queryLDF} from "../lib/QueryLDF.sol";
 import {BunniToken} from "../BunniToken.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {IHooklet} from "../interfaces/IHooklet.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
@@ -48,6 +50,7 @@ library BunniHubLogic {
     using SSTORE2 for address;
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
+    using HookletLib for IHooklet;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
@@ -74,6 +77,17 @@ library BunniHubLogic {
         address msgSender = LibMulticaller.senderOrSigner();
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = getPoolState(s, poolId);
+
+        /// -----------------------------------------------------------------------
+        /// Hooklet call
+        /// -----------------------------------------------------------------------
+
+        state.hooklet.hookletBeforeDeposit(msgSender, params);
+
+        /// -----------------------------------------------------------------------
+        /// State updates
+        /// -----------------------------------------------------------------------
+
         IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
         (uint160 sqrtPriceX96, int24 currentTick,,) = hook.slot0s(poolId);
         hook.updateStateMachine(poolId); // trigger am-AMM state machine update to avoid sandwiching rent burns
@@ -171,6 +185,14 @@ library BunniHubLogic {
 
         // emit event
         emit IBunniHub.Deposit(msgSender, params.recipient, poolId, amount0, amount1, shares);
+
+        /// -----------------------------------------------------------------------
+        /// Hooklet call
+        /// -----------------------------------------------------------------------
+
+        state.hooklet.hookletAfterDeposit(
+            msgSender, params, IHooklet.DepositReturnData({shares: shares, amount0: amount0, amount1: amount1})
+        );
     }
 
     struct DepositLogicInputData {
@@ -343,11 +365,17 @@ library BunniHubLogic {
         }
 
         /// -----------------------------------------------------------------------
+        /// Hooklet call
+        /// -----------------------------------------------------------------------
+
+        address msgSender = LibMulticaller.senderOrSigner();
+        state.hooklet.hookletBeforeWithdraw(msgSender, params);
+
+        /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
-        address msgSender = LibMulticaller.senderOrSigner();
         uint256 shares;
 
         // burn shares
@@ -412,6 +440,14 @@ library BunniHubLogic {
         );
 
         emit IBunniHub.Withdraw(msgSender, params.recipient, poolId, amount0, amount1, shares);
+
+        /// -----------------------------------------------------------------------
+        /// Hooklet call
+        /// -----------------------------------------------------------------------
+
+        state.hooklet.hookletAfterWithdraw(
+            msgSender, params, IHooklet.WithdrawReturnData({amount0: amount0, amount1: amount1})
+        );
     }
 
     /// -----------------------------------------------------------------------
@@ -480,6 +516,13 @@ library BunniHubLogic {
         }
 
         /// -----------------------------------------------------------------------
+        /// Hooklet call
+        /// -----------------------------------------------------------------------
+
+        address msgSender = LibMulticaller.senderOrSigner();
+        params.hooklet.hookletBeforeInitialize(msgSender, params);
+
+        /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
 
@@ -528,6 +571,14 @@ library BunniHubLogic {
         env.poolManager.initialize(key, params.sqrtPriceX96, abi.encode(params.twapSecondsAgo, params.hookParams));
 
         emit IBunniHub.NewBunni(token, poolId);
+
+        /// -----------------------------------------------------------------------
+        /// Hooklet call
+        /// -----------------------------------------------------------------------
+
+        params.hooklet.hookletAfterInitialize(
+            msgSender, params, IHooklet.InitializeReturnData({bunniToken: token, key: key})
+        );
     }
 
     /// -----------------------------------------------------------------------

@@ -60,7 +60,7 @@ library HookletLib {
         }
     }
 
-    function beforeInitialize(IHooklet self, address sender, IBunniHub.DeployBunniTokenParams calldata params)
+    function hookletBeforeInitialize(IHooklet self, address sender, IBunniHub.DeployBunniTokenParams calldata params)
         internal
         noSelfCall(self, sender)
     {
@@ -71,7 +71,7 @@ library HookletLib {
         }
     }
 
-    function afterInitialize(
+    function hookletAfterInitialize(
         IHooklet self,
         address sender,
         IBunniHub.DeployBunniTokenParams calldata params,
@@ -85,7 +85,7 @@ library HookletLib {
         }
     }
 
-    function beforeDeposit(IHooklet self, address sender, IBunniHub.DepositParams calldata params)
+    function hookletBeforeDeposit(IHooklet self, address sender, IBunniHub.DepositParams calldata params)
         internal
         noSelfCall(self, sender)
     {
@@ -94,7 +94,7 @@ library HookletLib {
         }
     }
 
-    function afterDeposit(
+    function hookletAfterDeposit(
         IHooklet self,
         address sender,
         IBunniHub.DepositParams calldata params,
@@ -107,7 +107,7 @@ library HookletLib {
         }
     }
 
-    function beforeWithdraw(IHooklet self, address sender, IBunniHub.WithdrawParams calldata params)
+    function hookletBeforeWithdraw(IHooklet self, address sender, IBunniHub.WithdrawParams calldata params)
         internal
         noSelfCall(self, sender)
     {
@@ -118,7 +118,7 @@ library HookletLib {
         }
     }
 
-    function afterWithdraw(
+    function hookletAfterWithdraw(
         IHooklet self,
         address sender,
         IBunniHub.WithdrawParams calldata params,
@@ -131,13 +131,15 @@ library HookletLib {
         }
     }
 
-    function beforeSwap(IHooklet self, address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
+    function hookletBeforeSwap(
+        IHooklet self,
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params
+    )
         internal
         noSelfCall(self, sender)
-        returns (
-            IHooklet.BeforeSwapFeeOverride memory feeOverride,
-            IHooklet.BeforeSwapPriceOverride memory priceOverride
-        )
+        returns (bool feeOverridden, uint24 fee, bool priceOverridden, uint160 sqrtPriceX96)
     {
         if (self.hasPermission(BEFORE_SWAP_FLAG)) {
             bytes memory result = self.callHooklet(
@@ -147,29 +149,34 @@ library HookletLib {
                 (self.hasPermission(BEFORE_SWAP_OVERRIDE_FEE_FLAG), self.hasPermission(BEFORE_SWAP_OVERRIDE_PRICE_FLAG));
             if (canOverrideFee || canOverridePrice) {
                 // parse override data
-                (, feeOverride, priceOverride) =
-                    abi.decode(result, (bytes4, IHooklet.BeforeSwapFeeOverride, IHooklet.BeforeSwapPriceOverride));
+                (
+                    ,
+                    IHooklet.BeforeSwapFeeOverride memory feeOverride,
+                    IHooklet.BeforeSwapPriceOverride memory priceOverride
+                ) = abi.decode(result, (bytes4, IHooklet.BeforeSwapFeeOverride, IHooklet.BeforeSwapPriceOverride));
 
                 // ensure that the hooklet is allowed to override the fee and/or price
                 // if the hooklet doesn't have a permission but the override is set, the override is ignored
-                feeOverride.overridden = canOverrideFee && feeOverride.overridden;
-                priceOverride.overridden = canOverridePrice && priceOverride.overridden;
+                feeOverridden = canOverrideFee && feeOverride.overridden;
+                fee = feeOverride.fee;
+                priceOverridden = canOverridePrice && priceOverride.overridden;
+                sqrtPriceX96 = priceOverride.sqrtPriceX96;
             }
         }
     }
 
-    function afterSwap(
+    /// @dev The hasPermission check is done outside of this function in order to avoid unnecessarily constructing returnData
+    /// when calling it.
+    function hookletAfterSwap(
         IHooklet self,
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         IHooklet.SwapReturnData memory returnData
     ) internal noSelfCall(self, sender) {
-        if (self.hasPermission(AFTER_SWAP_FLAG)) {
-            self.callHooklet(
-                IHooklet.afterSwap.selector, abi.encodeCall(IHooklet.afterSwap, (sender, key, params, returnData))
-            );
-        }
+        self.callHooklet(
+            IHooklet.afterSwap.selector, abi.encodeCall(IHooklet.afterSwap, (sender, key, params, returnData))
+        );
     }
 
     function hasPermission(IHooklet self, uint160 flag) internal pure returns (bool) {

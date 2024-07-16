@@ -45,6 +45,7 @@ import {Uniswapper} from "./mocks/Uniswapper.sol";
 import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {PoolState} from "../src/types/PoolState.sol";
+import {HookletLib} from "../src/lib/HookletLib.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
 import {IHooklet} from "../src/interfaces/IHooklet.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
@@ -1105,7 +1106,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         string calldata metadataURI,
         IHooklet hooklet_
     ) external {
-        vm.assume(bytes(name).length <= 32 && bytes(symbol).length <= 32);
+        vm.assume(
+            bytes(name).length <= 32 && bytes(symbol).length <= 32
+                && !HookletLib.hasPermission(hooklet_, HookletLib.BEFORE_INITIALIZE_FLAG)
+                && !HookletLib.hasPermission(hooklet_, HookletLib.AFTER_INITIALIZE_FLAG)
+        );
 
         Currency currency0 = Currency.wrap(address(token0));
         Currency currency1 = Currency.wrap(address(token1));
