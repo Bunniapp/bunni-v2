@@ -149,18 +149,20 @@ library HookletLib {
                 (self.hasPermission(BEFORE_SWAP_OVERRIDE_FEE_FLAG), self.hasPermission(BEFORE_SWAP_OVERRIDE_PRICE_FLAG));
             if (canOverrideFee || canOverridePrice) {
                 // parse override data
-                (
-                    ,
-                    IHooklet.BeforeSwapFeeOverride memory feeOverride,
-                    IHooklet.BeforeSwapPriceOverride memory priceOverride
-                ) = abi.decode(result, (bytes4, IHooklet.BeforeSwapFeeOverride, IHooklet.BeforeSwapPriceOverride));
+                // equivalent to the following Solidity code:
+                // (,feeOverridden, fee, priceOverridden, sqrtPriceX96) = abi.decode(result, (bytes4, bool, uint24, bool, uint160));
+                /// @solidity memory-safe-assembly
+                assembly {
+                    feeOverridden := mload(add(result, 0x40))
+                    fee := mload(add(result, 0x60))
+                    priceOverridden := mload(add(result, 0x80))
+                    sqrtPriceX96 := mload(add(result, 0xA0))
+                }
 
                 // ensure that the hooklet is allowed to override the fee and/or price
                 // if the hooklet doesn't have a permission but the override is set, the override is ignored
-                feeOverridden = canOverrideFee && feeOverride.overridden;
-                fee = feeOverride.fee;
-                priceOverridden = canOverridePrice && priceOverride.overridden;
-                sqrtPriceX96 = priceOverride.sqrtPriceX96;
+                feeOverridden = canOverrideFee && feeOverridden;
+                priceOverridden = canOverridePrice && priceOverridden;
             }
         }
     }

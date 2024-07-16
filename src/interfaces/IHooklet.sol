@@ -134,16 +134,14 @@ interface IHooklet {
     /// @param key The Uniswap v4 pool's key.
     /// @param params The swap's input parameters.
     /// @return selector IHooklet.beforeSwap.selector if the call was successful.
-    /// @return feeOverride Overrides the swap fee returned by the dynamic fee model. If the pool has
-    /// an am-AMM manager then the fee override is ignored.
-    /// @return priceOverride Overrides the pool's spot price before the swap is executed.
+    /// @return feeOverriden If true, the swap fee is overridden. If the pool has an am-AMM manager
+    /// then the fee override is ignored.
+    /// @return fee The swap fee to use for the swap. 6 decimals.
+    /// @return priceOverridden If true, the pool's spot price is overridden.
+    /// @return sqrtPriceX96 The spot price to use for the swap. Q96 value.
     function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
         external
-        returns (
-            bytes4 selector,
-            BeforeSwapFeeOverride memory feeOverride,
-            BeforeSwapPriceOverride memory priceOverride
-        );
+        returns (bytes4 selector, bool feeOverriden, uint24 fee, bool priceOverridden, uint160 sqrtPriceX96);
 
     /// @notice Called after a swap operation.
     /// @param sender The address of the account that initiated the swap.
