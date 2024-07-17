@@ -2,9 +2,13 @@
 
 pragma solidity ^0.8.19;
 
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
+
+import "../base/Constants.sol";
 import {IHooklet} from "../interfaces/IHooklet.sol";
 import {IBunniHub} from "../interfaces/IBunniHub.sol";
 
@@ -12,7 +16,9 @@ import {IBunniHub} from "../interfaces/IBunniHub.sol";
 library HookletLib {
     using CustomRevert for bytes4;
     using HookletLib for IHooklet;
+    using FixedPointMathLib for *;
 
+    uint160 internal constant ALL_FLAGS_MASK = 0x3FF;
     uint160 internal constant BEFORE_INITIALIZE_FLAG = 1 << 9;
     uint160 internal constant AFTER_INITIALIZE_FLAG = 1 << 8;
     uint160 internal constant BEFORE_DEPOSIT_FLAG = 1 << 7;
@@ -194,6 +200,11 @@ library HookletLib {
                 // if the hooklet doesn't have a permission but the override is set, the override is ignored
                 feeOverridden = canOverrideFee && feeOverridden;
                 priceOverridden = canOverridePrice && priceOverridden;
+
+                // clamp the override values to the valid range
+                fee = feeOverridden ? uint24(fee.clamp(0, SWAP_FEE_BASE)) : 0;
+                sqrtPriceX96 =
+                    priceOverridden ? uint160(sqrtPriceX96.clamp(TickMath.MIN_SQRT_PRICE, TickMath.MAX_SQRT_PRICE)) : 0;
             }
         }
     }
@@ -236,6 +247,11 @@ library HookletLib {
             // if the hooklet doesn't have a permission but the override is set, the override is ignored
             feeOverridden = canOverrideFee && feeOverridden;
             priceOverridden = canOverridePrice && priceOverridden;
+
+            // clamp the override values to the valid range
+            fee = feeOverridden ? uint24(fee.clamp(0, SWAP_FEE_BASE)) : 0;
+            sqrtPriceX96 =
+                priceOverridden ? uint160(sqrtPriceX96.clamp(TickMath.MIN_SQRT_PRICE, TickMath.MAX_SQRT_PRICE)) : 0;
         }
     }
 

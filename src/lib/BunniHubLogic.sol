@@ -532,7 +532,7 @@ library BunniHubLogic {
                 data: abi.encodePacked(
                     address(this), params.currency0, params.currency1, params.name, params.symbol, env.poolManager
                 ),
-                salt: params.salt
+                salt: keccak256(abi.encodePacked(msgSender, params.salt)) // hash sender into salt to prevent griefing via frontrunning
             })
         );
         token.initialize(params.owner, params.metadataURI);
