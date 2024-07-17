@@ -10,7 +10,7 @@ contract HookletMock is IHooklet {
     bool public priceOverridden;
     uint160 public sqrtPriceX96;
 
-    function beforeInitialize(address sender, IBunniHub.DeployBunniTokenParams calldata params)
+    function beforeInitialize(address, /* sender */ IBunniHub.DeployBunniTokenParams calldata /* params */ )
         external
         pure
         returns (bytes4 selector)
@@ -19,14 +19,14 @@ contract HookletMock is IHooklet {
     }
 
     function afterInitialize(
-        address sender,
-        IBunniHub.DeployBunniTokenParams calldata params,
-        InitializeReturnData calldata returnData
+        address, /* sender */
+        IBunniHub.DeployBunniTokenParams calldata, /* params */
+        InitializeReturnData calldata /* returnData */
     ) external pure returns (bytes4 selector) {
         return IHooklet.afterInitialize.selector;
     }
 
-    function beforeDeposit(address sender, IBunniHub.DepositParams calldata params)
+    function beforeDeposit(address, /* sender */ IBunniHub.DepositParams calldata /* params */ )
         external
         pure
         returns (bytes4 selector)
@@ -35,14 +35,14 @@ contract HookletMock is IHooklet {
     }
 
     function afterDeposit(
-        address sender,
-        IBunniHub.DepositParams calldata params,
-        DepositReturnData calldata returnData
+        address, /* sender */
+        IBunniHub.DepositParams calldata, /* params */
+        DepositReturnData calldata /* returnData */
     ) external pure returns (bytes4 selector) {
         return IHooklet.afterDeposit.selector;
     }
 
-    function beforeWithdraw(address sender, IBunniHub.WithdrawParams calldata params)
+    function beforeWithdraw(address, /* sender */ IBunniHub.WithdrawParams calldata /* params */ )
         external
         pure
         returns (bytes4 selector)
@@ -51,14 +51,18 @@ contract HookletMock is IHooklet {
     }
 
     function afterWithdraw(
-        address sender,
-        IBunniHub.WithdrawParams calldata params,
-        WithdrawReturnData calldata returnData
+        address, /* sender */
+        IBunniHub.WithdrawParams calldata, /* params */
+        WithdrawReturnData calldata /* returnData */
     ) external pure returns (bytes4 selector) {
         return IHooklet.afterWithdraw.selector;
     }
 
-    function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
+    function beforeSwap(
+        address, /* sender */
+        PoolKey calldata, /* key */
+        IPoolManager.SwapParams calldata /* params */
+    )
         external
         view
         returns (bytes4 selector, bool feeOverriden_, uint24 fee_, bool priceOverridden_, uint160 sqrtPriceX96_)
@@ -66,7 +70,11 @@ contract HookletMock is IHooklet {
         return (IHooklet.beforeSwap.selector, feeOverridden, fee, priceOverridden, sqrtPriceX96);
     }
 
-    function beforeSwapView(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
+    function beforeSwapView(
+        address, /* sender */
+        PoolKey calldata, /* key */
+        IPoolManager.SwapParams calldata /* params */
+    )
         external
         view
         returns (bytes4 selector, bool feeOverriden_, uint24 fee_, bool priceOverridden_, uint160 sqrtPriceX96_)
@@ -75,11 +83,11 @@ contract HookletMock is IHooklet {
     }
 
     function afterSwap(
-        address sender,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        SwapReturnData calldata returnData
-    ) external view returns (bytes4 selector) {
+        address, /* sender */
+        PoolKey calldata, /* key */
+        IPoolManager.SwapParams calldata, /* params */
+        SwapReturnData calldata /* returnData */
+    ) external pure returns (bytes4 selector) {
         return IHooklet.afterSwap.selector;
     }
 
