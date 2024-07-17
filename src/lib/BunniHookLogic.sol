@@ -34,7 +34,9 @@ import {Oracle} from "./Oracle.sol";
 import "../interfaces/IBunniHook.sol";
 import {queryLDF} from "./QueryLDF.sol";
 import {BunniHook} from "../BunniHook.sol";
+import {HookletLib} from "./HookletLib.sol";
 import {BunniSwapMath} from "./BunniSwapMath.sol";
+import {IHooklet} from "../interfaces/IHooklet.sol";
 import {IBunniHub} from "../interfaces/IBunniHub.sol";
 import {OrderHashMemory} from "./OrderHashMemory.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
@@ -42,9 +44,11 @@ import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 /// @title BunniHookLogic
 /// @notice Split from BunniHook to reduce contract size below the Spurious Dragon limit
 library BunniHookLogic {
+    using TickMath for *;
     using SafeCastLib for *;
     using SafeTransferLib for *;
     using FixedPointMathLib for *;
+    using HookletLib for IHooklet;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
@@ -139,29 +143,46 @@ library BunniHookLogic {
             BeforeSwapDelta beforeSwapDelta
         )
     {
-        // ensure swap makes sense
+        // skip 0 amount swaps
         if (params.amountSpecified == 0) {
             return (false, address(0), Currency.wrap(address(0)), 0, BeforeSwapDeltaLibrary.ZERO_DELTA);
         }
+
+        // get pool state
         PoolId id = key.toId();
         Slot0 memory slot0 = s.slot0s[id];
-        uint160 sqrtPriceX96 = slot0.sqrtPriceX96;
+        PoolState memory bunniState = env.hub.poolState(id);
+
+        // hooklet call
+        (bool feeOverridden, uint24 feeOverride, bool priceOverridden, uint160 sqrtPriceX96Override) =
+            bunniState.hooklet.hookletBeforeSwap(sender, key, params);
+
+        // override price if needed
+        if (priceOverridden) {
+            slot0.sqrtPriceX96 = sqrtPriceX96Override;
+            slot0.tick = sqrtPriceX96Override.getTickAtSqrtPrice();
+        }
+
+        // ensure swap makes sense
         if (
-            sqrtPriceX96 == 0
+            slot0.sqrtPriceX96 == 0
                 || (
                     params.zeroForOne
-                        && (params.sqrtPriceLimitX96 >= sqrtPriceX96 || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE)
+                        && (
+                            params.sqrtPriceLimitX96 >= slot0.sqrtPriceX96
+                                || params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE
+                        )
                 )
                 || (
                     !params.zeroForOne
-                        && (params.sqrtPriceLimitX96 <= sqrtPriceX96 || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE)
+                        && (
+                            params.sqrtPriceLimitX96 <= slot0.sqrtPriceX96
+                                || params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE
+                        )
                 ) || params.amountSpecified > type(int128).max || params.amountSpecified < type(int128).min
         ) {
             revert BunniHook__InvalidSwap();
         }
-
-        // get pool state
-        PoolState memory bunniState = env.hub.poolState(id);
 
         // decode hook params
         DecodedHookParams memory hookParams = _decodeParams(bunniState.hookParams);
@@ -177,7 +198,8 @@ library BunniHookLogic {
             ? _getTwap(s, id, slot0.tick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality)
             : int24(0);
         int24 feeMeanTick = (
-            !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
+            !feeOverridden && !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax
+                && hookParams.feeQuadraticMultiplier != 0
         )
             ? _getTwap(
                 s, id, slot0.tick, hookParams.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
@@ -203,7 +225,7 @@ library BunniHookLogic {
             bool shouldSurge
         ) = queryLDF({
             key: key,
-            sqrtPriceX96: sqrtPriceX96,
+            sqrtPriceX96: slot0.sqrtPriceX96,
             tick: slot0.tick,
             arithmeticMeanTick: arithmeticMeanTick,
             ldf: bunniState.liquidityDensityFunction,
@@ -227,7 +249,7 @@ library BunniHookLogic {
                 liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
                 totalDensity0X96: totalDensity0X96,
                 totalDensity1X96: totalDensity1X96,
-                sqrtPriceX96: sqrtPriceX96,
+                sqrtPriceX96: slot0.sqrtPriceX96,
                 currentTick: slot0.tick,
                 liquidityDensityFunction: bunniState.liquidityDensityFunction,
                 arithmeticMeanTick: arithmeticMeanTick,
@@ -241,8 +263,8 @@ library BunniHookLogic {
 
         // ensure swap never moves price in the opposite direction
         if (
-            (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
-                || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
+            (params.zeroForOne && updatedSqrtPriceX96 > slot0.sqrtPriceX96)
+                || (!params.zeroForOne && updatedSqrtPriceX96 < slot0.sqrtPriceX96)
         ) {
             revert BunniHook__InvalidSwap();
         }
@@ -283,6 +305,10 @@ library BunniHookLogic {
         }
 
         // charge swap fee
+        // precedence:
+        // 1) am-AMM fee
+        // 2) hooklet override fee
+        // 3) dynamic fee
         (Currency inputToken, Currency outputToken) =
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         uint24 swapFee;
@@ -299,15 +325,19 @@ library BunniHookLogic {
                     )
                     : amAmmSwapFee
             )
-            : computeDynamicSwapFee(
-                updatedSqrtPriceX96,
-                feeMeanTick,
-                lastSurgeTimestamp,
-                hookParams.feeMin,
-                hookParams.feeMax,
-                hookParams.feeQuadraticMultiplier,
-                hookParams.surgeFee,
-                hookParams.surgeFeeHalfLife
+            : (
+                feeOverridden
+                    ? feeOverride
+                    : computeDynamicSwapFee(
+                        updatedSqrtPriceX96,
+                        feeMeanTick,
+                        lastSurgeTimestamp,
+                        hookParams.feeMin,
+                        hookParams.feeMax,
+                        hookParams.feeQuadraticMultiplier,
+                        hookParams.surgeFee,
+                        hookParams.surgeFeeHalfLife
+                    )
             );
         uint256 hookFeesAmount;
         uint256 hookHandleSwapInputAmount;
@@ -422,6 +452,23 @@ library BunniHookLogic {
                     updatedIntermediate: updatedIntermediate,
                     updatedIndex: updatedIndex,
                     updatedCardinality: updatedCardinality
+                })
+            );
+        }
+
+        // hooklet call
+        if (bunniState.hooklet.hasPermission(HookletLib.AFTER_SWAP_FLAG)) {
+            bunniState.hooklet.hookletAfterSwap(
+                sender,
+                key,
+                params,
+                IHooklet.SwapReturnData({
+                    updatedSqrtPriceX96: updatedSqrtPriceX96,
+                    updatedTick: updatedTick,
+                    inputAmount: inputAmount,
+                    outputAmount: outputAmount,
+                    swapFee: swapFee,
+                    totalLiquidity: totalLiquidity
                 })
             );
         }

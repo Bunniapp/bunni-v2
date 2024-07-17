@@ -8,7 +8,7 @@ import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManage
 import {IBunniHub} from "./IBunniHub.sol";
 
 interface IBunniQuoter {
-    function quoteSwap(PoolKey memory key, IPoolManager.SwapParams memory params)
+    function quoteSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
         external
         view
         returns (

@@ -25,6 +25,7 @@ import {BunniZone} from "../src/BunniZone.sol";
 import {BunniHook} from "../src/BunniHook.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {BunniToken} from "../src/BunniToken.sol";
+import {IHooklet} from "../src/interfaces/IHooklet.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
@@ -143,6 +144,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
                 tickSpacing: 10,
                 twapSecondsAgo: 7 days,
                 liquidityDensityFunction: ldf,
+                hooklet: IHooklet(address(0)),
                 statefulLdf: true,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
@@ -159,7 +161,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
                 name: "BunniToken",
                 symbol: "BUNNI",
                 owner: address(this),
-                metadataURI: ""
+                metadataURI: "",
+                salt: bytes32(0)
             })
         );
 
