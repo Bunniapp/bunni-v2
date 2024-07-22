@@ -17,7 +17,6 @@ library LibBuyTheDipGeometricDistribution {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
-    uint256 internal constant WEIGHT_BASE = 1e9; // weight uses 9 decimals in ldfParams
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query

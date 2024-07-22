@@ -34,7 +34,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
             bool shouldSurge
         )
     {
-        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode) =
+        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightCarpet, ShiftMode shiftMode) =
             LibCarpetedGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -43,7 +43,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
         }
 
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) =
-            LibCarpetedGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96, weightMain);
+        LibCarpetedGeometricDistribution.query(roundedTick, key.tickSpacing, minTick, length, alphaX96, weightCarpet);
         newLdfState = _encodeState(minTick);
     }
 
@@ -64,7 +64,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
         override
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
-        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode) =
+        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightCarpet, ShiftMode shiftMode) =
             LibCarpetedGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -80,7 +80,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
             minTick,
             length,
             alphaX96,
-            weightMain
+            weightCarpet
         );
     }
 
@@ -94,7 +94,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
-        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode) =
+        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightCarpet, ShiftMode shiftMode) =
             LibCarpetedGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -102,7 +102,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
         }
 
         return LibCarpetedGeometricDistribution.cumulativeAmount0(
-            roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96, weightMain
+            roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96, weightCarpet
         );
     }
 
@@ -116,7 +116,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfParams,
         bytes32 ldfState
     ) external pure override returns (uint256) {
-        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode) =
+        (int24 minTick, int24 length, uint256 alphaX96, uint256 weightCarpet, ShiftMode shiftMode) =
             LibCarpetedGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
         if (initialized) {
@@ -124,7 +124,7 @@ contract CarpetedGeometricDistribution is ILiquidityDensityFunction {
         }
 
         return LibCarpetedGeometricDistribution.cumulativeAmount1(
-            roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96, weightMain
+            roundedTick, totalLiquidity, key.tickSpacing, minTick, length, alphaX96, weightCarpet
         );
     }
 

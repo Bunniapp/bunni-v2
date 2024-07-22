@@ -24,7 +24,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint256 alpha1,
         uint32 weight0,
         uint32 weight1,
-        uint256 weightMain
+        uint256 weightCarpet
     ) external virtual {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -44,7 +44,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         vm.assume(alpha0 != 1e8); // 1e8 is a special case that causes overflow
         length0 = int24(bound(length0, 1, (maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1));
 
-        weightMain = bound(weightMain, 0.5e9, 0.99e9);
+        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
@@ -65,7 +65,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                uint32(weightMain)
+                uint32(weightCarpet)
             )
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
@@ -82,7 +82,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint256 alpha1,
         uint32 weight0,
         uint32 weight1,
-        uint256 weightMain
+        uint256 weightCarpet
     ) external virtual {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -103,7 +103,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         vm.assume((maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1 >= 1);
         length0 = int24(bound(length0, 1, (maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1));
 
-        weightMain = bound(weightMain, 0.5e9, 0.99e9);
+        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
@@ -124,7 +124,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                uint32(weightMain)
+                uint32(weightCarpet)
             )
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
@@ -143,7 +143,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint256 alpha1,
         uint32 weight0,
         uint32 weight1,
-        uint256 weightMain
+        uint256 weightCarpet
     ) external virtual {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -166,7 +166,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
 
-        weightMain = bound(weightMain, 0.5e9, 0.99e9);
+        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
@@ -187,7 +187,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                uint32(weightMain)
+                uint32(weightCarpet)
             )
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
@@ -225,7 +225,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint256 alpha1,
         uint32 weight0,
         uint32 weight1,
-        uint256 weightMain
+        uint256 weightCarpet
     ) external virtual {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -248,7 +248,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
 
-        weightMain = bound(weightMain, 0.5e9, 0.99e9);
+        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
@@ -269,7 +269,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                uint32(weightMain)
+                uint32(weightCarpet)
             )
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
@@ -307,7 +307,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint256 alpha1,
         uint32 weight0,
         uint32 weight1,
-        uint256 weightMain
+        uint256 weightCarpet
     ) external virtual {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -330,7 +330,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
 
-        weightMain = bound(weightMain, 0.5e9, 0.99e9);
+        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
         console2.log("tick", tick);
         console2.log("tickSpacing", tickSpacing);
@@ -352,7 +352,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                uint32(weightMain)
+                uint32(weightCarpet)
             )
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
@@ -404,7 +404,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint256 alpha1,
         uint32 weight0,
         uint32 weight1,
-        uint256 weightMain
+        uint256 weightCarpet
     ) external virtual {
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -427,7 +427,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
 
-        weightMain = bound(weightMain, 0.5e9, 0.99e9);
+        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
         console2.log("tick", tick);
         console2.log("tickSpacing", tickSpacing);
@@ -449,7 +449,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                uint32(weightMain)
+                uint32(weightCarpet)
             )
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
@@ -501,7 +501,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint32 alpha1 = 1.1e8;
         uint32 weight0 = 1;
         uint32 weight1 = 1;
-        uint32 weightMain = 0.9e9;
+        uint32 weightCarpet = 0.9e9;
         PoolKey memory key;
         key.tickSpacing = tickSpacing;
 
@@ -517,7 +517,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                weightMain
+                weightCarpet
             )
         );
         assertFalse(ldf.isValidParams(key, 0, ldfParams));
@@ -534,7 +534,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                weightMain
+                weightCarpet
             )
         );
         assertFalse(ldf.isValidParams(key, 0, ldfParams));
@@ -551,7 +551,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                weightMain
+                weightCarpet
             )
         );
         assertTrue(ldf.isValidParams(key, 0, ldfParams));
@@ -565,7 +565,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint32 alpha1 = 1.1e8;
         uint32 weight0 = 1;
         uint32 weight1 = 1;
-        uint32 weightMain = 0.9e9;
+        uint32 weightCarpet = 0.9e9;
         ShiftMode shiftMode = ShiftMode.RIGHT;
         PoolKey memory key;
         key.tickSpacing = tickSpacing;
@@ -582,7 +582,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                weightMain
+                weightCarpet
             )
         );
         assertTrue(ldf.isValidParams(key, 1, ldfParams), "invalid params 0");
@@ -603,7 +603,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
                 int16(length1),
                 uint32(alpha1),
                 weight1,
-                weightMain
+                weightCarpet
             )
         );
         assertTrue(ldf.isValidParams(key, 1, ldfParams), "invalid params 1");

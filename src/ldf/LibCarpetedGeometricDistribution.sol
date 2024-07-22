@@ -18,7 +18,6 @@ library LibCarpetedGeometricDistribution {
     using FixedPointMathLib for uint256;
 
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
-    uint256 internal constant WEIGHT_BASE = 1e9; // weight uses 9 decimals in ldfParams
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
@@ -33,22 +32,22 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightMain
+        uint256 weightCarpet
     )
         internal
         pure
         returns (uint256 liquidityDensityX96_, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96)
     {
         // compute liquidityDensityX96
-        liquidityDensityX96_ = liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96, weightMain);
+        liquidityDensityX96_ = liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96, weightCarpet);
 
         // compute cumulativeAmount0DensityX96
         cumulativeAmount0DensityX96 =
-            cumulativeAmount0(roundedTick + tickSpacing, Q96, tickSpacing, minTick, length, alphaX96, weightMain);
+            cumulativeAmount0(roundedTick + tickSpacing, Q96, tickSpacing, minTick, length, alphaX96, weightCarpet);
 
         // compute cumulativeAmount1DensityX96
         cumulativeAmount1DensityX96 =
-            cumulativeAmount1(roundedTick - tickSpacing, Q96, tickSpacing, minTick, length, alphaX96, weightMain);
+            cumulativeAmount1(roundedTick - tickSpacing, Q96, tickSpacing, minTick, length, alphaX96, weightCarpet);
     }
 
     /// @dev Computes the cumulative amount of token0 in the rounded ticks [roundedTick, tickUpper).
@@ -59,7 +58,7 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightMain
+        uint256 weightCarpet
     ) internal pure returns (uint256 amount0) {
         (
             uint256 leftCarpetLiquidity,
@@ -67,7 +66,7 @@ library LibCarpetedGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightCarpet);
 
         return LibUniformDistribution.cumulativeAmount0(
             roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
@@ -86,7 +85,7 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightMain
+        uint256 weightCarpet
     ) internal pure returns (uint256 amount1) {
         (
             uint256 leftCarpetLiquidity,
@@ -94,7 +93,7 @@ library LibCarpetedGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightCarpet);
 
         return LibUniformDistribution.cumulativeAmount1(
             roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
@@ -116,7 +115,7 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightMain,
+        uint256 weightCarpet,
         bool roundUp
     ) internal pure returns (bool success, int24 roundedTick) {
         // try LDFs in the order of right carpet, main, left carpet
@@ -126,7 +125,10 @@ library LibCarpetedGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightCarpet);
+        if (cumulativeAmount0_ == 0) {
+            return (true, maxUsableTick);
+        }
         uint256 rightCarpetCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
             minTick + length * tickSpacing,
             rightCarpetLiquidity,
@@ -178,7 +180,7 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightMain,
+        uint256 weightCarpet,
         bool roundUp
     ) internal pure returns (bool success, int24 roundedTick) {
         // try LDFs in the order of left carpet, main, right carpet
@@ -188,7 +190,10 @@ library LibCarpetedGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightCarpet);
+        if (cumulativeAmount1_ == 0) {
+            return (true, minUsableTick - tickSpacing);
+        }
         uint256 leftCarpetCumulativeAmount1 =
             LibUniformDistribution.cumulativeAmount1(minTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick);
 
@@ -219,7 +224,7 @@ library LibCarpetedGeometricDistribution {
         return (false, 0);
     }
 
-    function checkMinLiquidityDensity(int24 tickSpacing, int24 length, uint256 alpha, uint256 weightMain)
+    function checkMinLiquidityDensity(int24 tickSpacing, int24 length, uint256 alpha, uint256 weightCarpet)
         internal
         pure
         returns (bool)
@@ -242,7 +247,7 @@ library LibCarpetedGeometricDistribution {
                     minTick + (length - 1) * tickSpacing, tickSpacing, minTick, length, alphaX96
                 );
             }
-            minLiquidityDensityX96 = minLiquidityDensityX96.mulDiv(weightMain, WEIGHT_BASE);
+            minLiquidityDensityX96 = minLiquidityDensityX96.mulWad(WAD - weightCarpet);
             if (minLiquidityDensityX96 < MIN_LIQUIDITY_DENSITY) {
                 return false;
             }
@@ -257,11 +262,11 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightMain
+        uint256 weightCarpet
     ) internal pure returns (uint256) {
         if (roundedTick >= minTick && roundedTick < minTick + length * tickSpacing) {
             return LibGeometricDistribution.liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96)
-                .mulDiv(weightMain, WEIGHT_BASE);
+                .mulWad(WAD - weightCarpet);
         } else {
             (int24 minUsableTick, int24 maxUsableTick) =
                 (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
@@ -269,7 +274,7 @@ library LibCarpetedGeometricDistribution {
             if (numRoundedTicksCarpeted <= 0) {
                 return 0;
             }
-            uint256 mainLiquidity = Q96.mulDiv(weightMain, WEIGHT_BASE);
+            uint256 mainLiquidity = Q96.mulWad(WAD - weightCarpet);
             uint256 carpetLiquidity = Q96 - mainLiquidity;
             return carpetLiquidity / uint24(numRoundedTicksCarpeted);
         }
@@ -287,7 +292,7 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightMain
+        uint256 weightCarpet
     ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
@@ -305,7 +310,7 @@ library LibCarpetedGeometricDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount0(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightMain, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet, true
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -323,7 +328,7 @@ library LibCarpetedGeometricDistribution {
             //       ▼
             //      rick
             cumulativeAmount =
-                cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightMain);
+                cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet);
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
@@ -339,7 +344,7 @@ library LibCarpetedGeometricDistribution {
             //    ▼
             //   rick - tickSpacing
             swapLiquidity = (
-                liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96, weightMain)
+                liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96, weightCarpet)
                     * totalLiquidity
             ) >> 96;
         } else {
@@ -358,7 +363,7 @@ library LibCarpetedGeometricDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount1(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightMain, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet, true
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -376,7 +381,7 @@ library LibCarpetedGeometricDistribution {
             //    ▼
             //   rick - tickSpacing
             cumulativeAmount = cumulativeAmount1(
-                roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightMain
+                roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
@@ -392,7 +397,7 @@ library LibCarpetedGeometricDistribution {
             //       ▼
             //      rick
             swapLiquidity = (
-                liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96, weightMain) * totalLiquidity
+                liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96, weightCarpet) * totalLiquidity
             ) >> 96;
         }
     }
@@ -402,7 +407,7 @@ library LibCarpetedGeometricDistribution {
         int24 tickSpacing,
         int24 minTick,
         int24 length,
-        uint256 weightMain
+        uint256 weightCarpet
     )
         internal
         pure
@@ -419,7 +424,7 @@ library LibCarpetedGeometricDistribution {
         if (numRoundedTicksCarpeted <= 0) {
             return (0, totalLiquidity, 0, minUsableTick, maxUsableTick);
         }
-        mainLiquidity = totalLiquidity.mulDiv(weightMain, WEIGHT_BASE);
+        mainLiquidity = totalLiquidity.mulWad(WAD - weightCarpet);
         uint256 carpetLiquidity = totalLiquidity - mainLiquidity;
         rightCarpetLiquidity = carpetLiquidity.mulDiv(
             uint24((maxUsableTick - minTick) / tickSpacing - length), uint24(numRoundedTicksCarpeted)
@@ -430,25 +435,25 @@ library LibCarpetedGeometricDistribution {
     /// @return minTick The minimum rounded tick of the distribution
     /// @return length The length of the geometric distribution in number of rounded ticks
     /// @return alphaX96 The alpha of the geometric distribution
-    /// @return weightMain The weight of the geometric distribution, 9 decimals
+    /// @return weightCarpet The weight of the carpet distribution, 18 decimals. 32 bits means the max weight is 4.295e-9.
     /// @return shiftMode The shift mode of the distribution
     function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
         internal
         pure
-        returns (int24 minTick, int24 length, uint256 alphaX96, uint256 weightMain, ShiftMode shiftMode)
+        returns (int24 minTick, int24 length, uint256 alphaX96, uint256 weightCarpet, ShiftMode shiftMode)
     {
-        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightCarpet - 4 bytes |
         (minTick, length, alphaX96, shiftMode) = LibGeometricDistribution.decodeParams(twapTick, tickSpacing, ldfParams);
-        weightMain = uint32(bytes4(ldfParams << 80));
+        weightCarpet = uint32(bytes4(ldfParams << 80));
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightMain - 4 bytes |
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length - 2 bytes | alpha - 4 bytes | weightCarpet - 4 bytes |
         int24 length = int24(int16(uint16(bytes2(ldfParams << 32))));
         uint32 alpha = uint32(bytes4(ldfParams << 48));
-        uint32 weightMain = uint32(bytes4(ldfParams << 80));
+        uint32 weightCarpet = uint32(bytes4(ldfParams << 80));
 
-        return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightMain != 0
-            && weightMain < WEIGHT_BASE && checkMinLiquidityDensity(tickSpacing, length, alpha, weightMain);
+        return LibGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightCarpet != 0
+            && checkMinLiquidityDensity(tickSpacing, length, alpha, weightCarpet);
     }
 }

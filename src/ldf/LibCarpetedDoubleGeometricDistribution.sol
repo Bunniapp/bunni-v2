@@ -18,7 +18,6 @@ library LibCarpetedDoubleGeometricDistribution {
     using FixedPointMathLib for uint256;
 
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
-    uint256 internal constant WEIGHT_BASE = 1e9; // weight uses 9 decimals in ldfParams
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
 
     struct Params {
@@ -29,7 +28,7 @@ library LibCarpetedDoubleGeometricDistribution {
         int24 length1;
         uint256 alpha1X96;
         uint256 weight1;
-        uint256 weightMain;
+        uint256 weightCarpet;
         ShiftMode shiftMode;
     }
 
@@ -67,7 +66,7 @@ library LibCarpetedDoubleGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightCarpet);
 
         return LibUniformDistribution.cumulativeAmount0(
             roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, params.minTick
@@ -102,7 +101,7 @@ library LibCarpetedDoubleGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightCarpet);
 
         return LibUniformDistribution.cumulativeAmount1(
             roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, params.minTick
@@ -143,7 +142,10 @@ library LibCarpetedDoubleGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightCarpet);
+        if (cumulativeAmount0_ == 0) {
+            return (true, maxUsableTick);
+        }
         uint256 rightCarpetCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
             params.minTick + length * tickSpacing,
             rightCarpetLiquidity,
@@ -222,7 +224,10 @@ library LibCarpetedDoubleGeometricDistribution {
             uint256 rightCarpetLiquidity,
             int24 minUsableTick,
             int24 maxUsableTick
-        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightMain);
+        ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, params.minTick, length, params.weightCarpet);
+        if (cumulativeAmount1_ == 0) {
+            return (true, minUsableTick - tickSpacing);
+        }
         uint256 leftCarpetCumulativeAmount1 = LibUniformDistribution.cumulativeAmount1(
             params.minTick, leftCarpetLiquidity, tickSpacing, minUsableTick, params.minTick
         );
@@ -295,7 +300,7 @@ library LibCarpetedDoubleGeometricDistribution {
                 params.alpha1X96,
                 params.weight0,
                 params.weight1
-            ).mulDiv(params.weightMain, WEIGHT_BASE);
+            ).mulWad(WAD - params.weightCarpet);
         } else {
             (int24 minUsableTick, int24 maxUsableTick) =
                 (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
@@ -303,7 +308,7 @@ library LibCarpetedDoubleGeometricDistribution {
             if (numRoundedTicksCarpeted <= 0) {
                 return 0;
             }
-            uint256 mainLiquidity = Q96.mulDiv(params.weightMain, WEIGHT_BASE);
+            uint256 mainLiquidity = Q96.mulWad(WAD - params.weightCarpet);
             uint256 carpetLiquidity = Q96 - mainLiquidity;
             return carpetLiquidity / uint24(numRoundedTicksCarpeted);
         }
@@ -423,7 +428,7 @@ library LibCarpetedDoubleGeometricDistribution {
         int24 tickSpacing,
         int24 minTick,
         int24 length,
-        uint256 weightMain
+        uint256 weightCarpet
     )
         internal
         pure
@@ -440,7 +445,7 @@ library LibCarpetedDoubleGeometricDistribution {
         if (numRoundedTicksCarpeted <= 0) {
             return (0, totalLiquidity, 0, minUsableTick, maxUsableTick);
         }
-        mainLiquidity = totalLiquidity.mulDiv(weightMain, WEIGHT_BASE);
+        mainLiquidity = totalLiquidity.mulWad(WAD - weightCarpet);
         uint256 carpetLiquidity = totalLiquidity - mainLiquidity;
         rightCarpetLiquidity = carpetLiquidity.mulDiv(
             uint24((maxUsableTick - minTick) / tickSpacing - length), uint24(numRoundedTicksCarpeted)
@@ -449,19 +454,18 @@ library LibCarpetedDoubleGeometricDistribution {
     }
 
     function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
-        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
+        // | shiftMode - 1 byte | minTickOrOffset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightCarpet - 4 bytes |
         int24 length0 = int24(int16(uint16(bytes2(ldfParams << 32))));
         uint32 alpha0 = uint32(bytes4(ldfParams << 48));
         uint32 weight0 = uint32(bytes4(ldfParams << 80));
         int24 length1 = int24(int16(uint16(bytes2(ldfParams << 112))));
         uint32 alpha1 = uint32(bytes4(ldfParams << 128));
         uint32 weight1 = uint32(bytes4(ldfParams << 160));
-        uint32 weightMain = uint32(bytes4(ldfParams << 192));
+        uint32 weightCarpet = uint32(bytes4(ldfParams << 192));
 
-        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightMain != 0
-            && weightMain < WEIGHT_BASE
+        return LibDoubleGeometricDistribution.isValidParams(tickSpacing, twapSecondsAgo, ldfParams) && weightCarpet != 0
             && LibDoubleGeometricDistribution.checkMinLiquidityDensity(
-                Q96.mulDiv(weightMain, WEIGHT_BASE), tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1
+                Q96.mulWad(WAD - weightCarpet), tickSpacing, length0, alpha0, weight0, length1, alpha1, weight1
             );
     }
 
@@ -473,15 +477,15 @@ library LibCarpetedDoubleGeometricDistribution {
     /// alpha1X96 The alpha of the left distribution
     /// weight0 The weight of the right distribution
     /// weight1 The weight of the left distribution
-    /// weightMain The weight of the main distribution, 9 decimals
+    /// weightCarpet The weight of the carpet distribution, 18 decimals. 32 bits means the max weight is 4.295e-9.
     /// shiftMode The shift mode of the distribution
     function decodeParams(int24 twapTick, int24 tickSpacing, bytes32 ldfParams)
         internal
         pure
         returns (Params memory params)
     {
-        // | shiftMode - 1 byte | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightMain - 4 bytes |
-        params.weightMain = uint32(bytes4(ldfParams << 192));
+        // | shiftMode - 1 byte | offset - 3 bytes | length0 - 2 bytes | alpha0 - 4 bytes | weight0 - 4 bytes | length1 - 2 bytes | alpha1 - 4 bytes | weight1 - 4 bytes | weightCarpet - 4 bytes |
+        params.weightCarpet = uint32(bytes4(ldfParams << 192));
         (
             params.minTick,
             params.length0,
