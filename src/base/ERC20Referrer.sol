@@ -305,7 +305,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             }
             // Emit the {Transfer} event.
             mstore(0x20, amount)
-            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, msgSender, shr(96, mload(0x0c)))
+            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, msgSender, to)
         }
         _afterTokenTransfer(msgSender, to, amount);
 
@@ -393,7 +393,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             }
             // Emit the {Transfer} event.
             mstore(0x20, amount)
-            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
+            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, from, to)
         }
         _afterTokenTransfer(from, to, amount);
 
@@ -449,7 +449,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             sstore(toScoreSlot, add(sload(toScoreSlot), amount))
             // Emit the {Transfer} event.
             mstore(0x20, amount)
-            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, 0, shr(96, mload(0x0c)))
+            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, 0, to)
         }
         _afterTokenTransfer(address(0), to, amount);
 
@@ -527,7 +527,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             }
             // Emit the {Transfer} event.
             mstore(0x20, amount)
-            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, 0, shr(96, mload(0x0c)))
+            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, 0, to)
         }
         _afterTokenTransfer(address(0), to, amount);
 
@@ -575,7 +575,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             sstore(fromScoreSlot, sub(sload(fromScoreSlot), amount))
             // Emit the {Transfer} event.
             mstore(0x00, amount)
-            log3(0x00, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, shl(96, from)), 0)
+            log3(0x00, 0x20, _TRANSFER_EVENT_SIGNATURE, from, 0)
         }
         _afterTokenTransfer(from, address(0), amount);
     }
@@ -638,7 +638,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             }
             // Emit the {Transfer} event.
             mstore(0x20, amount)
-            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
+            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, from, to)
         }
         _afterTokenTransfer(from, to, amount);
 
