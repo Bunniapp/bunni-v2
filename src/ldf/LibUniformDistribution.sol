@@ -17,6 +17,9 @@ library LibUniformDistribution {
     using TickMath for uint160;
     using SafeCastLib for uint256;
 
+    /// @dev Error allowance for sqrt price comparison. Needed due to error from TickMath.getSqrtPriceAtTick().
+    uint256 internal constant SQRT_PRICE_MAX_ERROR = 25;
+
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
     /// @param tickSpacing The spacing of the ticks
@@ -131,13 +134,26 @@ library LibUniformDistribution {
         }
         int24 tick = sqrtPrice.getTickAtSqrtPrice();
         if (roundUp) {
-            tick += tickSpacing - 1;
+            if (tick % tickSpacing == 0 && tick.getSqrtPriceAtTick() < sqrtPrice - SQRT_PRICE_MAX_ERROR) {
+                // getTickAtSqrtPrice erroneously rounded down to the rounded tick boundary
+                // need to round up to the next rounded tick
+                tick += tickSpacing;
+            } else {
+                tick += tickSpacing - 1;
+            }
         }
         success = true;
         roundedTick = roundTickSingle(tick, tickSpacing);
 
+        // ensure roundedTick is within the valid range
         if (roundedTick < tickLower || roundedTick > tickUpper) {
             return (false, 0);
+        }
+
+        // ensure that roundedTick is not tickUpper when cumulativeAmount0_ is non-zero and rounding down
+        // this can happen if the corresponding cumulative density is too small
+        if (!roundUp && roundedTick == tickUpper && cumulativeAmount0_ != 0) {
+            return (true, tickUpper - tickSpacing);
         }
     }
 
@@ -164,15 +180,28 @@ library LibUniformDistribution {
         if (sqrtPrice > sqrtRatioTickUpper) {
             return (false, 0);
         }
-        int24 tick = sqrtPrice.getTickAtSqrtPrice() - tickSpacing;
+        int24 tick = sqrtPrice.getTickAtSqrtPrice();
         if (roundUp) {
-            tick += tickSpacing - 1;
+            // handle the edge case where cumulativeAmount1_ is exactly the
+            // cumulative amount in [tickLower, tickUpper]
+            if (tick == tickUpper) {
+                tick -= 1;
+            }
+        } else {
+            tick -= tickSpacing;
         }
         success = true;
         roundedTick = roundTickSingle(tick, tickSpacing);
 
+        // ensure roundedTick is within the valid range
         if (roundedTick < tickLower - tickSpacing || roundedTick >= tickUpper) {
             return (false, 0);
+        }
+
+        // ensure that roundedTick is not (tickLower - tickSpacing) when cumulativeAmount1_ is non-zero and rounding up
+        // this can happen if the corresponding cumulative density is too small
+        if (roundUp && roundedTick == tickLower - tickSpacing && cumulativeAmount1_ != 0) {
+            return (true, tickLower);
         }
     }
 
