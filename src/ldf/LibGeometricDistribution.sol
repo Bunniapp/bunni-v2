@@ -23,6 +23,7 @@ library LibGeometricDistribution {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
+    int256 internal constant ROUND_TICK_TOLERANCE = 5e12;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
@@ -295,12 +296,12 @@ library LibGeometricDistribution {
         uint256 alphaX96,
         bool roundUp
     ) internal pure returns (bool success, int24 roundedTick) {
-        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.fullMulDiv(Q96, totalLiquidity);
-        if (cumulativeAmount0DensityX96 == 0) {
+        if (cumulativeAmount0_ == 0) {
             // return right boundary of distribution
             return (true, minTick + length * tickSpacing);
         }
 
+        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.fullMulDiv(Q96, totalLiquidity);
         uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtPriceAtTick();
         uint256 sqrtRatioMinTick = minTick.getSqrtPriceAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
@@ -316,12 +317,23 @@ library LibGeometricDistribution {
             uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
             uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, alphaX96 - Q96).fullMulDiv(
                 denominator, Q96 - sqrtRatioNegTickSpacing
-            );
+            ) >> 96; // numerator in cumulativeAmount0 divided by Q96
             uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtPriceAtTick();
-            uint256 tmp0 = sqrtRatioNegTickSpacingMulLength << 96;
-            if (Q96 <= baseX96 && tmp0 < numerator) return (false, 0);
-            uint256 tmpX96 = ((Q96 >= baseX96 ? tmp0 + numerator : tmp0 - numerator) >> 96);
-            xWad = (tmpX96.toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96()).sDivWad(lnBaseX96);
+            if (Q96 < baseX96 && sqrtRatioNegTickSpacingMulLength < numerator) return (false, 0);
+            uint256 tmpX96 = Q96 >= baseX96
+                ? sqrtRatioNegTickSpacingMulLength + numerator
+                : sqrtRatioNegTickSpacingMulLength - numerator;
+
+            // numerator * Q96 = |a^(x-l) * Q96 - 1.0001^(w(x-l)/2) * Q96| * 1.0001^(-wx/2) * Q96
+            // let lnQ96(m) = ln(m / Q96) * Q96, ln(m) = lmQ96(m * Q96) / Q96, lnQ96(m*n) = (ln(m / Q96) + ln(n)) * Q96 = lnQ96(m) + lnQ96(n * Q96)
+            // abs is +: n = (a * 1.0001^(-w/2))^x * a^(-l) * Q96 - 1.0001^(-wl/2) * Q96
+            // -> x = (ln((n + 1.0001^(-wl/2) * Q96) / (a^(-l) * Q96))) / ln(a * 1.0001^(-w/2))
+            // -> x = (ln(n + 1.0001^(-wl/2) * Q96) + l * ln(a) - ln(Q96)) / ln(a * 1.0001^(-w/2))
+            // -> x = (lnQ96(n * Q96 + 1.0001^(-wl/2) * Q96 * Q96) + l * lnQ96(a * Q96) - lnQ96(Q96 * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + lnQ96(Q96 * Q96) + l * lnQ96(a * Q96) - lnQ96(Q96 * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            // similarly for abs is -: x = (lnQ96(1.0001^(-wl/2) * Q96 - n) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            xWad = (tmpX96.toInt256().lnQ96() + int256(length) * (int256(alphaX96).lnQ96())).sDivWad(lnBaseX96);
         } else {
             uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
             uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, Q96).fullMulDiv(
@@ -364,12 +376,12 @@ library LibGeometricDistribution {
         uint256 alphaX96,
         bool roundUp
     ) internal pure returns (bool success, int24 roundedTick) {
-        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.fullMulDiv(Q96, totalLiquidity);
-        if (cumulativeAmount1DensityX96 == 0) {
+        if (cumulativeAmount1_ == 0) {
             // return left boundary of distribution
             return (true, minTick - tickSpacing);
         }
 
+        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.fullMulDiv(Q96, totalLiquidity);
         uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtPriceAtTick();
         uint256 sqrtRatioNegMinTick = (-minTick).getSqrtPriceAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);

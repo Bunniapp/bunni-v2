@@ -130,3 +130,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
         );
     }
 }
+
+function _subError(uint256 x, uint256 err) pure returns (uint256) {
+    return x >= err ? x - err : 0;
+}

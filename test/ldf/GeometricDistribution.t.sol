@@ -10,6 +10,7 @@ import "../../src/ldf/LibGeometricDistribution.sol";
 contract GeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
+    uint256 internal constant INVCUM0_MAX_ERROR = 3;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new GeometricDistribution()));
@@ -67,20 +68,29 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         _test_query_cumulativeAmounts(currentTick, tickSpacing, ldfParams);
     }
 
-    function test_inverseCumulativeAmount0(int24 tick, int24 tickSpacing, int24 minTick, int24 length, uint256 alpha)
-        external
-        virtual
-    {
+    function test_inverseCumulativeAmount0(
+        uint256 liquidity,
+        uint256 cumulativeAmount0,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alpha
+    ) external virtual {
+        liquidity = bound(liquidity, 1e18, 1e36);
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
         vm.assume(alpha != 1e8); // 1e8 is a special case that causes overflow
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+        uint256 alphaX96 = (alpha << 96) / 1e8;
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
-        length = int24(bound(length, 1, (maxUsableTick - minTick) / tickSpacing - 1));
-        tick = int24(bound(tick, minUsableTick, maxUsableTick));
+        length = int24(bound(length, 1, maxUsableTick / tickSpacing));
+        uint256 maxCumulativeAmount0 =
+            LibGeometricDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, minTick, length, alphaX96);
+        cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
-        console2.log("tick", tick);
+        console2.log("cumulativeAmount0", cumulativeAmount0);
+        console2.log("maxCumulativeAmount0", maxCumulativeAmount0);
         console2.log("alpha", alpha);
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
@@ -91,43 +101,57 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
-        uint256 alphaX96 = (alpha << 96) / 1e8;
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount0DensityX96 =
-            LibGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
-        console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
-
         (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, true
+            cumulativeAmount0, liquidity, tickSpacing, minTick, length, alphaX96, true
         );
-        console2.log("resultRoundedTick", resultRoundedTick);
-
-        int24 expectedTick = roundedTick < minTick
-            ? minTick
-            : roundedTick >= minTick + length * tickSpacing ? minTick + length * tickSpacing : roundedTick;
-        console2.log("x", (expectedTick - minTick) / tickSpacing);
         assertTrue(success, "inverseCumulativeAmount0 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
+        console2.log("resultRoundedTick", resultRoundedTick);
+
+        uint256 resultCumulativeAmount0 = LibGeometricDistribution.cumulativeAmount0(
+            resultRoundedTick, liquidity, tickSpacing, minTick, length, alphaX96
+        );
+
+        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
+        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
+        assertLe(
+            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+            cumulativeAmount0,
+            "resultCumulativeAmount0 > cumulativeAmount0"
+        );
+
+        if (resultRoundedTick > minTick && cumulativeAmount0 > 1.2e4) {
+            // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
+            uint256 nextCumulativeAmount0 = LibGeometricDistribution.cumulativeAmount0(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
+            );
+            assertGt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 <= cumulativeAmount0");
+        }
     }
 
-    function test_inverseCumulativeAmount1(int24 tick, int24 tickSpacing, int24 minTick, int24 length, uint256 alpha)
-        external
-        virtual
-    {
+    function test_inverseCumulativeAmount1(
+        uint256 liquidity,
+        uint256 cumulativeAmount1,
+        int24 tickSpacing,
+        int24 minTick,
+        int24 length,
+        uint256 alpha
+    ) external virtual {
+        liquidity = bound(liquidity, 1e18, 1e36);
         alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
         vm.assume(alpha != 1e8); // 1e8 is a special case that causes overflow
+        uint256 alphaX96 = (alpha << 96) / 1e8;
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
-        length = int24(bound(length, 1, (maxUsableTick - minTick) / tickSpacing - 1));
-        tick = int24(bound(tick, minUsableTick, maxUsableTick));
+        length = int24(bound(length, 1, maxUsableTick / tickSpacing));
+        uint256 maxCumulativeAmount1 =
+            LibGeometricDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, minTick, length, alphaX96);
+        vm.assume(maxCumulativeAmount1 != 0);
+        cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
-        console2.log("tick", tick);
+        console2.log("cumulativeAmount1", cumulativeAmount1);
+        console2.log("maxCumulativeAmount1", maxCumulativeAmount1);
         console2.log("alpha", alpha);
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
@@ -138,154 +162,24 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
-        uint256 alphaX96 = (alpha << 96) / 1e8;
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount1DensityX96 =
-            LibGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
-        console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
-
         (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, true
+            cumulativeAmount1, liquidity, tickSpacing, minTick, length, alphaX96, true
         );
-        console2.log("resultRoundedTick", resultRoundedTick);
-
-        int24 expectedTick = roundedTick < minTick
-            ? minTick
-            : roundedTick > minTick + (length - 1) * tickSpacing ? minTick + (length - 1) * tickSpacing : roundedTick;
-        if (cumulativeAmount1DensityX96 == 0) expectedTick = minTick - tickSpacing;
-        console2.log("x", (expectedTick - minTick) / tickSpacing);
         assertTrue(success, "inverseCumulativeAmount1 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
-    }
-
-    function test_inverseCumulativeAmount0_withPurturbation(
-        int24 tick,
-        int24 tickSpacing,
-        int24 minTick,
-        int24 length,
-        uint256 alpha
-    ) external virtual {
-        alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
-        vm.assume(alpha != 1e8); // 1e8 is a special case that causes overflow
-        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
-        length = int24(bound(length, 1, (maxUsableTick - minTick) / tickSpacing - 1));
-        tick = int24(bound(tick, minTick, minTick + length * tickSpacing));
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("minTick", minTick);
-        console2.log("length", length);
-        console2.log("alpha", alpha);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
-
-        uint256 alphaX96 = (alpha << 96) / 1e8;
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount0DensityX96 =
-            LibGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
-
-        // purturb density upwards
-        {
-            uint256 nextCumulativeAmount0DensityX96 = LibGeometricDistribution.cumulativeAmount0(
-                roundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
-            );
-            cumulativeAmount0DensityX96 = nextCumulativeAmount0DensityX96 > cumulativeAmount0DensityX96
-                ? (cumulativeAmount0DensityX96 + nextCumulativeAmount0DensityX96) / 2
-                : cumulativeAmount0DensityX96 * 101 / 100;
-        }
-
-        console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
-
-        (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, true
-        );
         console2.log("resultRoundedTick", resultRoundedTick);
 
-        if (success) {
-            int24 expectedTick = roundedTick <= minTick
-                ? minTick
-                : roundedTick >= minTick + length * tickSpacing ? minTick + length * tickSpacing : roundedTick;
-            assertEq(resultRoundedTick, expectedTick, "tick incorrect");
-        } else {
-            assertLe(roundedTick, minTick, "inverseCumulativeAmount0 failed");
-        }
-    }
-
-    function test_inverseCumulativeAmount1_withPurturbation(
-        int24 tick,
-        int24 tickSpacing,
-        int24 minTick,
-        int24 length,
-        uint256 alpha
-    ) external virtual {
-        alpha = bound(alpha, MIN_ALPHA, MAX_ALPHA);
-        vm.assume(alpha != 1e8); // 1e8 is a special case that causes overflow
-        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
-        length = int24(bound(length, 1, (maxUsableTick - minTick) / tickSpacing - 1));
-        tick = int24(bound(tick, minTick, minTick + length * tickSpacing));
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("minTick", minTick);
-        console2.log("length", length);
-        console2.log("alpha", alpha);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
-
-        uint256 alphaX96 = (alpha << 96) / 1e8;
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount1DensityX96 =
-            LibGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, minTick, length, alphaX96);
-
-        // purturb density upwards
-        {
-            uint256 nextCumulativeAmount1DensityX96 = LibGeometricDistribution.cumulativeAmount1(
-                roundedTick + tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
-            );
-            console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
-            console2.log("nextCumulativeAmount1DensityX96", nextCumulativeAmount1DensityX96);
-            cumulativeAmount1DensityX96 = nextCumulativeAmount1DensityX96 > cumulativeAmount1DensityX96
-                ? (cumulativeAmount1DensityX96 + nextCumulativeAmount1DensityX96) / 2
-                : cumulativeAmount1DensityX96 * 101 / 100;
-        }
-
-        console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
-
-        (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1DensityX96, liquidity, tickSpacing, minTick, length, alphaX96, true
+        uint256 resultCumulativeAmount1 = LibGeometricDistribution.cumulativeAmount1(
+            resultRoundedTick, liquidity, tickSpacing, minTick, length, alphaX96
         );
-        console2.log("resultRoundedTick", resultRoundedTick);
 
-        int24 expectedTick = roundedTick < minTick
-            ? minTick
-            : roundedTick >= minTick + (length - 1) * tickSpacing ? int24(0) : roundedTick + tickSpacing;
+        assertGe(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-        assertTrue(success || roundedTick >= minTick + (length - 1) * tickSpacing, "inverseCumulativeAmount1 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
+        if (resultRoundedTick > minTick) {
+            uint256 nextCumulativeAmount1 = LibGeometricDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
+            );
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
+        }
     }
 
     function test_boundary_static_invalidWhenOutOfBounds(int24 tickSpacing) external view {

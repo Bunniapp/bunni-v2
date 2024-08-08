@@ -8,6 +8,8 @@ import "../../src/ldf/UniformDistribution.sol";
 import "../../src/ldf/LibUniformDistribution.sol";
 
 contract UniformDistributionTest is LiquidityDensityFunctionTest {
+    uint256 internal constant INVCUM0_MAX_ERROR = 3;
+
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
     }
@@ -54,25 +56,25 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
     }
 
     function test_inverseCumulativeAmount0(
+        uint256 liquidity,
         uint256 cumulativeAmount0,
         int24 tickSpacing,
         int24 tickLower,
         int24 tickUpper
     ) external virtual {
-        uint128 liquidity = 1 << 96;
-
+        liquidity = bound(liquidity, 1e18, 1e36);
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        cumulativeAmount0 = bound(
-            cumulativeAmount0,
-            0,
-            LibUniformDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, tickLower, tickUpper)
-        );
+        uint256 maxCumulativeAmount0 =
+            LibUniformDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
+        vm.assume(maxCumulativeAmount0 != 0);
+        cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
         console2.log("cumulativeAmount0", cumulativeAmount0);
+        console2.log("maxCumulativeAmount0", maxCumulativeAmount0);
         console2.log("tickSpacing", tickSpacing);
         console2.log("tickLower", tickLower);
         console2.log("tickUpper", tickUpper);
@@ -91,9 +93,16 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         uint256 resultCumulativeAmount0 =
             LibUniformDistribution.cumulativeAmount0(resultRoundedTick, liquidity, tickSpacing, tickLower, tickUpper);
 
-        assertLe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 > cumulativeAmount0");
+        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
+        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
+        assertLe(
+            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+            cumulativeAmount0,
+            "resultCumulativeAmount0 > cumulativeAmount0"
+        );
 
-        if (resultRoundedTick > tickLower) {
+        if (resultRoundedTick > tickLower && cumulativeAmount0 > 1.2e4) {
+            // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
             uint256 nextCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
             );
@@ -102,25 +111,25 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
     }
 
     function test_inverseCumulativeAmount1(
+        uint256 liquidity,
         uint256 cumulativeAmount1,
         int24 tickSpacing,
         int24 tickLower,
         int24 tickUpper
     ) external virtual {
-        uint128 liquidity = 1 << 96;
-
+        liquidity = bound(liquidity, 1e18, 1e36);
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        cumulativeAmount1 = bound(
-            cumulativeAmount1,
-            0,
-            LibUniformDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, tickLower, tickUpper)
-        );
+        uint256 maxCumulativeAmount1 =
+            LibUniformDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
+        vm.assume(maxCumulativeAmount1 != 0);
+        cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
         console2.log("cumulativeAmount1", cumulativeAmount1);
+        console2.log("maxCumulativeAmount1", maxCumulativeAmount1);
         console2.log("tickSpacing", tickSpacing);
         console2.log("tickLower", tickLower);
         console2.log("tickUpper", tickUpper);

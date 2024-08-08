@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import {console2} from "forge-std/console2.sol";
 
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
@@ -15,10 +16,11 @@ import "../base/Constants.sol";
 library LibUniformDistribution {
     using TickMath for int24;
     using TickMath for uint160;
+    using FixedPointMathLib for *;
     using SafeCastLib for uint256;
 
-    /// @dev Error allowance for sqrt price comparison. Needed due to error from TickMath.getSqrtPriceAtTick().
-    uint256 internal constant SQRT_PRICE_MAX_ERROR = 25;
+    /// @dev (1 / SQRT_PRICE_MAX_REL_ERROR) is the maximum relative error allowed for TickMath.getSqrtPriceAtTick()
+    uint256 internal constant SQRT_PRICE_MAX_REL_ERROR = 1e5;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
@@ -134,10 +136,18 @@ library LibUniformDistribution {
         }
         int24 tick = sqrtPrice.getTickAtSqrtPrice();
         if (roundUp) {
-            if (tick % tickSpacing == 0 && tick.getSqrtPriceAtTick() < sqrtPrice - SQRT_PRICE_MAX_ERROR) {
-                // getTickAtSqrtPrice erroneously rounded down to the rounded tick boundary
-                // need to round up to the next rounded tick
-                tick += tickSpacing;
+            if (tick % tickSpacing == 0) {
+                uint160 sqrtPriceAtTick = tick.getSqrtPriceAtTick();
+                if (
+                    sqrtPrice - sqrtPriceAtTick > 1
+                        && (sqrtPrice - sqrtPriceAtTick).mulDiv(SQRT_PRICE_MAX_REL_ERROR, sqrtPrice) > 1
+                ) {
+                    // getTickAtSqrtPrice erroneously rounded down to the rounded tick boundary
+                    // need to round up to the next rounded tick
+                    tick += tickSpacing;
+                } else {
+                    tick += tickSpacing - 1;
+                }
             } else {
                 tick += tickSpacing - 1;
             }
