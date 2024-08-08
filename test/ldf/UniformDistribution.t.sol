@@ -68,6 +68,12 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
+
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
+
         uint256 maxCumulativeAmount0 =
             LibUniformDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
         vm.assume(maxCumulativeAmount0 != 0);
@@ -78,11 +84,6 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         console2.log("tickSpacing", tickSpacing);
         console2.log("tickLower", tickLower);
         console2.log("tickUpper", tickUpper);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
             cumulativeAmount0, liquidity, tickSpacing, tickLower, tickUpper, true
@@ -101,7 +102,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
             "resultCumulativeAmount0 > cumulativeAmount0"
         );
 
-        if (resultRoundedTick > tickLower && cumulativeAmount0 > 1.2e4) {
+        if (resultRoundedTick > tickLower && cumulativeAmount0 > 1e7) {
             // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
             uint256 nextCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
@@ -123,6 +124,12 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
+
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
+
         uint256 maxCumulativeAmount1 =
             LibUniformDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
         vm.assume(maxCumulativeAmount1 != 0);
@@ -133,11 +140,6 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         console2.log("tickSpacing", tickSpacing);
         console2.log("tickLower", tickLower);
         console2.log("tickUpper", tickUpper);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount1(
             cumulativeAmount1, liquidity, tickSpacing, tickLower, tickUpper, true

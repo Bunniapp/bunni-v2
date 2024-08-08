@@ -161,9 +161,19 @@ library LibCarpetedGeometricDistribution {
             } else if (leftCarpetLiquidity != 0) {
                 // use left carpet
                 remainder -= mainCumulativeAmount0;
-                return LibUniformDistribution.inverseCumulativeAmount0(
+                console2.log("remainder", remainder);
+
+                (success, roundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
                     remainder, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, roundUp
                 );
+                console2.log("roundedTick", roundedTick);
+                console2.log(
+                    "cumulativeAmount",
+                    LibUniformDistribution.cumulativeAmount0(
+                        roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
+                    )
+                );
+                return (success, roundedTick);
             }
         }
         return (false, 0);
@@ -426,9 +436,8 @@ library LibCarpetedGeometricDistribution {
         }
         mainLiquidity = totalLiquidity.mulWad(WAD - weightCarpet);
         uint256 carpetLiquidity = totalLiquidity - mainLiquidity;
-        rightCarpetLiquidity = carpetLiquidity.mulDiv(
-            uint24((maxUsableTick - minTick) / tickSpacing - length), uint24(numRoundedTicksCarpeted)
-        );
+        uint24 rightCarpetNumRoundedTicks = uint24((maxUsableTick - minTick) / tickSpacing - length);
+        rightCarpetLiquidity = carpetLiquidity.mulDiv(rightCarpetNumRoundedTicks, uint24(numRoundedTicksCarpeted));
         leftCarpetLiquidity = carpetLiquidity - rightCarpetLiquidity;
     }
 

@@ -85,6 +85,12 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
         length = int24(bound(length, 1, maxUsableTick / tickSpacing));
+
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
+
         uint256 maxCumulativeAmount0 =
             LibGeometricDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, minTick, length, alphaX96);
         cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
@@ -95,11 +101,6 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
         console2.log("length", length);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount0(
             cumulativeAmount0, liquidity, tickSpacing, minTick, length, alphaX96, true
@@ -145,6 +146,12 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
         length = int24(bound(length, 1, maxUsableTick / tickSpacing));
+
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
+        vm.assume(ldf.isValidParams(key, 0, ldfParams));
+
         uint256 maxCumulativeAmount1 =
             LibGeometricDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, minTick, length, alphaX96);
         vm.assume(maxCumulativeAmount1 != 0);
@@ -156,11 +163,6 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("tickSpacing", tickSpacing);
         console2.log("minTick", minTick);
         console2.log("length", length);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, int16(length), uint32(alpha)));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
         (bool success, int24 resultRoundedTick) = LibGeometricDistribution.inverseCumulativeAmount1(
             cumulativeAmount1, liquidity, tickSpacing, minTick, length, alphaX96, true

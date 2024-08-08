@@ -20,7 +20,7 @@ library LibUniformDistribution {
     using SafeCastLib for uint256;
 
     /// @dev (1 / SQRT_PRICE_MAX_REL_ERROR) is the maximum relative error allowed for TickMath.getSqrtPriceAtTick()
-    uint256 internal constant SQRT_PRICE_MAX_REL_ERROR = 1e5;
+    uint256 internal constant SQRT_PRICE_MAX_REL_ERROR = 1e8;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
