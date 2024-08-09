@@ -51,13 +51,10 @@ function weightedSum(uint256 value0, uint256 weight0, uint256 value1, uint256 we
 }
 
 /// @dev Converts xWad, the decimal index of a rounded tick scaled by WAD, to the corresponding rounded tick.
-function xWadToRoundedTick(int256 xWad, int24 mu, int24 tickSpacing, bool roundUp) pure returns (int24) {
+/// Always rounds up.
+function xWadToRoundedTick(int256 xWad, int24 mu, int24 tickSpacing) pure returns (int24) {
     int24 x = SafeCastLib.toInt24(xWad / int256(WAD));
-    if (roundUp) {
-        if (xWad > 0 && xWad % int256(WAD) != 0) x++; // round towards positive infinity
-    } else {
-        if (xWad < 0 && xWad % int256(WAD) != 0) x--; // round towards negative infinity
-    }
+    if (xWad > 0 && xWad % int256(WAD) != 0) x++; // round towards positive infinity
     return x * tickSpacing + mu;
 }
 

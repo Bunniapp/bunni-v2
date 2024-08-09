@@ -121,8 +121,7 @@ library LibDoubleGeometricDistribution {
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
@@ -134,8 +133,7 @@ library LibDoubleGeometricDistribution {
         uint256 alpha0X96,
         uint256 alpha1X96,
         uint256 weight0,
-        uint256 weight1,
-        bool roundUp
+        uint256 weight1
     ) internal pure returns (bool success, int24 roundedTick) {
         // try ldf0 first, if fails then try ldf1 with remainder
         int24 minTick0 = minTick + length1 * tickSpacing;
@@ -146,20 +144,19 @@ library LibDoubleGeometricDistribution {
 
         if (cumulativeAmount0_ <= ldf0CumulativeAmount0) {
             return LibGeometricDistribution.inverseCumulativeAmount0(
-                cumulativeAmount0_, totalLiquidity0, tickSpacing, minTick0, length0, alpha0X96, roundUp
+                cumulativeAmount0_, totalLiquidity0, tickSpacing, minTick0, length0, alpha0X96
             );
         } else {
             uint256 remainder = cumulativeAmount0_ - ldf0CumulativeAmount0;
             uint256 totalLiquidity1 = totalLiquidity.mulDiv(weight1, weight0 + weight1);
             return LibGeometricDistribution.inverseCumulativeAmount0(
-                remainder, totalLiquidity1, tickSpacing, minTick, length1, alpha1X96, roundUp
+                remainder, totalLiquidity1, tickSpacing, minTick, length1, alpha1X96
             );
         }
     }
 
     /// @dev Given a cumulativeAmount1, computes the rounded tick whose cumulativeAmount1 is closest to the input. Range is [tickLower - tickSpacing, tickUpper - tickSpacing].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount1 is less than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount1 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount1(
         uint256 cumulativeAmount1_,
@@ -171,8 +168,7 @@ library LibDoubleGeometricDistribution {
         uint256 alpha0X96,
         uint256 alpha1X96,
         uint256 weight0,
-        uint256 weight1,
-        bool roundUp
+        uint256 weight1
     ) internal pure returns (bool success, int24 roundedTick) {
         // try ldf1 first, if fails then try ldf0 with remainder
         uint256 totalLiquidity1 = totalLiquidity.mulDiv(weight1, weight0 + weight1);
@@ -182,13 +178,13 @@ library LibDoubleGeometricDistribution {
 
         if (cumulativeAmount1_ <= ldf1CumulativeAmount1) {
             return LibGeometricDistribution.inverseCumulativeAmount1(
-                cumulativeAmount1_, totalLiquidity1, tickSpacing, minTick, length1, alpha1X96, roundUp
+                cumulativeAmount1_, totalLiquidity1, tickSpacing, minTick, length1, alpha1X96
             );
         } else {
             uint256 remainder = cumulativeAmount1_ - ldf1CumulativeAmount1;
             uint256 totalLiquidity0 = totalLiquidity.mulDiv(weight0, weight0 + weight1);
             return LibGeometricDistribution.inverseCumulativeAmount1(
-                remainder, totalLiquidity0, tickSpacing, minTick + length1 * tickSpacing, length0, alpha0X96, roundUp
+                remainder, totalLiquidity0, tickSpacing, minTick + length1 * tickSpacing, length0, alpha0X96
             );
         }
     }
@@ -317,8 +313,7 @@ library LibDoubleGeometricDistribution {
                 alpha0X96,
                 alpha1X96,
                 weight0,
-                weight1,
-                true
+                weight1
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -399,8 +394,7 @@ library LibDoubleGeometricDistribution {
                 alpha0X96,
                 alpha1X96,
                 weight0,
-                weight1,
-                true
+                weight1
             );
             if (!success) return (false, 0, 0, 0);
 

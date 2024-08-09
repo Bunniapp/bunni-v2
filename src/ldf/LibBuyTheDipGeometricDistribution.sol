@@ -130,8 +130,7 @@ library LibBuyTheDipGeometricDistribution {
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
@@ -143,23 +142,21 @@ library LibBuyTheDipGeometricDistribution {
         uint256 alphaX96,
         uint256 altAlphaX96,
         int24 altThreshold,
-        bool altThresholdDirection,
-        bool roundUp
+        bool altThresholdDirection
     ) internal pure returns (bool success, int24 roundedTick) {
         if (shouldUseAltAlpha(twapTick, altThreshold, altThresholdDirection)) {
             return LibGeometricDistribution.inverseCumulativeAmount0(
-                cumulativeAmount0_, totalLiquidity, tickSpacing, minTick, length, altAlphaX96, roundUp
+                cumulativeAmount0_, totalLiquidity, tickSpacing, minTick, length, altAlphaX96
             );
         } else {
             return LibGeometricDistribution.inverseCumulativeAmount0(
-                cumulativeAmount0_, totalLiquidity, tickSpacing, minTick, length, alphaX96, roundUp
+                cumulativeAmount0_, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );
         }
     }
 
     /// @dev Given a cumulativeAmount1, computes the rounded tick whose cumulativeAmount1 is closest to the input. Range is [tickLower - tickSpacing, tickUpper - tickSpacing].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount1 is less than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount1 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount1(
         uint256 cumulativeAmount1_,
@@ -171,16 +168,15 @@ library LibBuyTheDipGeometricDistribution {
         uint256 alphaX96,
         uint256 altAlphaX96,
         int24 altThreshold,
-        bool altThresholdDirection,
-        bool roundUp
+        bool altThresholdDirection
     ) internal pure returns (bool success, int24 roundedTick) {
         if (shouldUseAltAlpha(twapTick, altThreshold, altThresholdDirection)) {
             return LibGeometricDistribution.inverseCumulativeAmount1(
-                cumulativeAmount1_, totalLiquidity, tickSpacing, minTick, length, altAlphaX96, roundUp
+                cumulativeAmount1_, totalLiquidity, tickSpacing, minTick, length, altAlphaX96
             );
         } else {
             return LibGeometricDistribution.inverseCumulativeAmount1(
-                cumulativeAmount1_, totalLiquidity, tickSpacing, minTick, length, alphaX96, roundUp
+                cumulativeAmount1_, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );
         }
     }
@@ -245,8 +241,7 @@ library LibBuyTheDipGeometricDistribution {
                 alphaX96,
                 altAlphaX96,
                 altThreshold,
-                altThresholdDirection,
-                true
+                altThresholdDirection
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -327,8 +322,7 @@ library LibBuyTheDipGeometricDistribution {
                 alphaX96,
                 altAlphaX96,
                 altThreshold,
-                altThresholdDirection,
-                true
+                altThresholdDirection
             );
             if (!success) return (false, 0, 0, 0);
 

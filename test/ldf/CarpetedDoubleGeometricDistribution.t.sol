@@ -202,7 +202,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         console2.log("weightCarpet", weightCarpet);
 
         (bool success, int24 resultRoundedTick) = LibCarpetedDoubleGeometricDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0, liquidity, tickSpacing, params, true
+            cumulativeAmount0, liquidity, tickSpacing, params
         );
         assertTrue(success, "inverseCumulativeAmount0 failed");
         console2.log("resultRoundedTick", resultRoundedTick);
@@ -296,7 +296,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         console2.log("weightCarpet", weightCarpet);
 
         (bool success, int24 resultRoundedTick) = LibCarpetedDoubleGeometricDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1, liquidity, tickSpacing, params, true
+            cumulativeAmount1, liquidity, tickSpacing, params
         );
         assertTrue(success, "inverseCumulativeAmount1 failed");
         console2.log("resultRoundedTick", resultRoundedTick);

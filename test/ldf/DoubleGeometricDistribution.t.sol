@@ -189,17 +189,7 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight1", weight1);
 
         (bool success, int24 resultRoundedTick) = LibDoubleGeometricDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0,
-            liquidity,
-            tickSpacing,
-            minTick,
-            length0,
-            length1,
-            alpha0X96,
-            alpha1X96,
-            weight0,
-            weight1,
-            true
+            cumulativeAmount0, liquidity, tickSpacing, minTick, length0, length1, alpha0X96, alpha1X96, weight0, weight1
         );
         assertTrue(success, "inverseCumulativeAmount0 failed");
         console2.log("resultRoundedTick", resultRoundedTick);
@@ -299,17 +289,7 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
         console2.log("weight1", weight1);
 
         (bool success, int24 resultRoundedTick) = LibDoubleGeometricDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1,
-            liquidity,
-            tickSpacing,
-            minTick,
-            length0,
-            length1,
-            alpha0X96,
-            alpha1X96,
-            weight0,
-            weight1,
-            true
+            cumulativeAmount1, liquidity, tickSpacing, minTick, length0, length1, alpha0X96, alpha1X96, weight0, weight1
         );
         assertTrue(success, "inverseCumulativeAmount1 failed");
         console2.log("resultRoundedTick", resultRoundedTick);

@@ -86,7 +86,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         console2.log("tickUpper", tickUpper);
 
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0, liquidity, tickSpacing, tickLower, tickUpper, true
+            cumulativeAmount0, liquidity, tickSpacing, tickLower, tickUpper
         );
         assertTrue(success, "inverseCumulativeAmount0 failed");
         console2.log("resultRoundedTick", resultRoundedTick);
@@ -142,7 +142,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         console2.log("tickUpper", tickUpper);
 
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1, liquidity, tickSpacing, tickLower, tickUpper, true
+            cumulativeAmount1, liquidity, tickSpacing, tickLower, tickUpper
         );
         assertTrue(success, "inverseCumulativeAmount1 failed");
         console2.log("resultRoundedTick", resultRoundedTick);

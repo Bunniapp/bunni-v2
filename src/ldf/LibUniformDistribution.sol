@@ -113,16 +113,14 @@ library LibUniformDistribution {
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 tickLower,
-        int24 tickUpper,
-        bool roundUp
+        int24 tickUpper
     ) internal pure returns (bool success, int24 roundedTick) {
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = (totalLiquidity / length).toUint128();
@@ -135,22 +133,20 @@ library LibUniformDistribution {
             return (false, 0);
         }
         int24 tick = sqrtPrice.getTickAtSqrtPrice();
-        if (roundUp) {
-            if (tick % tickSpacing == 0) {
-                uint160 sqrtPriceAtTick = tick.getSqrtPriceAtTick();
-                if (
-                    sqrtPrice - sqrtPriceAtTick > 1
-                        && (sqrtPrice - sqrtPriceAtTick).mulDiv(SQRT_PRICE_MAX_REL_ERROR, sqrtPrice) > 1
-                ) {
-                    // getTickAtSqrtPrice erroneously rounded down to the rounded tick boundary
-                    // need to round up to the next rounded tick
-                    tick += tickSpacing;
-                } else {
-                    tick += tickSpacing - 1;
-                }
+        if (tick % tickSpacing == 0) {
+            uint160 sqrtPriceAtTick = tick.getSqrtPriceAtTick();
+            if (
+                sqrtPrice - sqrtPriceAtTick > 1
+                    && (sqrtPrice - sqrtPriceAtTick).mulDiv(SQRT_PRICE_MAX_REL_ERROR, sqrtPrice) > 1
+            ) {
+                // getTickAtSqrtPrice erroneously rounded down to the rounded tick boundary
+                // need to round up to the next rounded tick
+                tick += tickSpacing;
             } else {
                 tick += tickSpacing - 1;
             }
+        } else {
+            tick += tickSpacing - 1;
         }
         success = true;
         roundedTick = roundTickSingle(tick, tickSpacing);
@@ -159,25 +155,17 @@ library LibUniformDistribution {
         if (roundedTick < tickLower || roundedTick > tickUpper) {
             return (false, 0);
         }
-
-        // ensure that roundedTick is not tickUpper when cumulativeAmount0_ is non-zero and rounding down
-        // this can happen if the corresponding cumulative density is too small
-        if (!roundUp && roundedTick == tickUpper && cumulativeAmount0_ != 0) {
-            return (true, tickUpper - tickSpacing);
-        }
     }
 
     /// @dev Given a cumulativeAmount1, computes the rounded tick whose cumulativeAmount1 is closest to the input. Range is [tickLower - tickSpacing, tickUpper - tickSpacing].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount1 is less than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount1 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount1(
         uint256 cumulativeAmount1_,
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 tickLower,
-        int24 tickUpper,
-        bool roundUp
+        int24 tickUpper
     ) internal pure returns (bool success, int24 roundedTick) {
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
         uint128 liquidity = (totalLiquidity / length).toUint128();
@@ -191,14 +179,10 @@ library LibUniformDistribution {
             return (false, 0);
         }
         int24 tick = sqrtPrice.getTickAtSqrtPrice();
-        if (roundUp) {
-            // handle the edge case where cumulativeAmount1_ is exactly the
-            // cumulative amount in [tickLower, tickUpper]
-            if (tick == tickUpper) {
-                tick -= 1;
-            }
-        } else {
-            tick -= tickSpacing;
+        // handle the edge case where cumulativeAmount1_ is exactly the
+        // cumulative amount in [tickLower, tickUpper]
+        if (tick == tickUpper) {
+            tick -= 1;
         }
         success = true;
         roundedTick = roundTickSingle(tick, tickSpacing);
@@ -210,7 +194,7 @@ library LibUniformDistribution {
 
         // ensure that roundedTick is not (tickLower - tickSpacing) when cumulativeAmount1_ is non-zero and rounding up
         // this can happen if the corresponding cumulative density is too small
-        if (roundUp && roundedTick == tickLower - tickSpacing && cumulativeAmount1_ != 0) {
+        if (roundedTick == tickLower - tickSpacing && cumulativeAmount1_ != 0) {
             return (true, tickLower);
         }
     }
@@ -256,7 +240,7 @@ library LibUniformDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount0(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -307,7 +291,7 @@ library LibUniformDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount1(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper
             );
             if (!success) return (false, 0, 0, 0);
 
