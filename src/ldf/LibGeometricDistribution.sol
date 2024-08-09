@@ -23,6 +23,7 @@ library LibGeometricDistribution {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
+    int256 internal constant ROUND_TICK_TOLERANCE = 5e12;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
@@ -283,8 +284,7 @@ library LibGeometricDistribution {
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
@@ -292,15 +292,14 @@ library LibGeometricDistribution {
         int24 tickSpacing,
         int24 minTick,
         int24 length,
-        uint256 alphaX96,
-        bool roundUp
+        uint256 alphaX96
     ) internal pure returns (bool success, int24 roundedTick) {
-        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.fullMulDiv(Q96, totalLiquidity);
-        if (cumulativeAmount0DensityX96 == 0) {
+        if (cumulativeAmount0_ == 0) {
             // return right boundary of distribution
             return (true, minTick + length * tickSpacing);
         }
 
+        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.fullMulDiv(Q96, totalLiquidity);
         uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtPriceAtTick();
         uint256 sqrtRatioMinTick = minTick.getSqrtPriceAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
@@ -316,12 +315,23 @@ library LibGeometricDistribution {
             uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
             uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, alphaX96 - Q96).fullMulDiv(
                 denominator, Q96 - sqrtRatioNegTickSpacing
-            );
+            ) >> 96; // numerator in cumulativeAmount0 divided by Q96
             uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtPriceAtTick();
-            uint256 tmp0 = sqrtRatioNegTickSpacingMulLength << 96;
-            if (Q96 <= baseX96 && tmp0 < numerator) return (false, 0);
-            uint256 tmpX96 = ((Q96 >= baseX96 ? tmp0 + numerator : tmp0 - numerator) >> 96);
-            xWad = (tmpX96.toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96()).sDivWad(lnBaseX96);
+            if (Q96 < baseX96 && sqrtRatioNegTickSpacingMulLength < numerator) return (false, 0);
+            uint256 tmpX96 = Q96 >= baseX96
+                ? sqrtRatioNegTickSpacingMulLength + numerator
+                : sqrtRatioNegTickSpacingMulLength - numerator;
+
+            // numerator * Q96 = |a^(x-l) * Q96 - 1.0001^(w(x-l)/2) * Q96| * 1.0001^(-wx/2) * Q96
+            // let lnQ96(m) = ln(m / Q96) * Q96, ln(m) = lmQ96(m * Q96) / Q96, lnQ96(m*n) = (ln(m / Q96) + ln(n)) * Q96 = lnQ96(m) + lnQ96(n * Q96)
+            // abs is +: n = (a * 1.0001^(-w/2))^x * a^(-l) * Q96 - 1.0001^(-wl/2) * Q96
+            // -> x = (ln((n + 1.0001^(-wl/2) * Q96) / (a^(-l) * Q96))) / ln(a * 1.0001^(-w/2))
+            // -> x = (ln(n + 1.0001^(-wl/2) * Q96) + l * ln(a) - ln(Q96)) / ln(a * 1.0001^(-w/2))
+            // -> x = (lnQ96(n * Q96 + 1.0001^(-wl/2) * Q96 * Q96) + l * lnQ96(a * Q96) - lnQ96(Q96 * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + lnQ96(Q96 * Q96) + l * lnQ96(a * Q96) - lnQ96(Q96 * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            // similarly for abs is -: x = (lnQ96(1.0001^(-wl/2) * Q96 - n) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
+            xWad = (tmpX96.toInt256().lnQ96() + int256(length) * (int256(alphaX96).lnQ96())).sDivWad(lnBaseX96);
         } else {
             uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
             uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, Q96).fullMulDiv(
@@ -337,23 +347,16 @@ library LibGeometricDistribution {
 
         // get rounded tick from xWad
         success = true;
-        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
+        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing);
 
         // ensure roundedTick is within the valid range
         if (roundedTick < minTick || roundedTick > minTick + length * tickSpacing) {
             return (false, 0);
         }
-
-        // ensure that roundedTick is not (minTick + length * tickSpacing) when cumulativeAmount0_ is non-zero and rounding down
-        // this can happen if the corresponding cumulative density is too small
-        if (!roundUp && roundedTick == minTick + length * tickSpacing && cumulativeAmount0_ != 0) {
-            return (true, minTick + (length - 1) * tickSpacing);
-        }
     }
 
     /// @dev Given a cumulativeAmount1, computes the rounded tick whose cumulativeAmount1 is closest to the input. Range is [tickLower - tickSpacing, tickUpper - tickSpacing].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount1 is less than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount1 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount1(
         uint256 cumulativeAmount1_,
@@ -361,15 +364,14 @@ library LibGeometricDistribution {
         int24 tickSpacing,
         int24 minTick,
         int24 length,
-        uint256 alphaX96,
-        bool roundUp
+        uint256 alphaX96
     ) internal pure returns (bool success, int24 roundedTick) {
-        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.fullMulDiv(Q96, totalLiquidity);
-        if (cumulativeAmount1DensityX96 == 0) {
+        if (cumulativeAmount1_ == 0) {
             // return left boundary of distribution
             return (true, minTick - tickSpacing);
         }
 
+        uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.fullMulDiv(Q96, totalLiquidity);
         uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtPriceAtTick();
         uint256 sqrtRatioNegMinTick = (-minTick).getSqrtPriceAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
@@ -412,7 +414,7 @@ library LibGeometricDistribution {
 
         // get rounded tick from xWad
         success = true;
-        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, roundUp);
+        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing);
 
         // ensure roundedTick is within the valid range
         if (roundedTick < minTick - tickSpacing || roundedTick >= minTick + length * tickSpacing) {
@@ -421,7 +423,7 @@ library LibGeometricDistribution {
 
         // ensure that roundedTick is not (minTick - tickSpacing) when cumulativeAmount1_ is non-zero and rounding up
         // this can happen if the corresponding cumulative density is too small
-        if (roundUp && roundedTick == minTick - tickSpacing && cumulativeAmount1_ != 0) {
+        if (roundedTick == minTick - tickSpacing && cumulativeAmount1_ != 0) {
             return (true, minTick);
         }
     }
@@ -481,7 +483,7 @@ library LibGeometricDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount0(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -532,9 +534,8 @@ library LibGeometricDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount1(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );
-            console2.log("inverse cum success", success);
             if (!success) return (false, 0, 0, 0);
 
             // compute the cumulative amount up to roundedTick
@@ -552,7 +553,6 @@ library LibGeometricDistribution {
             //   rick - tickSpacing
             cumulativeAmount =
                 cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96);
-            console2.log("cum success");
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
@@ -568,7 +568,6 @@ library LibGeometricDistribution {
             //      rick
             swapLiquidity =
                 (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96;
-            console2.log("liquidity success");
         }
     }
 

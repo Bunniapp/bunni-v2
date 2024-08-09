@@ -105,8 +105,7 @@ library LibCarpetedGeometricDistribution {
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
@@ -115,8 +114,7 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightCarpet,
-        bool roundUp
+        uint256 weightCarpet
     ) internal pure returns (bool success, int24 roundedTick) {
         // try LDFs in the order of right carpet, main, left carpet
         (
@@ -140,12 +138,7 @@ library LibCarpetedGeometricDistribution {
         if (cumulativeAmount0_ <= rightCarpetCumulativeAmount0 && rightCarpetLiquidity != 0) {
             // use right carpet
             return LibUniformDistribution.inverseCumulativeAmount0(
-                cumulativeAmount0_,
-                rightCarpetLiquidity,
-                tickSpacing,
-                minTick + length * tickSpacing,
-                maxUsableTick,
-                roundUp
+                cumulativeAmount0_, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick
             );
         } else {
             uint256 remainder = cumulativeAmount0_ - rightCarpetCumulativeAmount0;
@@ -156,22 +149,31 @@ library LibCarpetedGeometricDistribution {
             if (remainder <= mainCumulativeAmount0) {
                 // use main
                 return LibGeometricDistribution.inverseCumulativeAmount0(
-                    remainder, mainLiquidity, tickSpacing, minTick, length, alphaX96, roundUp
+                    remainder, mainLiquidity, tickSpacing, minTick, length, alphaX96
                 );
             } else if (leftCarpetLiquidity != 0) {
                 // use left carpet
                 remainder -= mainCumulativeAmount0;
-                return LibUniformDistribution.inverseCumulativeAmount0(
-                    remainder, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, roundUp
+                console2.log("remainder", remainder);
+
+                (success, roundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
+                    remainder, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
                 );
+                console2.log("roundedTick", roundedTick);
+                console2.log(
+                    "cumulativeAmount",
+                    LibUniformDistribution.cumulativeAmount0(
+                        roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
+                    )
+                );
+                return (success, roundedTick);
             }
         }
         return (false, 0);
     }
 
     /// @dev Given a cumulativeAmount1, computes the rounded tick whose cumulativeAmount1 is closest to the input. Range is [tickLower - tickSpacing, tickUpper - tickSpacing].
-    ///      If roundUp is true, the returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
-    ///      If roundUp is false, the returned tick will be the largest rounded tick whose cumulativeAmount1 is less than or equal to the input.
+    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount1 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount1(
         uint256 cumulativeAmount1_,
@@ -180,8 +182,7 @@ library LibCarpetedGeometricDistribution {
         int24 minTick,
         int24 length,
         uint256 alphaX96,
-        uint256 weightCarpet,
-        bool roundUp
+        uint256 weightCarpet
     ) internal pure returns (bool success, int24 roundedTick) {
         // try LDFs in the order of left carpet, main, right carpet
         (
@@ -200,7 +201,7 @@ library LibCarpetedGeometricDistribution {
         if (cumulativeAmount1_ <= leftCarpetCumulativeAmount1 && leftCarpetLiquidity != 0) {
             // use left carpet
             return LibUniformDistribution.inverseCumulativeAmount1(
-                cumulativeAmount1_, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, roundUp
+                cumulativeAmount1_, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
             );
         } else {
             uint256 remainder = cumulativeAmount1_ - leftCarpetCumulativeAmount1;
@@ -211,13 +212,13 @@ library LibCarpetedGeometricDistribution {
             if (remainder <= mainCumulativeAmount1) {
                 // use main
                 return LibGeometricDistribution.inverseCumulativeAmount1(
-                    remainder, mainLiquidity, tickSpacing, minTick, length, alphaX96, roundUp
+                    remainder, mainLiquidity, tickSpacing, minTick, length, alphaX96
                 );
             } else if (rightCarpetLiquidity != 0) {
                 // use right carpet
                 remainder -= mainCumulativeAmount1;
                 return LibUniformDistribution.inverseCumulativeAmount1(
-                    remainder, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick, roundUp
+                    remainder, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick
                 );
             }
         }
@@ -310,7 +311,7 @@ library LibCarpetedGeometricDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount0(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -363,7 +364,7 @@ library LibCarpetedGeometricDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount1(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet, true
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
             if (!success) return (false, 0, 0, 0);
 
@@ -426,9 +427,8 @@ library LibCarpetedGeometricDistribution {
         }
         mainLiquidity = totalLiquidity.mulWad(WAD - weightCarpet);
         uint256 carpetLiquidity = totalLiquidity - mainLiquidity;
-        rightCarpetLiquidity = carpetLiquidity.mulDiv(
-            uint24((maxUsableTick - minTick) / tickSpacing - length), uint24(numRoundedTicksCarpeted)
-        );
+        uint24 rightCarpetNumRoundedTicks = uint24((maxUsableTick - minTick) / tickSpacing - length);
+        rightCarpetLiquidity = carpetLiquidity.mulDiv(rightCarpetNumRoundedTicks, uint24(numRoundedTicksCarpeted));
         leftCarpetLiquidity = carpetLiquidity - rightCarpetLiquidity;
     }
 

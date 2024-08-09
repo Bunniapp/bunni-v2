@@ -10,6 +10,7 @@ import "../../src/ldf/LibCarpetedDoubleGeometricDistribution.sol";
 contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
+    uint256 internal constant INVCUM0_MAX_ERROR = 3;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new CarpetedDoubleGeometricDistribution()));
@@ -134,7 +135,8 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
     }
 
     function test_inverseCumulativeAmount0(
-        int24 tick,
+        uint256 liquidity,
+        uint256 cumulativeAmount0,
         int24 tickSpacing,
         int24 minTick,
         int24 length0,
@@ -145,11 +147,10 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint32 weight1,
         uint256 weightCarpet
     ) external virtual {
+        liquidity = bound(liquidity, 1e18, 1e36);
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -164,19 +165,10 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         vm.assume((maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1 >= 1);
         length0 = int24(bound(length0, 1, (maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1));
 
-        tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
-
         weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("minTick", minTick);
-        console2.log("alpha0", alpha0);
-        console2.log("length0", length0);
-        console2.log("alpha1", alpha1);
-        console2.log("length1", length1);
-        console2.log("weight0", weight0);
-        console2.log("weight1", weight1);
-
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
                 ShiftMode.STATIC,
@@ -192,31 +184,52 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
         LibCarpetedDoubleGeometricDistribution.Params memory params =
             LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
+        uint256 maxCumulativeAmount0 =
+            LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, params);
+        cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
-        uint256 cumulativeAmount0DensityX96 =
-            LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, params);
-        console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
+        console2.log("cumulativeAmount0", cumulativeAmount0);
+        console2.log("maxCumulativeAmount0", maxCumulativeAmount0);
+        console2.log("minTick", minTick);
+        console2.log("alpha0", alpha0);
+        console2.log("length0", length0);
+        console2.log("alpha1", alpha1);
+        console2.log("length1", length1);
+        console2.log("weight0", weight0);
+        console2.log("weight1", weight1);
+        console2.log("weightCarpet", weightCarpet);
 
         (bool success, int24 resultRoundedTick) = LibCarpetedDoubleGeometricDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0DensityX96, liquidity, tickSpacing, params, true
+            cumulativeAmount0, liquidity, tickSpacing, params
         );
+        assertTrue(success, "inverseCumulativeAmount0 failed");
         console2.log("resultRoundedTick", resultRoundedTick);
 
-        int24 expectedTick = roundedTick;
-        console2.log("x", (expectedTick - minTick) / tickSpacing);
-        assertTrue(success, "inverseCumulativeAmount0 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
+        uint256 resultCumulativeAmount0 =
+            LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(resultRoundedTick, liquidity, tickSpacing, params);
+
+        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
+        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
+        assertLe(
+            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+            cumulativeAmount0,
+            "resultCumulativeAmount0 > cumulativeAmount0"
+        );
+
+        if (resultRoundedTick > minTick && cumulativeAmount0 > 1.2e4) {
+            // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
+            uint256 nextCumulativeAmount0 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, params
+            );
+            assertGt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 <= cumulativeAmount0");
+        }
     }
 
     function test_inverseCumulativeAmount1(
-        int24 tick,
+        uint256 liquidity,
+        uint256 cumulativeAmount1,
         int24 tickSpacing,
         int24 minTick,
         int24 length0,
@@ -227,11 +240,10 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint32 weight1,
         uint256 weightCarpet
     ) external virtual {
+        liquidity = bound(liquidity, 1e18, 1e36);
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
 
         weight0 = uint32(bound(weight0, 1, 1e6));
         weight1 = uint32(bound(weight1, 1, 1e6));
@@ -246,19 +258,10 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         vm.assume((maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1 >= 1);
         length0 = int24(bound(length0, 1, (maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1));
 
-        tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
-
         weightCarpet = bound(weightCarpet, 1, type(uint32).max);
 
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("minTick", minTick);
-        console2.log("alpha0", alpha0);
-        console2.log("length0", length0);
-        console2.log("alpha1", alpha1);
-        console2.log("length1", length1);
-        console2.log("weight0", weight0);
-        console2.log("weight1", weight1);
-
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(
             abi.encodePacked(
                 ShiftMode.STATIC,
@@ -274,222 +277,40 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         );
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
         LibCarpetedDoubleGeometricDistribution.Params memory params =
             LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
+        uint256 maxCumulativeAmount1 =
+            LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, params);
+        vm.assume(maxCumulativeAmount1 != 0);
+        cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
-        uint256 cumulativeAmount1DensityX96 =
-            LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, params);
-        console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
+        console2.log("cumulativeAmount1", cumulativeAmount1);
+        console2.log("maxCumulativeAmount1", maxCumulativeAmount1);
+        console2.log("minTick", minTick);
+        console2.log("alpha0", alpha0);
+        console2.log("length0", length0);
+        console2.log("alpha1", alpha1);
+        console2.log("length1", length1);
+        console2.log("weight0", weight0);
+        console2.log("weight1", weight1);
+        console2.log("weightCarpet", weightCarpet);
 
         (bool success, int24 resultRoundedTick) = LibCarpetedDoubleGeometricDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1DensityX96, liquidity, tickSpacing, params, true
+            cumulativeAmount1, liquidity, tickSpacing, params
         );
-        console2.log("resultRoundedTick", resultRoundedTick);
-
-        int24 expectedTick = roundedTick;
-        console2.log("x", (expectedTick - minTick) / tickSpacing);
         assertTrue(success, "inverseCumulativeAmount1 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
-    }
-
-    function test_inverseCumulativeAmount0_withPurturbation(
-        int24 tick,
-        int24 tickSpacing,
-        int24 minTick,
-        int24 length0,
-        uint256 alpha0,
-        int24 length1,
-        uint256 alpha1,
-        uint32 weight0,
-        uint32 weight1,
-        uint256 weightCarpet
-    ) external virtual {
-        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-
-        weight0 = uint32(bound(weight0, 1, 1e6));
-        weight1 = uint32(bound(weight1, 1, 1e6));
-
-        alpha1 = bound(alpha1, MIN_ALPHA, MAX_ALPHA);
-        vm.assume(alpha1 != 1e8); // 1e8 is a special case that causes overflow
-        minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
-        length1 = int24(bound(length1, 1, (maxUsableTick - minTick) / tickSpacing - 1));
-
-        alpha0 = bound(alpha0, MIN_ALPHA, MAX_ALPHA);
-        vm.assume(alpha0 != 1e8); // 1e8 is a special case that causes overflow
-        vm.assume((maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1 >= 1);
-        length0 = int24(bound(length0, 1, (maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1));
-
-        tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
-
-        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("minTick", minTick);
-        console2.log("alpha0", alpha0);
-        console2.log("length0", length0);
-        console2.log("alpha1", alpha1);
-        console2.log("length1", length1);
-        console2.log("weight0", weight0);
-        console2.log("weight1", weight1);
-
-        bytes32 ldfParams = bytes32(
-            abi.encodePacked(
-                ShiftMode.STATIC,
-                minTick,
-                int16(length0),
-                uint32(alpha0),
-                weight0,
-                int16(length1),
-                uint32(alpha1),
-                weight1,
-                uint32(weightCarpet)
-            )
-        );
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
-
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
-
-        uint256 cumulativeAmount0DensityX96 =
-            LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, params);
-
-        // purturb density upwards
-        {
-            uint256 nextCumulativeAmount0DensityX96 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(
-                roundedTick - tickSpacing, liquidity, tickSpacing, params
-            );
-            cumulativeAmount0DensityX96 = nextCumulativeAmount0DensityX96 > cumulativeAmount0DensityX96
-                ? (cumulativeAmount0DensityX96 + nextCumulativeAmount0DensityX96) / 2
-                : cumulativeAmount0DensityX96 * 101 / 100;
-        }
-
-        console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
-
-        (bool success, int24 resultRoundedTick) = LibCarpetedDoubleGeometricDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0DensityX96, liquidity, tickSpacing, params, true
-        );
         console2.log("resultRoundedTick", resultRoundedTick);
 
-        if (success) {
-            console2.log("resultRoundedTick", resultRoundedTick);
-            int24 expectedTick = roundedTick;
-            assertEq(resultRoundedTick, expectedTick, "tick incorrect");
-        } else {
-            assertEq(roundedTick, minUsableTick, "tick not minUsableTick");
-        }
-    }
+        uint256 resultCumulativeAmount1 =
+            LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(resultRoundedTick, liquidity, tickSpacing, params);
 
-    function test_inverseCumulativeAmount1_withPurturbation(
-        int24 tick,
-        int24 tickSpacing,
-        int24 minTick,
-        int24 length0,
-        uint256 alpha0,
-        int24 length1,
-        uint256 alpha1,
-        uint32 weight0,
-        uint32 weight1,
-        uint256 weightCarpet
-    ) external virtual {
-        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
+        assertGe(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-        weight0 = uint32(bound(weight0, 1, 1e6));
-        weight1 = uint32(bound(weight1, 1, 1e6));
-
-        alpha1 = bound(alpha1, MIN_ALPHA, MAX_ALPHA);
-        vm.assume(alpha1 != 1e8); // 1e8 is a special case that causes overflow
-        minTick = roundTickSingle(int24(bound(minTick, minUsableTick, maxUsableTick - 2 * tickSpacing)), tickSpacing);
-        length1 = int24(bound(length1, 1, (maxUsableTick - minTick) / tickSpacing - 1));
-
-        alpha0 = bound(alpha0, MIN_ALPHA, MAX_ALPHA);
-        vm.assume(alpha0 != 1e8); // 1e8 is a special case that causes overflow
-        vm.assume((maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1 >= 1);
-        length0 = int24(bound(length0, 1, (maxUsableTick - (minTick + length1 * tickSpacing)) / tickSpacing - 1));
-
-        tick = int24(bound(tick, minUsableTick, maxUsableTick - tickSpacing));
-
-        weightCarpet = bound(weightCarpet, 1, type(uint32).max);
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("minTick", minTick);
-        console2.log("alpha0", alpha0);
-        console2.log("length0", length0);
-        console2.log("alpha1", alpha1);
-        console2.log("length1", length1);
-        console2.log("weight0", weight0);
-        console2.log("weight1", weight1);
-
-        bytes32 ldfParams = bytes32(
-            abi.encodePacked(
-                ShiftMode.STATIC,
-                minTick,
-                int16(length0),
-                uint32(alpha0),
-                weight0,
-                int16(length1),
-                uint32(alpha1),
-                weight1,
-                uint32(weightCarpet)
-            )
-        );
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
-
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        LibCarpetedDoubleGeometricDistribution.Params memory params =
-            LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
-
-        uint256 cumulativeAmount1DensityX96 =
-            LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, params);
-
-        // purturb density upwards
-        {
-            uint256 nextCumulativeAmount1DensityX96 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(
-                roundedTick + tickSpacing, liquidity, tickSpacing, params
+        if (resultRoundedTick > minTick) {
+            uint256 nextCumulativeAmount1 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, params
             );
-            console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
-            console2.log("nextCumulativeAmount1DensityX96", nextCumulativeAmount1DensityX96);
-            cumulativeAmount1DensityX96 = nextCumulativeAmount1DensityX96 > cumulativeAmount1DensityX96
-                ? (cumulativeAmount1DensityX96 + nextCumulativeAmount1DensityX96) / 2
-                : cumulativeAmount1DensityX96 * 101 / 100;
-        }
-
-        console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
-
-        (bool success, int24 resultRoundedTick) = LibCarpetedDoubleGeometricDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1DensityX96, liquidity, tickSpacing, params, true
-        );
-        console2.log("resultRoundedTick", resultRoundedTick);
-
-        if (success) {
-            console2.log("resultRoundedTick", resultRoundedTick);
-            int24 expectedTick = roundedTick + tickSpacing;
-            assertEq(resultRoundedTick, expectedTick, "tick incorrect");
-        } else {
-            assertEq(roundedTick, maxUsableTick - tickSpacing, "tick not maxUsableTick");
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
         }
     }
 

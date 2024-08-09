@@ -8,6 +8,8 @@ import "../../src/ldf/UniformDistribution.sol";
 import "../../src/ldf/LibUniformDistribution.sol";
 
 contract UniformDistributionTest is LiquidityDensityFunctionTest {
+    uint256 internal constant INVCUM0_MAX_ERROR = 3;
+
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
     }
@@ -53,198 +55,109 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         _test_query_cumulativeAmounts(currentTick, tickSpacing, ldfParams);
     }
 
-    function test_inverseCumulativeAmount0(int24 tick, int24 tickSpacing, int24 tickLower, int24 tickUpper)
-        external
-        virtual
-    {
+    function test_inverseCumulativeAmount0(
+        uint256 liquidity,
+        uint256 cumulativeAmount0,
+        int24 tickSpacing,
+        int24 tickLower,
+        int24 tickUpper
+    ) external virtual {
+        liquidity = bound(liquidity, 1e18, 1e36);
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        tick = int24(bound(tick, minUsableTick, maxUsableTick));
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("tickLower", tickLower);
-        console2.log("tickUpper", tickUpper);
 
         PoolKey memory key;
         key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
+        uint256 maxCumulativeAmount0 =
+            LibUniformDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
+        vm.assume(maxCumulativeAmount0 != 0);
+        cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount0DensityX96 =
-            LibUniformDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, tickLower, tickUpper);
-        console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
+        console2.log("cumulativeAmount0", cumulativeAmount0);
+        console2.log("maxCumulativeAmount0", maxCumulativeAmount0);
+        console2.log("tickSpacing", tickSpacing);
+        console2.log("tickLower", tickLower);
+        console2.log("tickUpper", tickUpper);
 
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0DensityX96, liquidity, tickSpacing, tickLower, tickUpper, true
+            cumulativeAmount0, liquidity, tickSpacing, tickLower, tickUpper
         );
+        assertTrue(success, "inverseCumulativeAmount0 failed");
         console2.log("resultRoundedTick", resultRoundedTick);
 
-        int24 expectedTick = roundedTick < tickLower ? tickLower : roundedTick >= tickUpper ? tickUpper : roundedTick;
-        assertTrue(success, "inverseCumulativeAmount0 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
+        uint256 resultCumulativeAmount0 =
+            LibUniformDistribution.cumulativeAmount0(resultRoundedTick, liquidity, tickSpacing, tickLower, tickUpper);
+
+        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
+        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
+        assertLe(
+            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+            cumulativeAmount0,
+            "resultCumulativeAmount0 > cumulativeAmount0"
+        );
+
+        if (resultRoundedTick > tickLower && cumulativeAmount0 > 1e7) {
+            // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
+            uint256 nextCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
+            );
+            assertGt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 <= cumulativeAmount0");
+        }
     }
 
-    function test_inverseCumulativeAmount1(int24 tick, int24 tickSpacing, int24 tickLower, int24 tickUpper)
-        external
-        virtual
-    {
+    function test_inverseCumulativeAmount1(
+        uint256 liquidity,
+        uint256 cumulativeAmount1,
+        int24 tickSpacing,
+        int24 tickLower,
+        int24 tickUpper
+    ) external virtual {
+        liquidity = bound(liquidity, 1e18, 1e36);
         tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
         tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        tick = int24(bound(tick, minUsableTick, maxUsableTick));
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("tickLower", tickLower);
-        console2.log("tickUpper", tickUpper);
 
         PoolKey memory key;
         key.tickSpacing = tickSpacing;
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
         vm.assume(ldf.isValidParams(key, 0, ldfParams));
 
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
+        uint256 maxCumulativeAmount1 =
+            LibUniformDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
+        vm.assume(maxCumulativeAmount1 != 0);
+        cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount1DensityX96 =
-            LibUniformDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, tickLower, tickUpper);
-        console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
+        console2.log("cumulativeAmount1", cumulativeAmount1);
+        console2.log("maxCumulativeAmount1", maxCumulativeAmount1);
+        console2.log("tickSpacing", tickSpacing);
+        console2.log("tickLower", tickLower);
+        console2.log("tickUpper", tickUpper);
 
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1DensityX96, liquidity, tickSpacing, tickLower, tickUpper, true
+            cumulativeAmount1, liquidity, tickSpacing, tickLower, tickUpper
         );
-        console2.log("resultRoundedTick", resultRoundedTick);
-
-        int24 expectedTick = roundedTick < tickLower
-            ? tickLower
-            : roundedTick > tickUpper - tickSpacing ? tickUpper - tickSpacing : roundedTick;
-        if (cumulativeAmount1DensityX96 == 0) expectedTick = tickLower - tickSpacing;
-
         assertTrue(success, "inverseCumulativeAmount1 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
-    }
-
-    function test_inverseCumulativeAmount0_withPurturbation(
-        int24 tick,
-        int24 tickSpacing,
-        int24 tickLower,
-        int24 tickUpper
-    ) external virtual {
-        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
-        tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        tick = int24(bound(tick, tickLower + tickSpacing, tickUpper));
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("tickLower", tickLower);
-        console2.log("tickUpper", tickUpper);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
-
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount0DensityX96 =
-            LibUniformDistribution.cumulativeAmount0(roundedTick, liquidity, tickSpacing, tickLower, tickUpper);
-
-        // purturb density upwards
-        {
-            uint256 nextCumulativeAmount0DensityX96 = LibUniformDistribution.cumulativeAmount0(
-                roundedTick - tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
-            );
-            cumulativeAmount0DensityX96 = nextCumulativeAmount0DensityX96 > cumulativeAmount0DensityX96
-                ? (cumulativeAmount0DensityX96 + nextCumulativeAmount0DensityX96) / 2
-                : cumulativeAmount0DensityX96 * 101 / 100;
-        }
-
-        console2.log("cumulativeAmount0DensityX96", cumulativeAmount0DensityX96);
-
-        (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0DensityX96, liquidity, tickSpacing, tickLower, tickUpper, true
-        );
         console2.log("resultRoundedTick", resultRoundedTick);
 
-        int24 expectedTick = roundedTick <= tickLower ? tickLower : roundedTick >= tickUpper ? tickUpper : roundedTick;
+        uint256 resultCumulativeAmount1 =
+            LibUniformDistribution.cumulativeAmount1(resultRoundedTick, liquidity, tickSpacing, tickLower, tickUpper);
 
-        assertTrue(success, "inverseCumulativeAmount0 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
-    }
+        assertGe(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-    function test_inverseCumulativeAmount1_withPurturbation(
-        int24 tick,
-        int24 tickSpacing,
-        int24 tickLower,
-        int24 tickUpper
-    ) external virtual {
-        tickSpacing = int24(bound(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        tickLower = roundTickSingle(int24(bound(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
-        tickUpper = roundTickSingle(int24(bound(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        tick = int24(bound(tick, tickLower, tickUpper - tickSpacing));
-
-        console2.log("tick", tick);
-        console2.log("tickSpacing", tickSpacing);
-        console2.log("tickLower", tickLower);
-        console2.log("tickUpper", tickUpper);
-
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
-        vm.assume(ldf.isValidParams(key, 0, ldfParams));
-
-        uint128 liquidity = 1 << 96;
-        int24 roundedTick = roundTickSingle(tick, tickSpacing);
-
-        console2.log("roundedTick", roundedTick);
-
-        uint256 cumulativeAmount1DensityX96 =
-            LibUniformDistribution.cumulativeAmount1(roundedTick, liquidity, tickSpacing, tickLower, tickUpper);
-
-        // purturb density upwards
-        {
-            uint256 nextCumulativeAmount1DensityX96 = LibUniformDistribution.cumulativeAmount1(
-                roundedTick + tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
+        if (resultRoundedTick > tickLower) {
+            uint256 nextCumulativeAmount1 = LibUniformDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
             );
-            cumulativeAmount1DensityX96 = nextCumulativeAmount1DensityX96 > cumulativeAmount1DensityX96
-                ? (cumulativeAmount1DensityX96 + nextCumulativeAmount1DensityX96) / 2
-                : cumulativeAmount1DensityX96 * 101 / 100;
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
         }
-
-        console2.log("cumulativeAmount1DensityX96", cumulativeAmount1DensityX96);
-
-        (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1DensityX96, liquidity, tickSpacing, tickLower, tickUpper, true
-        );
-        console2.log("resultRoundedTick", resultRoundedTick);
-
-        int24 expectedTick = roundedTick < tickLower
-            ? tickLower
-            : roundedTick >= tickUpper - tickSpacing ? int24(0) : roundedTick + tickSpacing;
-
-        assertTrue(success || roundedTick >= tickUpper - tickSpacing, "inverseCumulativeAmount1 failed");
-        assertEq(resultRoundedTick, expectedTick, "tick incorrect");
     }
 
     function test_boundary_static_invalidWhenOutOfBounds(int24 tickSpacing) external view {
