@@ -657,10 +657,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         poolManager.mint(address(this), token.toId(), amount);
         poolManager.sync(token);
         if (token.isNative()) {
-            poolManager.settle{value: amount}(token);
+            poolManager.settle{value: amount}();
         } else {
             token.transfer(address(poolManager), amount);
-            poolManager.settle(token);
+            poolManager.settle();
         }
 
         // fallback
