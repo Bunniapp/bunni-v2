@@ -1,24 +1,24 @@
-# Foundry template
+# Bunni v2
 
-This is a template for a Foundry project.
+Bunni v2 is a next-gen decentralized exchange with **shapeshifting liquidity**, the next breakthrough in AMM design after Uniswap v3's concentrated liquidity.
+
+To learn more, see:
+- [Bunni v2 whitepaper](https://github.com/Bunniapp/whitepaper/blob/main/bunni-v2.pdf)
+- [Documentation](https://docs.bunni.xyz/)
 
 ## Installation
-
-To install with [DappTools](https://github.com/dapphub/dapptools):
-
-```
-dapp install [user]/[repo]
-```
 
 To install with [Foundry](https://github.com/gakonst/foundry):
 
 ```
-forge install [user]/[repo]
+forge install timeless-fi/bunni-v2
 ```
 
 ## Local development
 
 This project uses [Foundry](https://github.com/gakonst/foundry) as the development framework.
+
+Note: This project only compiles using Solidity `0.8.25` (and not `0.8.26`), but Uniswap's v4-core repo only compiles using Solidity 0.8.26. To develop locally, change the Solidity version of `lib/v4-core/src/PoolManager.sol` to `0.8.25`.
 
 ### Dependencies
 

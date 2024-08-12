@@ -59,7 +59,7 @@ contract Uniswapper is IUnlockCallback {
             if (!currency.isNative()) {
                 Currency.unwrap(currency).safeTransferFrom(user, address(poolManager), uint256(-amount));
             }
-            poolManager.settle{value: currency.isNative() ? uint256(-amount) : 0}(currency);
+            poolManager.settle{value: currency.isNative() ? uint256(-amount) : 0}();
         } else if (amount > 0) {
             poolManager.take(currency, user, uint256(amount));
         }

@@ -201,7 +201,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             abi.decode(callbackData, (Currency, uint256, PoolKey, bool));
 
         // settle and mint
-        uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}(currency);
+        uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}();
         poolManager.mint(address(this), currency.toId(), paid);
 
         // push claim tokens to BunniHub
@@ -388,7 +388,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         override(BaseHook, IBaseHook)
         poolManagerOnly
         nonReentrant
-        returns (bytes4, BeforeSwapDelta)
+        returns (bytes4, BeforeSwapDelta, uint24)
     {
         (
             bool useAmAmmFee,
@@ -418,7 +418,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             _accrueFees(amAmmManager, amAmmFeeCurrency, amAmmFeeAmount);
         }
 
-        return (BunniHook.beforeSwap.selector, beforeSwapDelta);
+        return (BunniHook.beforeSwap.selector, beforeSwapDelta, 0);
     }
 
     /// -----------------------------------------------------------------------

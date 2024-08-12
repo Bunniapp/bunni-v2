@@ -31,5 +31,5 @@ abstract contract BaseHook is IBaseHook {
         external
         virtual
         override
-        returns (bytes4, BeforeSwapDelta);
+        returns (bytes4, BeforeSwapDelta, uint24);
 }

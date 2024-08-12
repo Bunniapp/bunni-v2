@@ -9,6 +9,7 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 
 import {WETH} from "solady/tokens/WETH.sol";
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
@@ -45,6 +46,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
     using AdditionalCurrencyLibrary for Currency;
+    using TransientStateLibrary for IPoolManager;
 
     WETH internal immutable weth;
     IPoolManager internal immutable poolManager;
@@ -345,10 +347,10 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             // transfer tokens to poolManager
             if (key.currency0.isNative()) {
                 if (msgValue < rawAmount0) revert BunniHub__MsgValueInsufficient();
-                paid0 = poolManager.settle{value: rawAmount0}(key.currency0);
+                paid0 = poolManager.settle{value: rawAmount0}();
             } else {
                 key.currency0.safeTransferFromPermit2(permit2, msgSender, address(poolManager), rawAmount0);
-                paid0 = poolManager.settle(key.currency0);
+                paid0 = poolManager.settle();
             }
 
             poolManager.mint(address(this), key.currency0.toId(), paid0);
@@ -360,10 +362,10 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             // transfer tokens to poolManager
             if (key.currency1.isNative()) {
                 if (msgValue < rawAmount1) revert BunniHub__MsgValueInsufficient();
-                paid1 = poolManager.settle{value: rawAmount1}(key.currency1);
+                paid1 = poolManager.settle{value: rawAmount1}();
             } else {
                 key.currency1.safeTransferFromPermit2(permit2, msgSender, address(poolManager), rawAmount1);
-                paid1 = poolManager.settle(key.currency1);
+                paid1 = poolManager.settle();
             }
 
             poolManager.mint(address(this), key.currency1.toId(), paid1);
@@ -403,13 +405,13 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         internal
         returns (int256 reserveChange, int256 actualRawBalanceChange)
     {
-        uint256 poolManagerReserve = poolManager.sync(currency);
         uint256 absAmount = FixedPointMathLib.abs(rawBalanceChange);
         if (rawBalanceChange < 0) {
             uint256 maxDepositAmount = vault.maxDeposit(address(this));
             // if poolManager doesn't have enough tokens or we're trying to deposit more than the vault accepts
             // then we only deposit what we can
             // we're only maintaining the raw balance ratio so it's fine to deposit less than requested
+            uint256 poolManagerReserve = currency.balanceOf(address(poolManager));
             absAmount = FixedPointMathLib.min(FixedPointMathLib.min(absAmount, maxDepositAmount), poolManagerReserve);
 
             // burn claim tokens from this
@@ -434,6 +436,9 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             // than requested
             actualRawBalanceChange = -absAmount.toInt256();
         } else if (rawBalanceChange > 0) {
+            // sync poolManager balance before transferring assets to it
+            poolManager.sync(currency);
+
             uint256 settleMsgValue;
             if (currency.isNative()) {
                 // withdraw WETH from vault to address(this)
@@ -452,7 +457,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
 
             // settle with poolManager
             // check actual settled amount to prevent malicious vaults from giving us less than we asked for
-            uint256 settleAmount = poolManager.settle{value: settleMsgValue}(currency);
+            uint256 settleAmount = poolManager.settle{value: settleMsgValue}();
             actualRawBalanceChange = settleAmount.toInt256();
 
             // mint claim tokens to this
