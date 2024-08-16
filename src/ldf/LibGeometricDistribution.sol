@@ -23,7 +23,7 @@ library LibGeometricDistribution {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
-    int256 internal constant ROUND_TICK_TOLERANCE = 5e12;
+    int256 internal constant ROUND_TICK_TOLERANCE = 1e12;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
@@ -345,6 +345,12 @@ library LibGeometricDistribution {
         // limits tick precision to (ROUND_TICK_TOLERANCE / WAD) of a rounded tick
         xWad = (xWad / ROUND_TICK_TOLERANCE) * ROUND_TICK_TOLERANCE; // clear small errors
 
+        // early return if xWad is obviously too small
+        // return left boundary of distribution
+        if (xWad <= -int256(WAD)) {
+            return (true, minTick);
+        }
+
         // get rounded tick from xWad
         success = true;
         roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing);
@@ -408,6 +414,9 @@ library LibGeometricDistribution {
         // limits tick precision to (ROUND_TICK_TOLERANCE / WAD) of a rounded tick
         xWad = (xWad / ROUND_TICK_TOLERANCE) * ROUND_TICK_TOLERANCE; // clear small errors
 
+        // early return if xWad is obviously too large
+        // the result (the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input) doesn't exist
+        // thus return success = false
         if (xWad >= length * int256(WAD)) {
             return (false, 0);
         }

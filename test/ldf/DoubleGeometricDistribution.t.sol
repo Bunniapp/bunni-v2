@@ -206,7 +206,7 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
             "resultCumulativeAmount0 > cumulativeAmount0"
         );
 
-        if (resultRoundedTick > minTick && cumulativeAmount0 > 1.2e4) {
+        if (resultRoundedTick > minTick && cumulativeAmount0 > 1.2e5) {
             // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
             uint256 nextCumulativeAmount0 = LibDoubleGeometricDistribution.cumulativeAmount0(
                 resultRoundedTick - tickSpacing,

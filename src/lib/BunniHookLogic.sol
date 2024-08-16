@@ -345,7 +345,7 @@ library BunniHookLogic {
         if (exactIn) {
             // decrease output amount
             swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
-            if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
+            (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
 
             // take hook fees from swap fee
             hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
@@ -372,7 +372,7 @@ library BunniHookLogic {
             // need to modify fee rate to maintain the same average price as exactIn case
             // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
             swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-            if (useAmAmmFee) (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
+            (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
 
             // take hook fees from swap fee
             hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);

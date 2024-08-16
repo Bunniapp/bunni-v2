@@ -1461,6 +1461,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         skip(waitTime);
 
         // execute second swap
+        vm.assume(firstSwapOutputAmount != 0);
         params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOneFirstSwap,
             amountSpecified: -int256(firstSwapOutputAmount),
@@ -1483,6 +1484,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         skip(waitTime);
 
         // execute third swap
+        vm.assume(secondSwapOutputAmount != 0);
         params = IPoolManager.SwapParams({
             zeroForOne: zeroForOneFirstSwap,
             amountSpecified: -int256(secondSwapOutputAmount),
@@ -1501,12 +1503,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         console2.log("thirdSwapInputAmount", thirdSwapInputAmount);
         console2.log("thirdSwapOutputAmount", thirdSwapOutputAmount);
 
-        if (thirdSwapOutputAmount == 0) return;
-
         // wait for some time
         skip(waitTime);
 
         // execute fourth swap
+        vm.assume(thirdSwapOutputAmount != 0);
         params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOneFirstSwap,
             amountSpecified: -int256(thirdSwapOutputAmount),

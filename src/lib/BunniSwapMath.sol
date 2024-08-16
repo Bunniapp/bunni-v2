@@ -332,6 +332,16 @@ library BunniSwapMath {
                     updatedActiveBalance1 - currentActiveBalance1,
                     currentActiveBalance0 < updatedActiveBalance0 ? 0 : currentActiveBalance0 - updatedActiveBalance0
                 );
+
+            if (exactIn) {
+                uint256 inputAmountSpecified = uint256(-amountSpecified);
+                if (inputAmount > inputAmountSpecified && inputAmount < inputAmountSpecified + 3) {
+                    // if it's an exact input swap and inputAmount is greater than the specified input amount by 1 or 2 wei,
+                    // round down to the specified input amount to avoid reverts. this assumes that it's not feasible to
+                    // extract significant value from the pool if each swap can at most extract 2 wei.
+                    inputAmount = inputAmountSpecified;
+                }
+            }
         }
     }
 }
