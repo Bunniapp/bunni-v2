@@ -1,7 +1,7 @@
 [profile.default]
 evm_version = "cancun"
 ffi = true
-fs_permissions = [{access = "read-write", path = ".forge-snapshots/"}, {access = "read", path = "./out"}]
+fs_permissions = [{access = "read-write", path = ".forge-snapshots/"}, {access = "read", path = "./out"}, {access = "read", path = "./script/referrers.json"}]
 optimizer = true
 optimizer_runs = 6250
 remappings = [
