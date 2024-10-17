@@ -353,13 +353,17 @@ library BunniHookLogic {
         uint256 hookHandleSwapInputAmount;
         uint256 hookHandleSwapOutoutAmount;
         if (exactIn) {
-            // decrease output amount
+            // compute the swap fee and the hook fee (i.e. protocol fee)
+            // swap fee is taken by decreasing the output amount
             swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
-            (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
-
-            // take hook fees from swap fee
             hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
             swapFeeAmount -= hookFeesAmount;
+
+            // set the am-AMM fee to be the swap fee amount
+            // don't need to check if am-AMM is enabled since if it isn't
+            // BunniHook.beforeSwap() simply ignores the returned values
+            // this saves gas by avoiding an if statement
+            (amAmmFeeCurrency, amAmmFeeAmount) = (outputToken, swapFeeAmount);
 
             // modify output amount with fees
             outputAmount -= swapFeeAmount + hookFeesAmount;
@@ -378,15 +382,19 @@ library BunniHookLogic {
                 inputAmount, useAmAmmFee ? outputAmount + swapFeeAmount + hookFeesAmount : outputAmount + hookFeesAmount
             );
         } else {
-            // increase input amount
+            // compute the swap fee and the hook fee (i.e. protocol fee)
+            // swap fee is taken by increasing the input amount
             // need to modify fee rate to maintain the same average price as exactIn case
             // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
             swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-            (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
-
-            // take hook fees from swap fee
             hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
             swapFeeAmount -= hookFeesAmount;
+
+            // set the am-AMM fee to be the swap fee amount
+            // don't need to check if am-AMM is enabled since if it isn't
+            // BunniHook.beforeSwap() simply ignores the returned values
+            // this saves gas by avoiding an if statement
+            (amAmmFeeCurrency, amAmmFeeAmount) = (inputToken, swapFeeAmount);
 
             // modify input amount with fees
             inputAmount += swapFeeAmount + hookFeesAmount;
