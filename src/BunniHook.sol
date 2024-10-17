@@ -57,6 +57,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     IFloodPlain internal immutable floodPlain;
 
     /// -----------------------------------------------------------------------
+    /// Transient storage variables
+    /// -----------------------------------------------------------------------
+
+    /// @dev Equal to uint256(keccak256("REBALANCE_OUTPUT_BALANCE_SLOT")) - 1
+    uint256 internal constant REBALANCE_OUTPUT_BALANCE_SLOT =
+        0x07bd55ea91cddb9c2c27beeba6deadeb8f557caeb242f82d756cf1d33154a78c;
+
+    /// -----------------------------------------------------------------------
     /// Storage variables
     /// -----------------------------------------------------------------------
 
@@ -439,6 +447,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         RebalanceOrderPreHookArgs calldata args = hookArgs.preHookArgs;
 
+        // store the order output balance before the order execution in transient storage
+        // this is used to compute the order output amount
+        uint256 outputBalanceBefore = hookArgs.postHookArgs.currency.isNative()
+            ? weth.balanceOf(address(this))
+            : hookArgs.postHookArgs.currency.balanceOfSelf();
+        assembly ("memory-safe") {
+            tstore(REBALANCE_OUTPUT_BALANCE_SLOT, outputBalanceBefore)
+        }
+
         // pull input tokens from BunniHub to BunniHook
         // received in the form of PoolManager claim tokens
         // then unwrap claim tokens
@@ -488,7 +505,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         RebalanceOrderPostHookArgs calldata args = hookArgs.postHookArgs;
 
+        // compute order output amount by computing the difference in the output token balance
         uint256 orderOutputAmount;
+        uint256 outputBalanceBefore;
+        assembly ("memory-safe") {
+            outputBalanceBefore := tload(REBALANCE_OUTPUT_BALANCE_SLOT)
+        }
         if (args.currency.isNative()) {
             // unwrap WETH output to native ETH
             orderOutputAmount = weth.balanceOf(address(this));
@@ -496,6 +518,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         } else {
             orderOutputAmount = args.currency.balanceOfSelf();
         }
+        orderOutputAmount -= outputBalanceBefore;
 
         // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
         poolManager.sync(args.currency);
