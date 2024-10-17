@@ -265,6 +265,14 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @param referrerAddress The address of the referrer
     function setReferrerAddress(uint24 referrer, address referrerAddress) external;
 
+    /// @notice Called by key.hooks to lock BunniHub before a rebalance order's execution.
+    /// @param key The PoolKey of the Uniswap v4 pool
+    function lockForRebalance(PoolKey calldata key) external;
+
+    /// @notice Called by key.hooks to unlock BunniHub after a rebalance order's execution.
+    /// @param key The PoolKey of the Uniswap v4 pool
+    function unlockForRebalance(PoolKey calldata key) external;
+
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
 

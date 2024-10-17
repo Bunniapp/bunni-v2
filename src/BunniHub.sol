@@ -236,6 +236,20 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         }
     }
 
+    /// @inheritdoc IBunniHub
+    function lockForRebalance(PoolKey calldata key) external {
+        if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+        if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
+        _nonReentrantBefore();
+    }
+
+    /// @inheritdoc IBunniHub
+    function unlockForRebalance(PoolKey calldata key) external {
+        if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+        if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
+        _nonReentrantAfter();
+    }
+
     receive() external payable {}
 
     /// -----------------------------------------------------------------------
