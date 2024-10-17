@@ -487,6 +487,11 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             let toBalance := sload(toBalanceSlot)
             toLocked := and(toBalance, _LOCKED_MASK)
             let toReferrer := and(toBalance, _REFERRER_MASK)
+
+            // if `toReferrer` is not 0, we ignore `referrer` and use `toReferrer`
+            // this ensures that once the referrer of an account is set, it cannot be updated
+            if toReferrer { referrer := toReferrer }
+
             toBalance := and(toBalance, _BALANCE_MASK)
             let updatedToBalance := add(toBalance, amount)
             // Revert if updated balance overflows uint232

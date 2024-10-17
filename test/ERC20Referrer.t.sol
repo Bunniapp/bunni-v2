@@ -74,8 +74,8 @@ contract ERC20ReferrerTest is Test {
     {
         amount0 = bound(amount0, 0, type(uint232).max);
         amount1 = bound(amount1, 0, type(uint232).max - amount0);
-        referrer0 = uint24(bound(referrer0, 0, MAX_REFERRER));
-        referrer1 = uint24(bound(referrer1, 0, MAX_REFERRER));
+        referrer0 = uint24(bound(referrer0, 1, MAX_REFERRER));
+        referrer1 = uint24(bound(referrer1, 1, MAX_REFERRER));
         vm.assume(referrer0 != referrer1);
 
         // initial score of referrer0 is 0
@@ -90,17 +90,17 @@ contract ERC20ReferrerTest is Test {
         // mint `amount1` tokens to `bob` with referrer `referrer1`
         token.mint(bob, amount1, referrer1);
 
-        // referrer of `bob` is `referrer1`
-        assertEq(token.referrerOf(bob), referrer1, "bob referrer incorrect");
+        // referrer of `bob` is `referrer0` since referrer is immutable once set
+        assertEq(token.referrerOf(bob), referrer0, "bob referrer incorrect");
 
         // balance of `bob` is `amount0 + amount1`
         assertEq(token.balanceOf(bob), amount0 + amount1, "bob balance not equal to amount0 + amount1");
 
-        // score of `referrer0` is `0`
-        assertEq(token.scoreOf(referrer0), 0, "referrer0 score incorrect");
+        // score of `referrer0` is `amount0 + amount1`
+        assertEq(token.scoreOf(referrer0), amount0 + amount1, "referrer0 score incorrect");
 
-        // score of `referrer1` is `amount0 + amount1`
-        assertEq(token.scoreOf(referrer1), amount0 + amount1, "referrer1 score incorrect");
+        // score of `referrer1` is `0`
+        assertEq(token.scoreOf(referrer1), 0, "referrer1 score incorrect");
 
         // total supply is `amount0 + amount1`
         assertEq(token.totalSupply(), amount0 + amount1, "total supply not equal to amount0 + amount1");
@@ -614,5 +614,49 @@ contract ERC20ReferrerTest is Test {
         // unlocker should have up to date info
         assertEq(unlocker.lockedBalances(bob), 0, "locked balance incorrect");
         assertEq(keccak256(unlocker.lockDatas(bob)), keccak256(bytes("")), "lock data incorrect");
+    }
+
+    function test_referrerIsImmutable() external {
+        // mint tokens to `bob` with referrer 1
+        token.mint(bob, 1 ether, 1);
+
+        // referrer should be 1
+        assertEq(token.referrerOf(bob), 1, "referrer incorrect");
+
+        // score of referrer 1 should be 1 ether
+        assertEq(token.scoreOf(1), 1 ether, "referrer1 score incorrect");
+
+        // mint tokens to `bob` with referrer 2
+        token.mint(bob, 1 ether, 2);
+
+        // referrer should still be 1
+        assertEq(token.referrerOf(bob), 1, "referrer incorrect");
+
+        // score of referrer 1 should be 2 ether
+        assertEq(token.scoreOf(1), 2 ether, "referrer1 score incorrect");
+
+        // score of referrer 2 should be 0
+        assertEq(token.scoreOf(2), 0, "referrer2 score incorrect");
+
+        // mint tokens to `bob` with referrer 0
+        token.mint(bob, 1 ether, 0);
+
+        // referrer should still be 1
+        assertEq(token.referrerOf(bob), 1, "referrer incorrect");
+
+        // score of referrer 1 should be 3 ether
+        assertEq(token.scoreOf(1), 3 ether, "referrer1 score incorrect");
+
+        // score of referrer 0 should be 0
+        assertEq(token.scoreOf(0), 0, "referrer0 score incorrect");
+
+        // mint tokens to `bob` with referrer 1
+        token.mint(bob, 1 ether, 1);
+
+        // referrer should still be 1
+        assertEq(token.referrerOf(bob), 1, "referrer incorrect");
+
+        // score of referrer 1 should be 4 ether
+        assertEq(token.scoreOf(1), 4 ether, "referrer1 score incorrect");
     }
 }
