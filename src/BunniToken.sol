@@ -99,6 +99,12 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     /// Minting & burning
     /// -----------------------------------------------------------------------
 
+    function mint(address to, uint256 amount) external override {
+        if (msg.sender != address(hub())) revert BunniToken__NotBunniHub();
+
+        _mint(to, amount);
+    }
+
     function mint(address to, uint256 amount, uint24 referrer) external override {
         if (msg.sender != address(hub())) revert BunniToken__NotBunniHub();
 

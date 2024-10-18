@@ -155,6 +155,7 @@ library BunniHubLogic {
 
         // mint shares using actual token amounts
         shares = _mintShares(
+            msgSender,
             state.bunniToken,
             params.recipient,
             address(state.vault0) != address(0) ? rawAmount0 + reserveAmount0 : rawAmount0,
@@ -587,6 +588,7 @@ library BunniHubLogic {
     /// -----------------------------------------------------------------------
 
     /// @notice Mints share tokens to the recipient based on the amount of liquidity added.
+    /// @param msgSender The msg.sender of the transaction
     /// @param shareToken The BunniToken to mint
     /// @param recipient The recipient of the share tokens
     /// @param addedAmount0 The amount of token0 added to the pool
@@ -596,6 +598,7 @@ library BunniHubLogic {
     /// @param referrer The referrer of the liquidity provider
     /// @return shares The amount of share tokens minted to the sender.
     function _mintShares(
+        address msgSender,
         IBunniToken shareToken,
         address recipient,
         uint256 addedAmount0,
@@ -622,7 +625,13 @@ library BunniHubLogic {
         }
 
         // mint shares to sender
-        shareToken.mint(recipient, shares, referrer);
+        // only use `referrer` if `msgSender == recipient` to avoid letting anyone
+        // set the referrer of any other address
+        if (msgSender == recipient) {
+            shareToken.mint(recipient, shares, referrer);
+        } else {
+            shareToken.mint(recipient, shares);
+        }
     }
 
     /// @dev Deposits tokens into a vault.

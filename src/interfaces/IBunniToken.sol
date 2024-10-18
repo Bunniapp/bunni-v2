@@ -26,6 +26,8 @@ interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlo
 
     function poolManager() external view returns (IPoolManager);
 
+    function mint(address to, uint256 amount) external;
+
     function mint(address to, uint256 amount, uint24 referrer) external;
 
     function burn(address from, uint256 amount) external;
