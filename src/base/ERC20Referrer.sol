@@ -251,7 +251,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
         address msgSender = LibMulticaller.senderOrSigner();
         bool toLocked;
 
-        _beforeTokenTransfer(msgSender, to, amount);
+        _beforeTokenTransfer(msgSender, to, amount, 0);
         /// @solidity memory-safe-assembly
         assembly {
             // Compute the balance slot and load its value.
@@ -324,7 +324,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
         address msgSender = LibMulticaller.senderOrSigner();
         bool toLocked;
 
-        _beforeTokenTransfer(from, to, amount);
+        _beforeTokenTransfer(from, to, amount, 0);
         /// @solidity memory-safe-assembly
         assembly {
             let from_ := shl(96, from)
@@ -412,7 +412,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
     function _mint(address to, uint256 amount) internal virtual override {
         bool toLocked;
 
-        _beforeTokenTransfer(address(0), to, amount);
+        _beforeTokenTransfer(address(0), to, amount, 0);
         /// @solidity memory-safe-assembly
         assembly {
             let totalSupplyBefore := sload(_TOTAL_SUPPLY_SLOT)
@@ -465,8 +465,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
     function _mint(address to, uint256 amount, uint24 referrer) internal virtual {
         bool toLocked;
 
-        _beforeMintWithReferrer(to, amount, referrer);
-        _beforeTokenTransfer(address(0), to, amount);
+        _beforeTokenTransfer(address(0), to, amount, referrer);
         /// @solidity memory-safe-assembly
         assembly {
             if gt(referrer, MAX_REFERRER) { referrer := 0 } // referrer can't exceed max value
@@ -543,7 +542,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
     ///
     /// Emits a {Transfer} event.
     function _burn(address from, uint256 amount) internal virtual override {
-        _beforeTokenTransfer(from, address(0), amount);
+        _beforeTokenTransfer(from, address(0), amount, 0);
         /// @solidity memory-safe-assembly
         assembly {
             // Compute the balance slot and load its value.
@@ -585,7 +584,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
     function _transfer(address from, address to, uint256 amount) internal virtual override {
         bool toLocked;
 
-        _beforeTokenTransfer(from, to, amount);
+        _beforeTokenTransfer(from, to, amount, 0);
         /// @solidity memory-safe-assembly
         assembly {
             let from_ := shl(96, from)
@@ -650,6 +649,5 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
         }
     }
 
-    /// @dev Hook that is called before minting tokens with a referrer.
-    function _beforeMintWithReferrer(address to, uint256 amount, uint24 newReferrer) internal virtual {}
+    function _beforeTokenTransfer(address from, address to, uint256 amount, uint24 newReferrer) internal virtual {}
 }
