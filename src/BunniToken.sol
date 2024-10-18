@@ -246,57 +246,50 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         uint256 rewardPerToken0 = referrerRewardPerToken0;
         uint256 rewardPerToken1 = referrerRewardPerToken1;
 
-        uint24 fromReferrer;
-        uint24 toReferrer;
+        uint24 fromReferrer = from == address(0) ? 0 : referrerOf(from);
+        uint256 fromReferrerScore = scoreOf(fromReferrer);
 
-        if (from != address(0)) {
-            fromReferrer = referrerOf(from);
-            uint256 fromReferrerScore = scoreOf(fromReferrer);
+        // accrue token0 rewards
+        referrerRewardUnclaimed0[fromReferrer] = _updatedUnclaimedReward(
+            fromReferrerScore,
+            rewardPerToken0,
+            referrerRewardPerTokenPaid0[fromReferrer],
+            referrerRewardUnclaimed0[fromReferrer]
+        );
+        referrerRewardPerTokenPaid0[fromReferrer] = rewardPerToken0;
+
+        // accrue token1 rewards
+        referrerRewardUnclaimed1[fromReferrer] = _updatedUnclaimedReward(
+            fromReferrerScore,
+            rewardPerToken1,
+            referrerRewardPerTokenPaid1[fromReferrer],
+            referrerRewardUnclaimed1[fromReferrer]
+        );
+        referrerRewardPerTokenPaid1[fromReferrer] = rewardPerToken1;
+
+        uint24 toReferrer = to == address(0) ? 0 : referrerOf(to);
+
+        // no need to accrue rewards again if from and to have the same referrer
+        if (fromReferrer != toReferrer) {
+            uint256 toReferrerScore = scoreOf(toReferrer);
 
             // accrue token0 rewards
-            referrerRewardUnclaimed0[fromReferrer] = _updatedUnclaimedReward(
-                fromReferrerScore,
+            referrerRewardUnclaimed0[toReferrer] = _updatedUnclaimedReward(
+                toReferrerScore,
                 rewardPerToken0,
-                referrerRewardPerTokenPaid0[fromReferrer],
-                referrerRewardUnclaimed0[fromReferrer]
+                referrerRewardPerTokenPaid0[toReferrer],
+                referrerRewardUnclaimed0[toReferrer]
             );
-            referrerRewardPerTokenPaid0[fromReferrer] = rewardPerToken0;
+            referrerRewardPerTokenPaid0[toReferrer] = rewardPerToken0;
 
             // accrue token1 rewards
-            referrerRewardUnclaimed1[fromReferrer] = _updatedUnclaimedReward(
-                fromReferrerScore,
+            referrerRewardUnclaimed1[toReferrer] = _updatedUnclaimedReward(
+                toReferrerScore,
                 rewardPerToken1,
-                referrerRewardPerTokenPaid1[fromReferrer],
-                referrerRewardUnclaimed1[fromReferrer]
+                referrerRewardPerTokenPaid1[toReferrer],
+                referrerRewardUnclaimed1[toReferrer]
             );
-            referrerRewardPerTokenPaid1[fromReferrer] = rewardPerToken1;
-        }
-
-        if (to != address(0)) {
-            toReferrer = referrerOf(to);
-
-            // no need to accrue rewards again if from and to have the same referrer
-            if (!(from != address(0) && fromReferrer == toReferrer)) {
-                uint256 toReferrerScore = scoreOf(toReferrer);
-
-                // accrue token0 rewards
-                referrerRewardUnclaimed0[toReferrer] = _updatedUnclaimedReward(
-                    toReferrerScore,
-                    rewardPerToken0,
-                    referrerRewardPerTokenPaid0[toReferrer],
-                    referrerRewardUnclaimed0[toReferrer]
-                );
-                referrerRewardPerTokenPaid0[toReferrer] = rewardPerToken0;
-
-                // accrue token1 rewards
-                referrerRewardUnclaimed1[toReferrer] = _updatedUnclaimedReward(
-                    toReferrerScore,
-                    rewardPerToken1,
-                    referrerRewardPerTokenPaid1[toReferrer],
-                    referrerRewardUnclaimed1[toReferrer]
-                );
-                referrerRewardPerTokenPaid1[toReferrer] = rewardPerToken1;
-            }
+            referrerRewardPerTokenPaid1[toReferrer] = rewardPerToken1;
         }
     }
 
