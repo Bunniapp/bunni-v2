@@ -300,6 +300,40 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         }
     }
 
+    /// @dev If we're minting tokens to an account to referrer == 0 with a non-zero referrer, we need to accrue rewards
+    /// to the new referrer before minting to avoid double counting the account's balance for the new referrer.
+    function _beforeMintWithReferrer(address to, uint256, uint24 newReferrer) internal override {
+        uint256 rewardPerToken0 = referrerRewardPerToken0;
+        uint256 rewardPerToken1 = referrerRewardPerToken1;
+
+        uint24 toReferrer = referrerOf(to);
+
+        // should accrue rewards to new referrer if the referrer of `to` will be updated
+        // referrer is immutable after set so the only time this can happen is when `toReferrer == 0`
+        // and `newReferrer != 0`
+        if (toReferrer == 0 && newReferrer != 0) {
+            uint256 newReferrerScore = scoreOf(newReferrer);
+
+            // accrue token0 rewards to new referrer
+            referrerRewardUnclaimed0[newReferrer] = _updatedUnclaimedReward(
+                newReferrerScore,
+                rewardPerToken0,
+                referrerRewardPerTokenPaid0[newReferrer],
+                referrerRewardUnclaimed0[newReferrer]
+            );
+            referrerRewardPerTokenPaid0[newReferrer] = rewardPerToken0;
+
+            // accrue token1 rewards to new referrer
+            referrerRewardUnclaimed1[newReferrer] = _updatedUnclaimedReward(
+                newReferrerScore,
+                rewardPerToken1,
+                referrerRewardPerTokenPaid1[newReferrer],
+                referrerRewardUnclaimed1[newReferrer]
+            );
+            referrerRewardPerTokenPaid1[newReferrer] = rewardPerToken1;
+        }
+    }
+
     /// @dev Compute the updated unclaimed reward of a referrer
     function _updatedUnclaimedReward(
         uint256 referrerScore,

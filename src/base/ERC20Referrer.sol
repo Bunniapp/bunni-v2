@@ -465,6 +465,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
     function _mint(address to, uint256 amount, uint24 referrer) internal virtual {
         bool toLocked;
 
+        _beforeMintWithReferrer(to, amount, referrer);
         _beforeTokenTransfer(address(0), to, amount);
         /// @solidity memory-safe-assembly
         assembly {
@@ -648,4 +649,7 @@ abstract contract ERC20Referrer is ERC20, IERC20Referrer, IERC20Lockable {
             unlocker.lockedUserReceiveCallback(to, amount);
         }
     }
+
+    /// @dev Hook that is called before minting tokens with a referrer.
+    function _beforeMintWithReferrer(address to, uint256 amount, uint24 newReferrer) internal virtual {}
 }
