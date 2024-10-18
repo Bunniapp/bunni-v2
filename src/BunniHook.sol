@@ -449,8 +449,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             )
         );
 
-        // ensure we have exactly args.amount tokens
-        if (args.currency.balanceOfSelf() != args.amount) {
+        // ensure we have at least args.amount tokens so that there is enough input for the order
+        if (args.currency.balanceOfSelf() < args.amount) {
             revert BunniHook__PrehookPostConditionFailed();
         }
 
