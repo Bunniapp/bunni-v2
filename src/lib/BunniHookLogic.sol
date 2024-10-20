@@ -198,8 +198,7 @@ library BunniHookLogic {
             ? _getTwap(s, id, slot0.tick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality)
             : int24(0);
         int24 feeMeanTick = (
-            !feeOverridden && !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax
-                && hookParams.feeQuadraticMultiplier != 0
+            !feeOverridden && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
         )
             ? _getTwap(
                 s, id, slot0.tick, hookParams.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
@@ -315,6 +314,23 @@ library BunniHookLogic {
         uint256 swapFeeAmount;
         bool exactIn = params.amountSpecified < 0;
         useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
+        // swap fee used as the basis for computing hookFees when useAmAmmFee == true
+        // this is to avoid a malicious am-AMM manager bypassing hookFees
+        // by setting the swap fee to max and offering a proxy swap contract
+        // that sets the Bunni swap fee to 0 during such swaps and charging swap fees
+        // independently
+        uint24 hookFeesBaseSwapFee = feeOverridden
+            ? feeOverride
+            : computeDynamicSwapFee(
+                updatedSqrtPriceX96,
+                feeMeanTick,
+                lastSurgeTimestamp,
+                hookParams.feeMin,
+                hookParams.feeMax,
+                hookParams.feeQuadraticMultiplier,
+                hookParams.surgeFee,
+                hookParams.surgeFeeHalfLife
+            );
         swapFee = useAmAmmFee
             ? (
                 amAmmEnableSurgeFee
@@ -325,20 +341,7 @@ library BunniHookLogic {
                     )
                     : amAmmSwapFee
             )
-            : (
-                feeOverridden
-                    ? feeOverride
-                    : computeDynamicSwapFee(
-                        updatedSqrtPriceX96,
-                        feeMeanTick,
-                        lastSurgeTimestamp,
-                        hookParams.feeMin,
-                        hookParams.feeMax,
-                        hookParams.feeQuadraticMultiplier,
-                        hookParams.surgeFee,
-                        hookParams.surgeFeeHalfLife
-                    )
-            );
+            : hookFeesBaseSwapFee;
         uint256 hookFeesAmount;
         uint256 hookHandleSwapInputAmount;
         uint256 hookHandleSwapOutoutAmount;
@@ -346,8 +349,17 @@ library BunniHookLogic {
             // compute the swap fee and the hook fee (i.e. protocol fee)
             // swap fee is taken by decreasing the output amount
             swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
-            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
-            swapFeeAmount -= hookFeesAmount;
+            if (useAmAmmFee) {
+                // instead of computing hook fees as a portion of the swap fee
+                // and deducting it, we compute hook fees separately using hookFeesBaseSwapFee
+                // and charge it as an extra fee on the swap
+                hookFeesAmount = outputAmount.mulDivUp(hookFeesBaseSwapFee, SWAP_FEE_BASE).mulDivUp(
+                    env.hookFeeModifier, MODIFIER_BASE
+                );
+            } else {
+                hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
+                swapFeeAmount -= hookFeesAmount;
+            }
 
             // set the am-AMM fee to be the swap fee amount
             // don't need to check if am-AMM is enabled since if it isn't
@@ -377,8 +389,17 @@ library BunniHookLogic {
             // need to modify fee rate to maintain the same average price as exactIn case
             // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
             swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
-            hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
-            swapFeeAmount -= hookFeesAmount;
+            if (useAmAmmFee) {
+                // instead of computing hook fees as a portion of the swap fee
+                // and deducting it, we compute hook fees separately using hookFeesBaseSwapFee
+                // and charge it as an extra fee on the swap
+                hookFeesAmount = inputAmount.mulDivUp(hookFeesBaseSwapFee, SWAP_FEE_BASE - hookFeesBaseSwapFee).mulDivUp(
+                    env.hookFeeModifier, MODIFIER_BASE
+                );
+            } else {
+                hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
+                swapFeeAmount -= hookFeesAmount;
+            }
 
             // set the am-AMM fee to be the swap fee amount
             // don't need to check if am-AMM is enabled since if it isn't

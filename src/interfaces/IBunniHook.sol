@@ -166,6 +166,9 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @notice Whether am-AMM is enabled for the given pool.
     function getAmAmmEnabled(PoolId id) external view returns (bool);
 
+    /// @notice Returns the modifiers for computing hook fee and referral reward
+    function getModifiers() external view returns (uint32 hookFeeModifier_, uint32 referralRewardModifier_);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------

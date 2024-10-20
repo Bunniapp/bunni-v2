@@ -30,12 +30,10 @@ import {LiquidityAmounts} from "../lib/LiquidityAmounts.sol";
 
 contract BunniQuoter is IBunniQuoter {
     using TickMath for *;
-    using SafeCastLib for int256;
-    using SafeCastLib for uint256;
+    using SafeCastLib for *;
+    using FixedPointMathLib for *;
     using HookletLib for IHooklet;
     using PoolIdLibrary for PoolKey;
-    using FixedPointMathLib for int256;
-    using FixedPointMathLib for uint256;
 
     IBunniHub internal immutable hub;
 
@@ -98,8 +96,7 @@ contract BunniQuoter is IBunniQuoter {
         // get TWAP values
         int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0 ? queryTwap(key, bunniState.twapSecondsAgo) : int24(0);
         int24 feeMeanTick = (
-            !feeOverridden && !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax
-                && hookParams.feeQuadraticMultiplier != 0
+            !feeOverridden && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
         ) ? queryTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
 
         // compute total token balances
@@ -200,6 +197,23 @@ contract BunniQuoter is IBunniQuoter {
         uint256 swapFeeAmount;
         bool exactIn = params.amountSpecified < 0;
         bool useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
+        // swap fee used as the basis for computing hookFees when useAmAmmFee == true
+        // this is to avoid a malicious am-AMM manager bypassing hookFees
+        // by setting the swap fee to max and offering a proxy swap contract
+        // that sets the Bunni swap fee to 0 during such swaps and charging swap fees
+        // independently
+        uint24 hookFeesBaseSwapFee = feeOverridden
+            ? feeOverride
+            : computeDynamicSwapFee(
+                updatedSqrtPriceX96,
+                feeMeanTick,
+                lastSurgeTimestamp,
+                hookParams.feeMin,
+                hookParams.feeMax,
+                hookParams.feeQuadraticMultiplier,
+                hookParams.surgeFee,
+                hookParams.surgeFeeHalfLife
+            );
         swapFee = useAmAmmFee
             ? (
                 amAmmEnableSurgeFee
@@ -210,22 +224,21 @@ contract BunniQuoter is IBunniQuoter {
                     )
                     : amAmmSwapFee
             )
-            : (
-                feeOverridden
-                    ? feeOverride
-                    : computeDynamicSwapFee(
-                        updatedSqrtPriceX96,
-                        feeMeanTick,
-                        lastSurgeTimestamp,
-                        hookParams.feeMin,
-                        hookParams.feeMax,
-                        hookParams.feeQuadraticMultiplier,
-                        hookParams.surgeFee,
-                        hookParams.surgeFeeHalfLife
-                    )
-            );
+            : hookFeesBaseSwapFee;
         if (exactIn) {
+            // compute the swap fee and the hook fee (i.e. protocol fee)
+            // swap fee is taken by decreasing the output amount
             swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+            if (useAmAmmFee) {
+                // instead of computing hook fees as a portion of the swap fee
+                // and deducting it, we compute hook fees separately using hookFeesBaseSwapFee
+                // and charge it as an extra fee on the swap
+                (uint32 hookFeeModifier,) = hook.getModifiers();
+                uint256 hookFeesAmount =
+                    outputAmount.mulDivUp(hookFeesBaseSwapFee, SWAP_FEE_BASE).mulDivUp(hookFeeModifier, MODIFIER_BASE);
+                swapFeeAmount += hookFeesAmount; // add hook fees to swapFeeAmount since we're only using it for computing inputAmount
+                swapFee += uint24(hookFeesBaseSwapFee.mulDivUp(hookFeeModifier, MODIFIER_BASE)); // modify effective swap fee for swapper
+            }
             outputAmount -= swapFeeAmount;
 
             // take in max(amountSpecified, inputAmount) such that if amountSpecified is greater we just happily accept it
@@ -236,6 +249,16 @@ contract BunniQuoter is IBunniQuoter {
             // need to modify fee rate to maintain the same average price as exactIn case
             // in / (out * (1 - fee)) = in * (1 + fee') / out => fee' = fee / (1 - fee)
             swapFeeAmount = inputAmount.mulDivUp(swapFee, SWAP_FEE_BASE - swapFee);
+            if (useAmAmmFee) {
+                // instead of computing hook fees as a portion of the swap fee
+                // and deducting it, we compute hook fees separately using hookFeesBaseSwapFee
+                // and charge it as an extra fee on the swap
+                (uint32 hookFeeModifier,) = hook.getModifiers();
+                uint256 hookFeesAmount = inputAmount.mulDivUp(hookFeesBaseSwapFee, SWAP_FEE_BASE - hookFeesBaseSwapFee)
+                    .mulDivUp(hookFeeModifier, MODIFIER_BASE);
+                swapFeeAmount += hookFeesAmount; // add hook fees to swapFeeAmount since we're only using it for computing inputAmount
+                swapFee += uint24(hookFeesBaseSwapFee.mulDivUp(hookFeeModifier, MODIFIER_BASE)); // modify effective swap fee for swapper
+            }
             inputAmount += swapFeeAmount;
 
             // give out min(amountSpecified, outputAmount) such that if amountSpecified is greater we only give outputAmount and let the tx revert
