@@ -448,16 +448,13 @@ contract BunniQuoter is IBunniQuoter {
         uint256 reserveBalance0,
         uint256 reserveBalance1
     ) private view returns (bool shouldSurge) {
-        // only surge if both vaults are set because otherwise total liquidity won't automatically increase
+        // only surge if at least one vault is set because otherwise total liquidity won't automatically increase
         // so there's no risk of being sandwiched
-        if (address(bunniState.vault0) == address(0) || address(bunniState.vault1) == address(0)) return false;
+        if (address(bunniState.vault0) == address(0) && address(bunniState.vault1) == address(0)) return false;
 
         // compute share prices
-        VaultSharePrices memory sharePrices = VaultSharePrices({
-            initialized: true,
-            sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
-            sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
-        });
+        uint120 sharePrice0 = bunniState.reserve0 == 0 ? 0 : reserveBalance0.divWadUp(bunniState.reserve0).toUint120();
+        uint120 sharePrice1 = bunniState.reserve1 == 0 ? 0 : reserveBalance1.divWadUp(bunniState.reserve1).toUint120();
 
         // compare with share prices at last swap to see if we need to apply the surge fee
         // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
@@ -466,8 +463,8 @@ contract BunniQuoter is IBunniQuoter {
         return (
             prevSharePricesInitialized
                 && (
-                    dist(sharePrices.sharePrice0, prevSharePrice0) >= prevSharePrice0 / hookParams.vaultSurgeThreshold0
-                        || dist(sharePrices.sharePrice1, prevSharePrice1) >= prevSharePrice1 / hookParams.vaultSurgeThreshold1
+                    dist(sharePrice0, prevSharePrice0) > prevSharePrice0 / hookParams.vaultSurgeThreshold0
+                        || dist(sharePrice1, prevSharePrice1) > prevSharePrice1 / hookParams.vaultSurgeThreshold1
                 )
         );
     }
