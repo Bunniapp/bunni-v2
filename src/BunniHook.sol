@@ -377,6 +377,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return block.timestamp > s.rebalanceOrderDeadline[id];
     }
 
+    /// @inheritdoc IBunniHook
+    function getModifiers() external view returns (uint32 hookFeeModifier_, uint32 referralRewardModifier_) {
+        return (hookFeeModifier, referralRewardModifier);
+    }
+
     /// -----------------------------------------------------------------------
     /// Hooks
     /// -----------------------------------------------------------------------
