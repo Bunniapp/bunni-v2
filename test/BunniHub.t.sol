@@ -349,7 +349,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         });
 
         // bid in am-AMM auction
-        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
         bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
@@ -398,7 +397,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         });
 
         // bid in am-AMM auction
-        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
         bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
@@ -451,7 +449,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         });
 
         // bid in am-AMM auction
-        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
         bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
@@ -496,7 +493,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         });
 
         // bid in am-AMM auction
-        bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
         bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
@@ -1838,51 +1834,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (,, uint32 lastSwapTimestamp, uint32 lastSurgeTImestamp) = bunniHook.slot0s(key.toId());
         assertEq(lastSwapTimestamp, uint32(vm.getBlockTimestamp()), "lastSwapTimestamp incorrect");
         assertEq(lastSurgeTImestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTImestamp incorrect");
-    }
-
-    function test_amAmmOverride(uint256 poolOverride_, uint256 globalOverride_, bool poolEnabled) external {
-        IBunniHook.BoolOverride poolOverride = IBunniHook.BoolOverride(uint8(bound(poolOverride_, 0, 2)));
-        IBunniHook.BoolOverride globalOverride = IBunniHook.BoolOverride(uint8(bound(globalOverride_, 0, 2)));
-
-        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            Currency.wrap(address(token0)),
-            Currency.wrap(address(token1)),
-            ERC4626(address(0)),
-            ERC4626(address(0)),
-            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
-            abi.encodePacked(
-                FEE_MIN,
-                FEE_MAX,
-                FEE_QUADRATIC_MULTIPLIER,
-                FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
-                SURGE_HALFLIFE,
-                SURGE_AUTOSTART_TIME,
-                VAULT_SURGE_THRESHOLD_0,
-                VAULT_SURGE_THRESHOLD_1,
-                REBALANCE_THRESHOLD,
-                REBALANCE_MAX_SLIPPAGE,
-                REBALANCE_TWAP_SECONDS_AGO,
-                REBALANCE_ORDER_TTL,
-                poolEnabled, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
-            )
-        );
-        PoolId id = key.toId();
-
-        bunniHook.setAmAmmEnabledOverride(id, poolOverride);
-        bunniHook.setGlobalAmAmmEnabledOverride(globalOverride);
-
-        // verify amAmmEnabled
-        bool expected;
-        if (poolOverride != IBunniHook.BoolOverride.UNSET) {
-            expected = poolOverride == IBunniHook.BoolOverride.TRUE;
-        } else if (globalOverride != IBunniHook.BoolOverride.UNSET) {
-            expected = globalOverride == IBunniHook.BoolOverride.TRUE;
-        } else {
-            expected = poolEnabled;
-        }
-        assertEq(bunniHook.getAmAmmEnabled(id), expected, "getAmAmmEnabled incorrect");
     }
 
     function test_bunniToken_multicall() external {
