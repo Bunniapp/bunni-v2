@@ -514,6 +514,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// AmAmm support
     /// -----------------------------------------------------------------------
 
+    function K(PoolId) internal view virtual override returns (uint40) {
+        return 24 hours;
+    }
+
+    function EPOCH_SIZE(PoolId) internal view virtual override returns (uint256) {
+        return 1 seconds;
+    }
+
     /// @dev precedence is poolOverride > globalOverride > poolEnabled
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
         BoolOverride poolOverride = amAmmEnabledOverride[id];
