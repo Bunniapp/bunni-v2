@@ -84,17 +84,15 @@ library BunniSwapMath {
     {
         // bound sqrtPriceLimit so that we never end up at an invalid rounded tick
         uint160 sqrtPriceLimitX96 = input.swapParams.sqrtPriceLimitX96;
-        {
-            (uint160 minSqrtPrice, uint160 maxSqrtPrice) = (
-                TickMath.minUsableTick(input.key.tickSpacing).getSqrtPriceAtTick(),
-                TickMath.maxUsableTick(input.key.tickSpacing).getSqrtPriceAtTick()
-            );
-            if (
-                (input.swapParams.zeroForOne && sqrtPriceLimitX96 < minSqrtPrice)
-                    || (!input.swapParams.zeroForOne && sqrtPriceLimitX96 >= maxSqrtPrice)
-            ) {
-                sqrtPriceLimitX96 = input.swapParams.zeroForOne ? minSqrtPrice : maxSqrtPrice - 1;
-            }
+        (uint160 minSqrtPrice, uint160 maxSqrtPrice) = (
+            TickMath.minUsableTick(input.key.tickSpacing).getSqrtPriceAtTick(),
+            TickMath.maxUsableTick(input.key.tickSpacing).getSqrtPriceAtTick()
+        );
+        if (
+            (input.swapParams.zeroForOne && sqrtPriceLimitX96 <= minSqrtPrice)
+                || (!input.swapParams.zeroForOne && sqrtPriceLimitX96 >= maxSqrtPrice)
+        ) {
+            sqrtPriceLimitX96 = input.swapParams.zeroForOne ? minSqrtPrice + 1 : maxSqrtPrice - 1;
         }
 
         // initialize input and output amounts based on initial info
@@ -113,27 +111,22 @@ library BunniSwapMath {
             int24 tickNext = zeroForOne ? roundedTick : nextRoundedTick;
             uint160 sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(tickNext);
             int256 amountSpecifiedRemaining = amountSpecified;
+
+            // use boundary prices as sqrtPriceNextX96 in getSqrtPriceTarget() to let the swap execute as far as possible
+            // we'll check later if the resulting sqrtPrice exceeds sqrtPriceNextX96 to determine if the swap crossed to
+            // the next rounded tick
             (uint160 naiveSwapResultSqrtPriceX96, uint256 naiveSwapAmountIn, uint256 naiveSwapAmountOut) = SwapMath
                 .computeSwapStep({
                 sqrtPriceCurrentX96: input.sqrtPriceX96,
-                sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(zeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96),
+                sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(
+                    zeroForOne, zeroForOne ? minSqrtPrice + 1 : maxSqrtPrice - 1, sqrtPriceLimitX96
+                ),
                 liquidity: updatedRoundedTickLiquidity,
                 amountRemaining: amountSpecifiedRemaining
             });
-            if (!exactIn) {
-                unchecked {
-                    amountSpecifiedRemaining -= naiveSwapAmountOut.toInt256();
-                }
-            } else {
-                // safe because we test that amountSpecified > amountIn in SwapMath
-                unchecked {
-                    amountSpecifiedRemaining += naiveSwapAmountIn.toInt256();
-                }
-            }
             if (
-                amountSpecifiedRemaining == 0 || naiveSwapResultSqrtPriceX96 == sqrtPriceLimitX96
-                    || (zeroForOne && naiveSwapResultSqrtPriceX96 > sqrtPriceNextX96)
-                    || (!zeroForOne && naiveSwapResultSqrtPriceX96 < sqrtPriceNextX96)
+                (zeroForOne && naiveSwapResultSqrtPriceX96 >= sqrtPriceNextX96)
+                    || (!zeroForOne && naiveSwapResultSqrtPriceX96 <= sqrtPriceNextX96)
             ) {
                 // swap doesn't cross rounded tick
                 if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
