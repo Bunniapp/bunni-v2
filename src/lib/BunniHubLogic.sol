@@ -310,6 +310,26 @@ library BunniHubLogic {
             returnData.reserveAmount0 = balance0 == 0 ? 0 : returnData.amount0.mulDiv(reserveBalance0, balance0);
             returnData.reserveAmount1 = balance1 == 0 ? 0 : returnData.amount1.mulDiv(reserveBalance1, balance1);
         }
+
+        // modify reserveAmount0 and reserveAmount1 using ERC4626::maxDeposit()
+        {
+            uint256 maxDeposit0;
+            if (
+                address(inputData.state.vault0) != address(0) && returnData.reserveAmount0 != 0
+                    && returnData.amount0 > (maxDeposit0 = inputData.state.vault0.maxDeposit(address(this)))
+            ) {
+                returnData.reserveAmount0 = maxDeposit0;
+            }
+        }
+        {
+            uint256 maxDeposit1;
+            if (
+                address(inputData.state.vault1) != address(0) && returnData.reserveAmount1 != 0
+                    && returnData.amount1 > (maxDeposit1 = inputData.state.vault1.maxDeposit(address(this)))
+            ) {
+                returnData.reserveAmount1 = maxDeposit1;
+            }
+        }
     }
 
     /// -----------------------------------------------------------------------
