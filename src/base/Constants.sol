@@ -6,7 +6,7 @@ pragma abicoder v2;
 uint256 constant WAD = 1e18;
 uint256 constant Q96 = 0x1000000000000000000000000;
 uint256 constant MAX_NONCE = 1e6;
-uint256 constant MIN_INITIAL_SHARES = 1e9;
+uint256 constant MIN_INITIAL_SHARES = 1e12;
 uint256 constant MAX_SWAP_FEE_RATIO = 2.88e20; // max ratio that avoids overflow in swap fee calculation, roughly sqrt(SWAP_FEE_BASE) * sqrt(sqrt((type(uint256).max - SWAP_FEE_BASE) / type(uint24).max) - 1)
 uint256 constant SWAP_FEE_BASE = 1e6;
 uint256 constant SWAP_FEE_BASE_SQUARED = 1e12;
