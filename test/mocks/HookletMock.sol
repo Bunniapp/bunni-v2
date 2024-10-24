@@ -79,7 +79,7 @@ contract HookletMock is IHooklet {
         view
         returns (bytes4 selector, bool feeOverriden_, uint24 fee_, bool priceOverridden_, uint160 sqrtPriceX96_)
     {
-        return (IHooklet.beforeSwap.selector, feeOverridden, fee, priceOverridden, sqrtPriceX96);
+        return (IHooklet.beforeSwapView.selector, feeOverridden, fee, priceOverridden, sqrtPriceX96);
     }
 
     function afterSwap(

@@ -1970,6 +1970,97 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _swap(key, params, 0, "");
     }
 
+    function test_DoS_pool() public {
+        // Deployment data
+        uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(0);
+        Currency currency0 = Currency.wrap(address(token0));
+        Currency currency1 = Currency.wrap(address(token1));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA));
+        bytes memory hookParams = abi.encodePacked(
+            FEE_MIN,
+            FEE_MAX,
+            FEE_QUADRATIC_MULTIPLIER,
+            FEE_TWAP_SECONDS_AGO,
+            SURGE_FEE,
+            SURGE_HALFLIFE,
+            SURGE_AUTOSTART_TIME,
+            VAULT_SURGE_THRESHOLD_0,
+            VAULT_SURGE_THRESHOLD_1,
+            REBALANCE_THRESHOLD,
+            REBALANCE_MAX_SLIPPAGE,
+            REBALANCE_TWAP_SECONDS_AGO,
+            REBALANCE_ORDER_TTL,
+            true,
+            ORACLE_MIN_INTERVAL
+        );
+        bytes32 salt;
+        unchecked {
+            bytes memory creationCode = type(HookletMock).creationCode;
+            for (uint256 offset; offset < 100000; offset++) {
+                salt = bytes32(offset);
+                address deployed = computeAddress(address(this), salt, creationCode);
+                if (
+                    uint160(bytes20(deployed)) & HookletLib.ALL_FLAGS_MASK == HookletLib.ALL_FLAGS_MASK
+                        && deployed.code.length == 0
+                ) {
+                    break;
+                }
+            }
+        }
+        HookletMock hooklet = new HookletMock{salt: salt}();
+
+        // Deploy BunniToken
+        (, PoolKey memory key) = hub.deployBunniToken(
+            IBunniHub.DeployBunniTokenParams({
+                currency0: currency0,
+                currency1: currency1,
+                tickSpacing: TICK_SPACING,
+                twapSecondsAgo: TWAP_SECONDS_AGO,
+                liquidityDensityFunction: ldf,
+                hooklet: hooklet,
+                statefulLdf: true,
+                ldfParams: ldfParams,
+                hooks: bunniHook,
+                hookParams: hookParams,
+                vault0: ERC4626(address(vault0)),
+                vault1: ERC4626(address(vault1)),
+                minRawTokenRatio0: 0.08e6,
+                targetRawTokenRatio0: 0.1e6,
+                maxRawTokenRatio0: 0.12e6,
+                minRawTokenRatio1: 0.08e6,
+                targetRawTokenRatio1: 0.1e6,
+                maxRawTokenRatio1: 0.12e6,
+                sqrtPriceX96: sqrtPriceX96,
+                name: bytes32("BunniToken"),
+                symbol: bytes32("BUNNI-LP"),
+                owner: address(this),
+                metadataURI: "metadataURI",
+                salt: salt
+            })
+        );
+
+        // Mint shares using 1 wei of each token
+        // Should revert due to the amounts being too small
+        _mint(currency0, address(this), 1);
+        _mint(currency1, address(this), 1);
+        vm.expectRevert(BunniHub__DepositAmountTooSmall.selector);
+        hub.deposit(
+            IBunniHub.DepositParams({
+                poolKey: key,
+                amount0Desired: 1,
+                amount1Desired: 1,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp,
+                recipient: address(this),
+                refundRecipient: address(this),
+                vaultFee0: 0,
+                vaultFee1: 0,
+                referrer: 0
+            })
+        );
+    }
+
     /// -----------------------------------------------------------------------
     /// Internal utils
     /// -----------------------------------------------------------------------
