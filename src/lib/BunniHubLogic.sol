@@ -256,14 +256,6 @@ library BunniHubLogic {
             (returnData.amount0, returnData.amount1) =
                 (totalLiquidity.mulDivUp(totalDensity0X96, Q96), totalLiquidity.mulDivUp(totalDensity1X96, Q96));
 
-            // ensure that the added amounts are not too small to mess with the shares math
-            if (
-                totalLiquidity == 0 || (returnData.amount0 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity0X96 != 0)
-                    || (returnData.amount1 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity1X96 != 0)
-            ) {
-                revert BunniHub__DepositAmountTooSmall();
-            }
-
             // sanity check against desired amounts
             // the amounts can exceed the desired amounts due to math errors
             if (
@@ -288,6 +280,14 @@ library BunniHubLogic {
                         )
                     );
                 }
+            }
+
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (
+                totalLiquidity == 0 || (returnData.amount0 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity0X96 != 0)
+                    || (returnData.amount1 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity1X96 != 0)
+            ) {
+                revert BunniHub__DepositAmountTooSmall();
             }
 
             // update token amounts to deposit into vaults

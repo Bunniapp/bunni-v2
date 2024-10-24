@@ -1676,7 +1676,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             vaultFee1: 0,
             referrer: 0
         });
-        (uint256 shares, uint256 amount0, uint256 amount1) = quoter.quoteDeposit(depositParams);
+        (bool success, uint256 shares, uint256 amount0, uint256 amount1) = quoter.quoteDeposit(depositParams);
+        assert(success, "quoteDeposit failed");
 
         // deposit tokens
         (uint256 actualShares, uint256 actualAmount0, uint256 actualAmount1) =
