@@ -353,7 +353,7 @@ library BunniHubLogic {
         /// Validation
         /// -----------------------------------------------------------------------
 
-        if (params.shares == 0) revert BunniHub__ZeroInput();
+        if (!params.useQueuedWithdrawal && params.shares == 0) revert BunniHub__ZeroInput();
 
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = getPoolState(s, poolId);
