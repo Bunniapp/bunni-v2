@@ -330,16 +330,35 @@ library BunniHubLogic {
         /// -----------------------------------------------------------------------
 
         address msgSender = LibMulticaller.senderOrSigner();
+        QueuedWithdrawal memory queued = s.queuedWithdrawals[id][msgSender];
 
         // update queued withdrawal
-        // any existing queued amount simply uses the updated delay
         // use unchecked to get unlockTimestamp to overflow back to 0 if overflow occurs
         // which is fine since we only care about relative time
+        uint56 newUnlockTimestamp;
         unchecked {
-            s.queuedWithdrawals[id][msgSender] = QueuedWithdrawal({
-                shareAmount: params.shares,
-                unlockTimestamp: uint56(block.timestamp) + WITHDRAW_DELAY
-            });
+            newUnlockTimestamp = uint56(block.timestamp) + WITHDRAW_DELAY;
+        }
+        if (queued.shareAmount != 0) {
+            // requeue expired queued withdrawal
+            if (queued.unlockTimestamp + WITHDRAW_GRACE_PERIOD >= block.timestamp) {
+                revert BunniHub__NoExpiredWithdrawal();
+            }
+            s.queuedWithdrawals[id][msgSender].unlockTimestamp = newUnlockTimestamp;
+        } else {
+            // create new queued withdrawal
+            if (params.shares == 0) revert BunniHub__ZeroInput();
+            s.queuedWithdrawals[id][msgSender] =
+                QueuedWithdrawal({shareAmount: params.shares, unlockTimestamp: newUnlockTimestamp});
+        }
+
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        if (queued.shareAmount == 0) {
+            // transfer shares from msgSender to address(this)
+            bunniToken.transferFrom(msgSender, address(this), params.shares);
         }
 
         emit IBunniHub.QueueWithdraw(msgSender, id, params.shares);
@@ -388,10 +407,11 @@ library BunniHubLogic {
             if (queued.unlockTimestamp + WITHDRAW_GRACE_PERIOD < block.timestamp) revert BunniHub__GracePeriodExpired();
             shares = queued.shareAmount;
             s.queuedWithdrawals[poolId][msgSender].shareAmount = 0; // don't delete the struct to save gas later
+            state.bunniToken.burn(address(this), shares); // BunniTokens were deposited to address(this) earlier with queueWithdraw()
         } else {
             shares = params.shares;
+            state.bunniToken.burn(msgSender, shares);
         }
-        state.bunniToken.burn(msgSender, shares);
         // at this point of execution we know shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 

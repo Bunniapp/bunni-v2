@@ -17,6 +17,7 @@ error BunniHub__InvalidHookParams();
 error BunniHub__VaultFeeIncorrect();
 error BunniHub__VaultAssetMismatch();
 error BunniHub__GracePeriodExpired();
+error BunniHub__NoExpiredWithdrawal();
 error BunniHub__MsgValueInsufficient();
 error BunniHub__QueuedWithdrawalNotReady();
 error BunniHub__BunniTokenNotInitialized();
