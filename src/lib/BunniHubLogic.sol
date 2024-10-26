@@ -134,23 +134,31 @@ library BunniHubLogic {
         );
 
         // update reserves
+        uint256 amount0Spent = rawAmount0;
+        uint256 amount1Spent = rawAmount1;
         if (address(state.vault0) != address(0) && reserveAmount0 != 0) {
-            (uint256 reserveChange, uint256 reserveChangeInUnderlying) = _depositVaultReserve(
+            (uint256 reserveChange, uint256 reserveChangeInUnderlying, uint256 amountSpent) = _depositVaultReserve(
                 env, reserveAmount0, params.poolKey.currency0, state.vault0, msgSender, params.vaultFee0
             );
             s.reserve0[poolId] = state.reserve0 + reserveChange;
 
             // use actual withdrawable value to handle vaults with withdrawal fees
             reserveAmount0 = reserveChangeInUnderlying;
+
+            // add amount spent on vault deposit to the total amount spent
+            amount0Spent += amountSpent;
         }
         if (address(state.vault1) != address(0) && reserveAmount1 != 0) {
-            (uint256 reserveChange, uint256 reserveChangeInUnderlying) = _depositVaultReserve(
+            (uint256 reserveChange, uint256 reserveChangeInUnderlying, uint256 amountSpent) = _depositVaultReserve(
                 env, reserveAmount1, params.poolKey.currency1, state.vault1, msgSender, params.vaultFee1
             );
             s.reserve1[poolId] = state.reserve1 + reserveChange;
 
             // use actual withdrawable value to handle vaults with withdrawal fees
             reserveAmount1 = reserveChangeInUnderlying;
+
+            // add amount spent on vault deposit to the total amount spent
+            amount1Spent += amountSpent;
         }
 
         // mint shares using actual token amounts
@@ -172,13 +180,13 @@ library BunniHubLogic {
         if (params.poolKey.currency0.isNative()) {
             if (address(this).balance != 0) {
                 params.refundRecipient.safeTransferETH(
-                    FixedPointMathLib.min(address(this).balance, msg.value - amount0)
+                    FixedPointMathLib.min(address(this).balance, msg.value - amount0Spent)
                 );
             }
         } else if (params.poolKey.currency1.isNative()) {
             if (address(this).balance != 0) {
                 params.refundRecipient.safeTransferETH(
-                    FixedPointMathLib.min(address(this).balance, msg.value - amount1)
+                    FixedPointMathLib.min(address(this).balance, msg.value - amount1Spent)
                 );
             }
         }
@@ -641,7 +649,7 @@ library BunniHubLogic {
         ERC4626 vault,
         address user,
         uint256 vaultFee
-    ) internal returns (uint256 reserveChange, uint256 reserveChangeInUnderlying) {
+    ) internal returns (uint256 reserveChange, uint256 reserveChangeInUnderlying, uint256 amountSpent) {
         // use the pre-fee amount to ensure `amount` is the amount of tokens
         // that we'll be able to withdraw from the vault
         // it's safe to rely on the user provided fee value here
@@ -649,6 +657,7 @@ library BunniHubLogic {
         // and if user provide fee!=0 when the fee is some other value (0 or non-zero) the validation will revert
         uint256 postFeeAmount = amount; // cache amount to use for validation later
         amount = amount.divWadUp(WAD - vaultFee);
+        amountSpent = amount;
 
         IERC20 token;
         if (currency.isNative()) {
