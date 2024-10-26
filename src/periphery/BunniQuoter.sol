@@ -92,6 +92,20 @@ contract BunniQuoter is IBunniQuoter {
             return (false, 0, 0, 0, 0, 0, 0);
         }
 
+        // compute total token balances
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
+            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+        (uint256 balance0, uint256 balance1) =
+            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
+
+        // if it's an exact output swap, exit if the requested output is greater than the balance
+        bool exactIn = params.amountSpecified < 0;
+        if (!exactIn && uint256(params.amountSpecified) > (params.zeroForOne ? balance1 : balance0)) {
+            return (false, 0, 0, 0, 0, 0, 0);
+        }
+
         // decode hook params
         DecodedHookParams memory hookParams = BunniHookLogic.decodeHookParams(bunniState.hookParams);
 
@@ -101,14 +115,6 @@ contract BunniQuoter is IBunniQuoter {
             !feeOverridden && !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax
                 && hookParams.feeQuadraticMultiplier != 0
         ) ? queryTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
-
-        // compute total token balances
-        (uint256 reserveBalance0, uint256 reserveBalance1) = (
-            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
-        );
-        (uint256 balance0, uint256 balance1) =
-            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // query the LDF to get total liquidity and token densities
         bytes32 ldfState = bunniState.statefulLdf ? hook.ldfStates(id) : bytes32(0);
@@ -151,14 +157,14 @@ contract BunniQuoter is IBunniQuoter {
                 ldfParams: bunniState.ldfParams,
                 ldfState: ldfState,
                 swapParams: params
-            }),
-            balance0: balance0,
-            balance1: balance1
+            })
         });
 
+        // exit if it's an exact output swap and outputAmount < params.amountSpecified
         // ensure swap never moves price in the opposite direction
         if (
-            (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
+            (!exactIn && outputAmount < uint256(params.amountSpecified))
+                || (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
@@ -198,7 +204,6 @@ contract BunniQuoter is IBunniQuoter {
         // 2) hooklet override fee
         // 3) dynamic fee
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified < 0;
         bool useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (

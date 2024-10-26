@@ -184,6 +184,20 @@ library BunniHookLogic {
             revert BunniHook__InvalidSwap();
         }
 
+        // compute total token balances
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
+            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+        (uint256 balance0, uint256 balance1) =
+            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
+
+        // if it's an exact output swap, revert if the requested output is greater than the balance
+        bool exactIn = params.amountSpecified < 0;
+        if (!exactIn && uint256(params.amountSpecified) > (params.zeroForOne ? balance1 : balance0)) {
+            revert BunniHook__RequestedOutputExceedsBalance();
+        }
+
         // decode hook params
         DecodedHookParams memory hookParams = _decodeParams(bunniState.hookParams);
 
@@ -205,14 +219,6 @@ library BunniHookLogic {
                 s, id, slot0.tick, hookParams.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
             )
             : int24(0);
-
-        // compute total token balances
-        (uint256 reserveBalance0, uint256 reserveBalance1) = (
-            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
-        );
-        (uint256 balance0, uint256 balance1) =
-            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // query the LDF to get total liquidity and token densities
         bytes32 ldfState = bunniState.statefulLdf ? s.ldfStates[id] : bytes32(0);
@@ -256,10 +262,13 @@ library BunniHookLogic {
                 ldfParams: bunniState.ldfParams,
                 ldfState: ldfState,
                 swapParams: params
-            }),
-            balance0: balance0,
-            balance1: balance1
+            })
         });
+
+        // revert if it's an exact output swap and outputAmount < params.amountSpecified
+        if (!exactIn && outputAmount < uint256(params.amountSpecified)) {
+            revert BunniHook__InsufficientOutput();
+        }
 
         // ensure swap never moves price in the opposite direction
         if (
@@ -313,7 +322,6 @@ library BunniHookLogic {
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         uint24 swapFee;
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified < 0;
         useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (
@@ -382,7 +390,7 @@ library BunniHookLogic {
             inputAmount += swapFeeAmount + hookFeesAmount;
 
             // return beforeSwapDelta
-            // give out min(amountSpecified, outputAmount) such that if amountSpecified is greater we only give outputAmount and let the tx revert
+            // give out min(amountSpecified, outputAmount) such that we only give out as much as requested
             int256 actualOutputAmount = FixedPointMathLib.min(params.amountSpecified, outputAmount.toInt256());
             outputAmount = uint256(actualOutputAmount);
             beforeSwapDelta = toBeforeSwapDelta({

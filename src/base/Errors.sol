@@ -31,5 +31,7 @@ error BunniToken__ReferrerAddressIsZero();
 error BunniHook__InvalidSwap();
 error BunniHook__Unauthorized();
 error BunniHook__InvalidModifier();
+error BunniHook__InsufficientOutput();
 error BunniHook__PrehookPostConditionFailed();
 error BunniHook__InvalidRebalanceOrderHookArgs();
+error BunniHook__RequestedOutputExceedsBalance();
