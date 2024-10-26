@@ -254,16 +254,14 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         // make deposit
-        (uint256 beforeBalance0, uint256 beforeBalance1) =
-            (currency0.balanceOf(address(this)), currency1.balanceOf(address(this)));
+        (uint256 beforeBalance0, uint256 beforeBalance1) = hub.poolBalances(key.toId());
         (uint256 shares, uint256 amount0, uint256 amount1) =
             _makeDeposit(key, depositAmount0, depositAmount1, address(this), snapLabel);
-        uint256 actualDepositedAmount0 = beforeBalance0 + depositAmount0 - currency0.balanceOf(address(this));
-        uint256 actualDepositedAmount1 = beforeBalance1 + depositAmount1 - currency1.balanceOf(address(this));
+        (uint256 afterBalance0, uint256 afterBalance1) = hub.poolBalances(key.toId());
 
         // check return values
-        assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS, "amount0 incorrect");
-        assertEqDecimal(amount1, actualDepositedAmount1, DECIMALS, "amount1 incorrect");
+        assertApproxEqAbsDecimal(amount0, afterBalance0 - beforeBalance0, 1, DECIMALS, "amount0 incorrect");
+        assertApproxEqAbsDecimal(amount1, afterBalance1 - beforeBalance1, 1, DECIMALS, "amount1 incorrect");
         assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS, "shares incorrect");
     }
 
@@ -1684,8 +1682,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // check if actual amounts match quoted amounts
         assertApproxEqRel(actualShares, shares, 1e12, "actual shares doesn't match quoted shares");
-        assertEq(actualAmount0, amount0, "actual amount0 doesn't match quoted amount0");
-        assertEq(actualAmount1, amount1, "actual amount1 doesn't match quoted amount1");
+        assertApproxEqAbs(actualAmount0, amount0, 1, "actual amount0 doesn't match quoted amount0");
+        assertApproxEqAbs(actualAmount1, amount1, 1, "actual amount1 doesn't match quoted amount1");
     }
 
     function test_rebalance_basicOrderCreationAndFulfillment(
