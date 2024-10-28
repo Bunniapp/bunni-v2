@@ -823,5 +823,6 @@ library BunniHookLogic {
         p.rebalanceOrderTTL = uint16(bytes2(firstWord << 232));
         p.amAmmEnabled = uint8(bytes1(firstWord << 248)) != 0;
         p.oracleMinInterval = uint32(bytes4(secondWord));
+        p.maxAmAmmFee = uint24(bytes3(secondWord << 32));
     }
 }

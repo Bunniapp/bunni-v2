@@ -135,7 +135,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             REBALANCE_TWAP_SECONDS_AGO,
             REBALANCE_ORDER_TTL,
             true, // amAmmEnabled
-            ORACLE_MIN_INTERVAL
+            ORACLE_MIN_INTERVAL,
+            MAX_AMAMM_FEE
         );
         (bunniToken, key) = hub.deployBunniToken(
             IBunniHub.DeployBunniTokenParams({
