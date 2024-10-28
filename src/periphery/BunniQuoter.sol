@@ -329,6 +329,7 @@ contract BunniQuoter is IBunniQuoter {
 
         // hooklet call
         success = state.hooklet.hookletBeforeWithdrawView(sender, params);
+        if (!success) return (false, 0, 0);
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
 
