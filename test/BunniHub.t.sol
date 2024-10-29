@@ -1773,8 +1773,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(orderEtchedLog.topics[0], IOnChainOrders.OrderEtched.selector, "not OrderEtched event");
         IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
         IFloodPlain.Order memory order = signedOrder.order;
+        (, bytes32 permit2Hash) = _hashFloodOrder(order);
         assertEq(
-            bunniHook.isValidSignature(_newOrderHash(order), abi.encode(key.toId())),
+            bunniHook.isValidSignature(permit2Hash, abi.encode(key.toId())),
             IERC1271.isValidSignature.selector,
             "order signature not valid"
         );
@@ -2444,14 +2445,14 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     /// @dev The hash that Permit2 uses when verifying the order's signature.
     /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
     /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
-    function _newOrderHash(IFloodPlain.Order memory order) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                IEIP712(permit2).DOMAIN_SEPARATOR(),
-                OrderHashMemory.hashAsWitness(order, address(floodPlain))
-            )
-        );
+    /// Also returns the Flood order hash
+    function _hashFloodOrder(IFloodPlain.Order memory order)
+        internal
+        view
+        returns (bytes32 orderHash, bytes32 permit2Hash)
+    {
+        (orderHash, permit2Hash) = OrderHashMemory.hashAsWitness(order, address(floodPlain));
+        permit2Hash = keccak256(abi.encodePacked("\x19\x01", IEIP712(permit2).DOMAIN_SEPARATOR(), permit2Hash));
     }
 
     /// @notice Precompute a contract address deployed via CREATE2
