@@ -157,9 +157,11 @@ contract BunniQuoter is IBunniQuoter {
         });
 
         // ensure swap never moves price in the opposite direction
+        // ensure the inputAmount is non-zero when it's an exact output swap
         if (
             (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
+                || (params.amountSpecified > 0 && inputAmount == 0)
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
         }
