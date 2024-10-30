@@ -267,6 +267,34 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS, "shares incorrect");
     }
 
+    function test_deposit_msgValueNonZeroWhenNoETH() public {
+        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        // make deposit with msg.value being non-zero
+        // mint tokens
+        uint256 depositAmount0 = 1 ether;
+        uint256 depositAmount1 = 1 ether;
+        _mint(key.currency0, address(this), depositAmount0);
+        _mint(key.currency1, address(this), depositAmount1);
+
+        // deposit tokens
+        IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
+            poolKey: key,
+            amount0Desired: depositAmount0,
+            amount1Desired: depositAmount1,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            recipient: address(this),
+            refundRecipient: address(this),
+            vaultFee0: 0,
+            vaultFee1: 0,
+            referrer: 0
+        });
+        vm.expectRevert(BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken.selector);
+        hub.deposit{value: 1 ether}(depositParams);
+    }
+
     function test_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
         _execTestAcrossScenarios(_test_withdraw, depositAmount0, depositAmount1, "withdraw");
     }

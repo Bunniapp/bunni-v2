@@ -79,6 +79,14 @@ library BunniHubLogic {
         PoolState memory state = getPoolState(s, poolId);
 
         /// -----------------------------------------------------------------------
+        /// Validation
+        /// -----------------------------------------------------------------------
+
+        if (msg.value != 0 && !params.poolKey.currency0.isNative() && !params.poolKey.currency1.isNative()) {
+            revert BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken();
+        }
+
+        /// -----------------------------------------------------------------------
         /// Hooklet call
         /// -----------------------------------------------------------------------
 
