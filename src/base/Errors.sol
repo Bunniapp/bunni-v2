@@ -10,6 +10,7 @@ error BunniHub__InvalidReferrer();
 error BunniHub__LDFCannotBeZero();
 error BunniHub__MaxNonceReached();
 error BunniHub__SlippageTooHigh();
+error BunniHub__WithdrawalPaused();
 error BunniHub__HookCannotBeZero();
 error BunniHub__ZeroSharesMinted();
 error BunniHub__InvalidLDFParams();

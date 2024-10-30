@@ -332,6 +332,47 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
     }
 
+    function test_withdraw_revertWhenRebalanceOrderIsActive() public {
+        MockLDF ldf_ = new MockLDF();
+        ldf_.setMinTick(-30);
+
+        // deploy pool and init liquidity
+        Currency currency0 = Currency.wrap(address(token0));
+        Currency currency1 = Currency.wrap(address(token1));
+        (IBunniToken bunniToken, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)), ldf_);
+
+        // shift liquidity to the right
+        // the LDF will demand more token0, so we'll have too much of token1
+        // the rebalance should swap from token1 to token0
+        ldf_.setMinTick(-20);
+
+        // make small swap to trigger rebalance
+        uint256 swapAmount = 1e3;
+        _mint(key.currency0, address(this), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        _swap(key, params, 0, "");
+
+        // try withdrawing liquidity
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(0x6969),
+            shares: bunniToken.balanceOf(address(0x6969)),
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: false
+        });
+        vm.startPrank(address(0x6969));
+        vm.expectRevert(BunniHub__WithdrawalPaused.selector);
+        hub.withdraw(withdrawParams);
+        vm.stopPrank();
+    }
+
     function test_queueWithdraw_happyPath(uint256 depositAmount0, uint256 depositAmount1) public {
         depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
         depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);

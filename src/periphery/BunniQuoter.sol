@@ -300,10 +300,15 @@ contract BunniQuoter is IBunniQuoter {
         external
         view
         override
-        returns (uint256 amount0, uint256 amount1)
+        returns (bool success, uint256 amount0, uint256 amount1)
     {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = hub.poolState(poolId);
+        IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
+
+        if (!hook.canWithdraw(poolId)) {
+            return (false, 0, 0);
+        }
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
 

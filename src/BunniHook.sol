@@ -366,6 +366,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return (prices.initialized, prices.sharePrice0, prices.sharePrice1);
     }
 
+    /// @inheritdoc IBunniHook
+    function canWithdraw(PoolId id) external view returns (bool) {
+        return block.timestamp > s.rebalanceOrderDeadline[id];
+    }
+
     /// -----------------------------------------------------------------------
     /// Hooks
     /// -----------------------------------------------------------------------
