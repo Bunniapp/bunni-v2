@@ -101,6 +101,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
+        require(
+            address(hub_) != address(0) && address(floodPlain_) != address(0) && address(permit2) != address(0)
+                && address(weth_) != address(0) && owner_ != address(0)
+        );
 
         hookFeeModifier = hookFeeModifier_;
         referralRewardModifier = referralRewardModifier_;

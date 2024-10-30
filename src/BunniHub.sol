@@ -79,6 +79,10 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         IBunniToken bunniTokenImplementation_,
         address initialOwner
     ) Permit2Enabled(permit2_) {
+        require(
+            address(poolManager_) != address(0) && address(weth_) != address(0)
+                && address(bunniTokenImplementation_) != address(0) && initialOwner != address(0)
+        );
         poolManager = poolManager_;
         weth = weth_;
         bunniTokenImplementation = bunniTokenImplementation_;
