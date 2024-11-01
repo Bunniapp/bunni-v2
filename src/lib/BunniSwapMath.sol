@@ -103,6 +103,9 @@ library BunniSwapMath {
         outputAmount = exactIn ? 0 : uint256(amountSpecified);
         bool zeroForOne = input.swapParams.zeroForOne;
 
+        // initialize updatedTick to the current tick
+        updatedTick = input.currentTick;
+
         // compute updated current tick liquidity
         uint256 updatedRoundedTickLiquidity = (input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96;
 
