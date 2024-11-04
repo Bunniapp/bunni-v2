@@ -671,7 +671,9 @@ library BunniHookLogic {
             return (false, inputToken, outputToken, inputAmount, outputAmount);
         }
         inputAmount = inputTokenExcessBalance - inputTokenTarget;
-        outputAmount = outputTokenTarget.mulDivUp(1e5 - input.hookParams.rebalanceMaxSlippage, 1e5);
+        outputAmount = outputTokenTarget.mulDivUp(
+            REBALANCE_MAX_SLIPPAGE_BASE - input.hookParams.rebalanceMaxSlippage, REBALANCE_MAX_SLIPPAGE_BASE
+        );
 
         success = true;
     }

@@ -327,14 +327,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 && (p.feeQuadraticMultiplier == 0 || p.feeMin == p.feeMax || p.feeTwapSecondsAgo != 0)
                 && (p.surgeFee < SWAP_FEE_BASE)
                 && (uint256(p.surgeFeeHalfLife) * uint256(p.vaultSurgeThreshold0) * uint256(p.vaultSurgeThreshold1) != 0)
+                && (p.surgeFeeHalfLife < MAX_SURGE_HALFLIFE && p.surgeFeeAutostartThreshold < MAX_SURGE_AUTOSTART_TIME)
                 && (
                     (
                         p.rebalanceThreshold == 0 && p.rebalanceMaxSlippage == 0 && p.rebalanceTwapSecondsAgo == 0
                             && p.rebalanceOrderTTL == 0
                     )
                         || (
-                            p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0 && p.rebalanceTwapSecondsAgo != 0
-                                && p.rebalanceOrderTTL != 0
+                            p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0
+                                && p.rebalanceMaxSlippage < REBALANCE_MAX_SLIPPAGE_BASE && p.rebalanceTwapSecondsAgo != 0
+                                && p.rebalanceTwapSecondsAgo < MAX_REBALANCE_TWAP_SECONDS_AGO && p.rebalanceOrderTTL != 0
+                                && p.rebalanceOrderTTL < MAX_REBALANCE_ORDER_TTL
                         )
                 ) && (p.oracleMinInterval != 0);
         }

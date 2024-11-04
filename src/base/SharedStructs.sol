@@ -54,9 +54,9 @@ struct HubStorage {
 /// @member rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
 ///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
 ///         When set to 0, rebalancing is disabled.
-/// @member rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals.
-/// @member rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
-/// @member rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
+/// @member rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals. At most MAX_REBALANCE_MAX_SLIPPAGE.
+/// @member rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing. At most MAX_REBALANCE_TWAP_SECONDS_AGO.
+/// @member rebalanceOrderTTL The time-to-live for a rebalance order, in seconds. At most MAX_REBALANCE_ORDER_TTL.
 /// @member amAmmEnabled Whether the am-AMM is enabled for this pool
 /// @member oracleMinInterval The minimum interval between TWAP oracle updates, in seconds
 struct DecodedHookParams {
