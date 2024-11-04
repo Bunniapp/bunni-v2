@@ -292,6 +292,9 @@ contract BunniQuoter is IBunniQuoter {
                 sqrtPriceX96: sqrtPriceX96
             })
         );
+        if (!depositReturnData.success) {
+            return (false, 0, 0, 0);
+        }
         amount0 = depositReturnData.amount0;
         amount1 = depositReturnData.amount1;
 
@@ -304,7 +307,12 @@ contract BunniQuoter is IBunniQuoter {
 
         // compute shares
         uint256 existingShareSupply = state.bunniToken.totalSupply();
+        (uint256 addedAmount0, uint256 addedAmount1) = (rawAmount0 + reserveAmount0, rawAmount1 + reserveAmount1);
         if (existingShareSupply == 0) {
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (addedAmount0 < MIN_DEPOSIT_BALANCE_INCREASE && addedAmount1 < MIN_DEPOSIT_BALANCE_INCREASE) {
+                return (false, 0, 0, 0);
+            }
             // no existing shares, just give WAD - MIN_INITIAL_SHARES
             shares = WAD - MIN_INITIAL_SHARES;
         } else {
@@ -312,10 +320,10 @@ contract BunniQuoter is IBunniQuoter {
             shares = FixedPointMathLib.min(
                 depositReturnData.balance0 == 0
                     ? type(uint256).max
-                    : existingShareSupply.mulDiv(rawAmount0 + reserveAmount0, depositReturnData.balance0),
+                    : existingShareSupply.mulDiv(addedAmount0, depositReturnData.balance0),
                 depositReturnData.balance1 == 0
                     ? type(uint256).max
-                    : existingShareSupply.mulDiv(rawAmount1 + reserveAmount1, depositReturnData.balance1)
+                    : existingShareSupply.mulDiv(addedAmount1, depositReturnData.balance1)
             );
         }
 
@@ -375,6 +383,7 @@ contract BunniQuoter is IBunniQuoter {
     }
 
     struct DepositLogicReturnData {
+        bool success;
         uint256 reserveAmount0;
         uint256 reserveAmount1;
         uint256 amount0;
@@ -452,6 +461,14 @@ contract BunniQuoter is IBunniQuoter {
                 }
             }
 
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (
+                totalLiquidity == 0 || (returnData.amount0 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity0X96 != 0)
+                    || (returnData.amount1 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity1X96 != 0)
+            ) {
+                return DepositLogicReturnData(false, 0, 0, 0, 0, 0, 0);
+            }
+
             // update token amounts to deposit into vaults
             (returnData.reserveAmount0, returnData.reserveAmount1) = (
                 returnData.amount0
@@ -480,6 +497,8 @@ contract BunniQuoter is IBunniQuoter {
             returnData.reserveAmount0 = balance0 == 0 ? 0 : returnData.amount0.mulDiv(reserveBalance0, balance0);
             returnData.reserveAmount1 = balance1 == 0 ? 0 : returnData.amount1.mulDiv(reserveBalance1, balance1);
         }
+
+        returnData.success = true;
     }
 
     /// @dev Checks if the pool should surge based on the vault share price changes since the last swap.

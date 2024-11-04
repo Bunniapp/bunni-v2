@@ -302,6 +302,14 @@ library BunniHubLogic {
                 }
             }
 
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (
+                totalLiquidity == 0 || (returnData.amount0 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity0X96 != 0)
+                    || (returnData.amount1 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity1X96 != 0)
+            ) {
+                revert BunniHub__DepositAmountTooSmall();
+            }
+
             // update token amounts to deposit into vaults
             (returnData.reserveAmount0, returnData.reserveAmount1) = (
                 returnData.amount0
@@ -650,6 +658,10 @@ library BunniHubLogic {
     ) internal returns (uint256 shares) {
         uint256 existingShareSupply = shareToken.totalSupply();
         if (existingShareSupply == 0) {
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (addedAmount0 < MIN_DEPOSIT_BALANCE_INCREASE && addedAmount1 < MIN_DEPOSIT_BALANCE_INCREASE) {
+                revert BunniHub__DepositAmountTooSmall();
+            }
             // no existing shares, just give WAD
             shares = WAD - MIN_INITIAL_SHARES;
             // prevent first staker from stealing funds of subsequent stakers
