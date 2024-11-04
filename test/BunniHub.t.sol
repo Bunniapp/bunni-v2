@@ -272,7 +272,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_deposit_msgValueNonZeroWhenNoETH() public {
-        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit with msg.value being non-zero
         // mint tokens
@@ -2092,7 +2092,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -2203,7 +2205,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             ),
             bytes32(uint256(1))
         );
@@ -2275,7 +2279,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             REBALANCE_TWAP_SECONDS_AGO,
             REBALANCE_ORDER_TTL,
             true,
-            ORACLE_MIN_INTERVAL
+            ORACLE_MIN_INTERVAL,
+            POOL_MAX_AMAMM_FEE,
+            MIN_RENT_MULTIPLIER
         );
         bytes32 salt;
         unchecked {

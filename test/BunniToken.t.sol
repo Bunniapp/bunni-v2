@@ -194,13 +194,13 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(referrer);
         if (isToken0) {
             if (dist(claimableAmount0, amount) > 1) {
-                assertApproxEqRel(claimableAmount0, amount, MAX_REL_ERROR, "claimableAmount0 incorrect");
+                assertApproxEqRel(claimableAmount0, amount, 1e13, "claimableAmount0 incorrect");
             }
             assertEq(claimableAmount1, 0, "claimableAmount1 incorrect");
         } else {
             assertEq(claimableAmount0, 0, "claimableAmount0 incorrect");
             if (dist(claimableAmount1, amount) > 1) {
-                assertApproxEqRel(claimableAmount1, amount, MAX_REL_ERROR, "claimableAmount1 incorrect");
+                assertApproxEqRel(claimableAmount1, amount, 1e13, "claimableAmount1 incorrect");
             }
         }
 
@@ -240,13 +240,13 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(referrer);
         if (isToken0) {
             if (dist(claimableAmount0, amountTotal) > 1) {
-                assertApproxEqRel(claimableAmount0, amountTotal, MAX_REL_ERROR, "claimableAmount0 incorrect");
+                assertApproxEqRel(claimableAmount0, amountTotal, 1e13, "claimableAmount0 incorrect");
             }
             assertEq(claimableAmount1, 0, "claimableAmount1 incorrect");
         } else {
             assertEq(claimableAmount0, 0, "claimableAmount0 incorrect");
             if (dist(claimableAmount1, amountTotal) > 1) {
-                assertApproxEqRel(claimableAmount1, amountTotal, MAX_REL_ERROR, "claimableAmount1 incorrect");
+                assertApproxEqRel(claimableAmount1, amountTotal, 1e13, "claimableAmount1 incorrect");
             }
         }
 
