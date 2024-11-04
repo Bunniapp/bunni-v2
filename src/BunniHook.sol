@@ -66,9 +66,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// mappings to BunniHookLogic easier & cheaper.
     HookStorage internal s;
 
-    /// @notice The poolwise amAmmEnabled override. Top precedence.
-    mapping(PoolId => BoolOverride) internal amAmmEnabledOverride;
-
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e6`.
     uint32 internal hookFeeModifier;
 
@@ -77,9 +74,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     /// @notice The FloodZone contract used in rebalance orders.
     IZone internal floodZone;
-
-    /// @notice Enables/disables am-AMM globally. Takes precedence over amAmmEnabled in hookParams, overriden by amAmmEnabledOverride.
-    BoolOverride internal globalAmAmmEnabledOverride;
 
     /// -----------------------------------------------------------------------
     /// Constructor
@@ -267,18 +261,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         referralRewardModifier = newReferralRewardModifier;
 
         emit SetModifiers(newHookFeeModifier, newReferralRewardModifier);
-    }
-
-    /// @inheritdoc IBunniHook
-    function setAmAmmEnabledOverride(PoolId id, BoolOverride boolOverride) external onlyOwner {
-        amAmmEnabledOverride[id] = boolOverride;
-        emit SetAmAmmEnabledOverride(id, boolOverride);
-    }
-
-    /// @inheritdoc IBunniHook
-    function setGlobalAmAmmEnabledOverride(BoolOverride boolOverride) external onlyOwner {
-        globalAmAmmEnabledOverride = boolOverride;
-        emit SetGlobalAmAmmEnabledOverride(boolOverride);
     }
 
     /// -----------------------------------------------------------------------
@@ -569,14 +551,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     /// @dev precedence is poolOverride > globalOverride > poolEnabled
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
-        BoolOverride poolOverride = amAmmEnabledOverride[id];
-
-        if (poolOverride != BoolOverride.UNSET) return poolOverride == BoolOverride.TRUE;
-
-        BoolOverride globalOverride = globalAmAmmEnabledOverride;
-
-        if (globalOverride != BoolOverride.UNSET) return globalOverride == BoolOverride.TRUE;
-
         bytes memory hookParams = hub.hookParams(id);
         bytes32 firstWord;
         /// @solidity memory-safe-assembly
