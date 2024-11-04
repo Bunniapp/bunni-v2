@@ -58,4 +58,7 @@ interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlo
     /// @return reward0 The amount of token0 rewards claimable
     /// @return reward1 The amount of token1 rewards claimable
     function getClaimableReferralRewards(uint24 referrer) external view returns (uint256 reward0, uint256 reward1);
+
+    /// @notice Increments the EIP-2612 permit nonce of the caller to invalidate permit signatures.
+    function incrementNonce() external;
 }
