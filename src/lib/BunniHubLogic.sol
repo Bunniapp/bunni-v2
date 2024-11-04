@@ -79,6 +79,14 @@ library BunniHubLogic {
         PoolState memory state = getPoolState(s, poolId);
 
         /// -----------------------------------------------------------------------
+        /// Validation
+        /// -----------------------------------------------------------------------
+
+        if (msg.value != 0 && !params.poolKey.currency0.isNative() && !params.poolKey.currency1.isNative()) {
+            revert BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken();
+        }
+
+        /// -----------------------------------------------------------------------
         /// Hooklet call
         /// -----------------------------------------------------------------------
 
@@ -134,32 +142,44 @@ library BunniHubLogic {
         );
 
         // update reserves
+        uint256 amount0Spent = rawAmount0;
+        uint256 amount1Spent = rawAmount1;
         if (address(state.vault0) != address(0) && reserveAmount0 != 0) {
-            (uint256 reserveChange, uint256 reserveChangeInUnderlying) = _depositVaultReserve(
+            (uint256 reserveChange, uint256 reserveChangeInUnderlying, uint256 amountSpent) = _depositVaultReserve(
                 env, reserveAmount0, params.poolKey.currency0, state.vault0, msgSender, params.vaultFee0
             );
             s.reserve0[poolId] = state.reserve0 + reserveChange;
 
             // use actual withdrawable value to handle vaults with withdrawal fees
             reserveAmount0 = reserveChangeInUnderlying;
+
+            // add amount spent on vault deposit to the total amount spent
+            amount0Spent += amountSpent;
         }
         if (address(state.vault1) != address(0) && reserveAmount1 != 0) {
-            (uint256 reserveChange, uint256 reserveChangeInUnderlying) = _depositVaultReserve(
+            (uint256 reserveChange, uint256 reserveChangeInUnderlying, uint256 amountSpent) = _depositVaultReserve(
                 env, reserveAmount1, params.poolKey.currency1, state.vault1, msgSender, params.vaultFee1
             );
             s.reserve1[poolId] = state.reserve1 + reserveChange;
 
             // use actual withdrawable value to handle vaults with withdrawal fees
             reserveAmount1 = reserveChangeInUnderlying;
+
+            // add amount spent on vault deposit to the total amount spent
+            amount1Spent += amountSpent;
         }
+
+        // update amount0 and amount1 to be the actual amounts added to the pool balance
+        amount0 = address(state.vault0) != address(0) ? rawAmount0 + reserveAmount0 : rawAmount0;
+        amount1 = address(state.vault1) != address(0) ? rawAmount1 + reserveAmount1 : rawAmount1;
 
         // mint shares using actual token amounts
         shares = _mintShares(
             state.bunniToken,
             params.recipient,
-            address(state.vault0) != address(0) ? rawAmount0 + reserveAmount0 : rawAmount0,
+            amount0,
             depositReturnData.balance0,
-            address(state.vault1) != address(0) ? rawAmount1 + reserveAmount1 : rawAmount1,
+            amount1,
             depositReturnData.balance1,
             params.referrer
         );
@@ -172,13 +192,13 @@ library BunniHubLogic {
         if (params.poolKey.currency0.isNative()) {
             if (address(this).balance != 0) {
                 params.refundRecipient.safeTransferETH(
-                    FixedPointMathLib.min(address(this).balance, msg.value - amount0)
+                    FixedPointMathLib.min(address(this).balance, msg.value - amount0Spent)
                 );
             }
         } else if (params.poolKey.currency1.isNative()) {
             if (address(this).balance != 0) {
                 params.refundRecipient.safeTransferETH(
-                    FixedPointMathLib.min(address(this).balance, msg.value - amount1)
+                    FixedPointMathLib.min(address(this).balance, msg.value - amount1Spent)
                 );
             }
         }
@@ -282,6 +302,14 @@ library BunniHubLogic {
                 }
             }
 
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (
+                totalLiquidity == 0 || (returnData.amount0 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity0X96 != 0)
+                    || (returnData.amount1 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity1X96 != 0)
+            ) {
+                revert BunniHub__DepositAmountTooSmall();
+            }
+
             // update token amounts to deposit into vaults
             (returnData.reserveAmount0, returnData.reserveAmount1) = (
                 returnData.amount0
@@ -310,6 +338,26 @@ library BunniHubLogic {
             returnData.reserveAmount0 = balance0 == 0 ? 0 : returnData.amount0.mulDiv(reserveBalance0, balance0);
             returnData.reserveAmount1 = balance1 == 0 ? 0 : returnData.amount1.mulDiv(reserveBalance1, balance1);
         }
+
+        // modify reserveAmount0 and reserveAmount1 using ERC4626::maxDeposit()
+        {
+            uint256 maxDeposit0;
+            if (
+                address(inputData.state.vault0) != address(0) && returnData.reserveAmount0 != 0
+                    && returnData.reserveAmount0 > (maxDeposit0 = inputData.state.vault0.maxDeposit(address(this)))
+            ) {
+                returnData.reserveAmount0 = maxDeposit0;
+            }
+        }
+        {
+            uint256 maxDeposit1;
+            if (
+                address(inputData.state.vault1) != address(0) && returnData.reserveAmount1 != 0
+                    && returnData.reserveAmount1 > (maxDeposit1 = inputData.state.vault1.maxDeposit(address(this)))
+            ) {
+                returnData.reserveAmount1 = maxDeposit1;
+            }
+        }
     }
 
     /// -----------------------------------------------------------------------
@@ -330,16 +378,35 @@ library BunniHubLogic {
         /// -----------------------------------------------------------------------
 
         address msgSender = LibMulticaller.senderOrSigner();
+        QueuedWithdrawal memory queued = s.queuedWithdrawals[id][msgSender];
 
         // update queued withdrawal
-        // any existing queued amount simply uses the updated delay
         // use unchecked to get unlockTimestamp to overflow back to 0 if overflow occurs
         // which is fine since we only care about relative time
+        uint56 newUnlockTimestamp;
         unchecked {
-            s.queuedWithdrawals[id][msgSender] = QueuedWithdrawal({
-                shareAmount: params.shares,
-                unlockTimestamp: uint56(block.timestamp) + WITHDRAW_DELAY
-            });
+            newUnlockTimestamp = uint56(block.timestamp) + WITHDRAW_DELAY;
+        }
+        if (queued.shareAmount != 0) {
+            // requeue expired queued withdrawal
+            if (queued.unlockTimestamp + WITHDRAW_GRACE_PERIOD >= block.timestamp) {
+                revert BunniHub__NoExpiredWithdrawal();
+            }
+            s.queuedWithdrawals[id][msgSender].unlockTimestamp = newUnlockTimestamp;
+        } else {
+            // create new queued withdrawal
+            if (params.shares == 0) revert BunniHub__ZeroInput();
+            s.queuedWithdrawals[id][msgSender] =
+                QueuedWithdrawal({shareAmount: params.shares, unlockTimestamp: newUnlockTimestamp});
+        }
+
+        /// -----------------------------------------------------------------------
+        /// External calls
+        /// -----------------------------------------------------------------------
+
+        if (queued.shareAmount == 0) {
+            // transfer shares from msgSender to address(this)
+            bunniToken.transferFrom(msgSender, address(this), params.shares);
         }
 
         emit IBunniHub.QueueWithdraw(msgSender, id, params.shares);
@@ -353,7 +420,7 @@ library BunniHubLogic {
         /// Validation
         /// -----------------------------------------------------------------------
 
-        if (params.shares == 0) revert BunniHub__ZeroInput();
+        if (!params.useQueuedWithdrawal && params.shares == 0) revert BunniHub__ZeroInput();
 
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = getPoolState(s, poolId);
@@ -362,6 +429,10 @@ library BunniHubLogic {
         IAmAmm.Bid memory topBid = hook.getTopBidWrite(poolId);
         if (hook.getAmAmmEnabled(poolId) && topBid.manager != address(0) && !params.useQueuedWithdrawal) {
             revert BunniHub__NeedToUseQueuedWithdrawal();
+        }
+
+        if (!hook.canWithdraw(poolId)) {
+            revert BunniHub__WithdrawalPaused();
         }
 
         /// -----------------------------------------------------------------------
@@ -388,10 +459,11 @@ library BunniHubLogic {
             if (queued.unlockTimestamp + WITHDRAW_GRACE_PERIOD < block.timestamp) revert BunniHub__GracePeriodExpired();
             shares = queued.shareAmount;
             s.queuedWithdrawals[poolId][msgSender].shareAmount = 0; // don't delete the struct to save gas later
+            state.bunniToken.burn(address(this), shares); // BunniTokens were deposited to address(this) earlier with queueWithdraw()
         } else {
             shares = params.shares;
+            state.bunniToken.burn(msgSender, shares);
         }
-        state.bunniToken.burn(msgSender, shares);
         // at this point of execution we know shares <= currentTotalSupply
         // since otherwise the burn() call would've reverted
 
@@ -606,6 +678,10 @@ library BunniHubLogic {
     ) internal returns (uint256 shares) {
         uint256 existingShareSupply = shareToken.totalSupply();
         if (existingShareSupply == 0) {
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (addedAmount0 < MIN_DEPOSIT_BALANCE_INCREASE && addedAmount1 < MIN_DEPOSIT_BALANCE_INCREASE) {
+                revert BunniHub__DepositAmountTooSmall();
+            }
             // no existing shares, just give WAD
             shares = WAD - MIN_INITIAL_SHARES;
             // prevent first staker from stealing funds of subsequent stakers
@@ -641,7 +717,7 @@ library BunniHubLogic {
         ERC4626 vault,
         address user,
         uint256 vaultFee
-    ) internal returns (uint256 reserveChange, uint256 reserveChangeInUnderlying) {
+    ) internal returns (uint256 reserveChange, uint256 reserveChangeInUnderlying, uint256 amountSpent) {
         // use the pre-fee amount to ensure `amount` is the amount of tokens
         // that we'll be able to withdraw from the vault
         // it's safe to rely on the user provided fee value here
@@ -649,6 +725,7 @@ library BunniHubLogic {
         // and if user provide fee!=0 when the fee is some other value (0 or non-zero) the validation will revert
         uint256 postFeeAmount = amount; // cache amount to use for validation later
         amount = amount.divWadUp(WAD - vaultFee);
+        amountSpent = amount;
 
         IERC20 token;
         if (currency.isNative()) {
@@ -673,6 +750,11 @@ library BunniHubLogic {
                 && percentDelta(reserveChangeInUnderlying, postFeeAmount) > MAX_VAULT_FEE_ERROR
         ) {
             revert BunniHub__VaultFeeIncorrect();
+        }
+
+        // revoke token approval to vault if necessary
+        if (token.allowance(address(this), address(vault)) != 0) {
+            address(token).safeApprove(address(vault), 0);
         }
     }
 

@@ -272,6 +272,17 @@ abstract contract ERC20 is IERC20 {
     /// of `keccak256(bytes(name()))` if `name()` will never change.
     function _constantNameHash() internal view virtual returns (bytes32 result) {}
 
+    /// @dev For inheriting contracts to increment the nonce.
+    function _incrementNonce(address owner) internal virtual {
+        /// @solidity memory-safe-assembly
+        assembly {
+            mstore(0x0c, _NONCES_SLOT_SEED)
+            mstore(0x00, owner)
+            let nonceSlot := keccak256(0x0c, 0x20)
+            sstore(nonceSlot, add(1, sload(nonceSlot)))
+        }
+    }
+
     /// @dev Returns the current nonce for `owner`.
     /// This value is used to compute the signature for EIP-2612 permit.
     function nonces(address owner) public view virtual returns (uint256 result) {

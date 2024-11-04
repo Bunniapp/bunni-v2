@@ -68,8 +68,9 @@ contract BunniQuoter is IBunniQuoter {
         PoolState memory bunniState = hub.poolState(id);
 
         // hooklet call
-        (bool feeOverridden, uint24 feeOverride, bool priceOverridden, uint160 sqrtPriceX96Override) =
+        (bool success_, bool feeOverridden, uint24 feeOverride, bool priceOverridden, uint160 sqrtPriceX96Override) =
             bunniState.hooklet.hookletBeforeSwapView(sender, key, params);
+        if (!success_) return (false, 0, 0, 0, 0, 0, 0);
 
         // override price if needed
         if (priceOverridden) {
@@ -92,6 +93,20 @@ contract BunniQuoter is IBunniQuoter {
             return (false, 0, 0, 0, 0, 0, 0);
         }
 
+        // compute total token balances
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
+            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+        (uint256 balance0, uint256 balance1) =
+            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
+
+        // if it's an exact output swap, exit if the requested output is greater than the balance
+        bool exactIn = params.amountSpecified < 0;
+        if (!exactIn && uint256(params.amountSpecified) > (params.zeroForOne ? balance1 : balance0)) {
+            return (false, 0, 0, 0, 0, 0, 0);
+        }
+
         // decode hook params
         DecodedHookParams memory hookParams = BunniHookLogic.decodeHookParams(bunniState.hookParams);
 
@@ -101,14 +116,6 @@ contract BunniQuoter is IBunniQuoter {
             !feeOverridden && !hookParams.amAmmEnabled && hookParams.feeMin != hookParams.feeMax
                 && hookParams.feeQuadraticMultiplier != 0
         ) ? queryTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
-
-        // compute total token balances
-        (uint256 reserveBalance0, uint256 reserveBalance1) = (
-            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
-        );
-        (uint256 balance0, uint256 balance1) =
-            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // query the LDF to get total liquidity and token densities
         bytes32 ldfState = bunniState.statefulLdf ? hook.ldfStates(id) : bytes32(0);
@@ -151,15 +158,17 @@ contract BunniQuoter is IBunniQuoter {
                 ldfParams: bunniState.ldfParams,
                 ldfState: ldfState,
                 swapParams: params
-            }),
-            balance0: balance0,
-            balance1: balance1
+            })
         });
 
+        // exit if it's an exact output swap and outputAmount < params.amountSpecified
         // ensure swap never moves price in the opposite direction
+        // ensure the inputAmount is non-zero when it's an exact output swap
         if (
-            (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
+            (!exactIn && outputAmount < uint256(params.amountSpecified))
+                || (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
+                || (params.amountSpecified > 0 && inputAmount == 0)
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
         }
@@ -198,7 +207,6 @@ contract BunniQuoter is IBunniQuoter {
         // 2) hooklet override fee
         // 3) dynamic fee
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified < 0;
         bool useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (
@@ -243,20 +251,36 @@ contract BunniQuoter is IBunniQuoter {
             outputAmount = uint256(actualOutputAmount);
         }
 
-        // if we reached this point, the swap was successful
-        success = true;
+        // hooklet call
+        success = bunniState.hooklet.hookletAfterSwapView(
+            sender,
+            key,
+            params,
+            IHooklet.SwapReturnData({
+                updatedSqrtPriceX96: updatedSqrtPriceX96,
+                updatedTick: updatedTick,
+                inputAmount: inputAmount,
+                outputAmount: outputAmount,
+                swapFee: swapFee,
+                totalLiquidity: totalLiquidity
+            })
+        );
     }
 
-    function quoteDeposit(IBunniHub.DepositParams calldata params)
+    function quoteDeposit(address sender, IBunniHub.DepositParams calldata params)
         external
         view
         override
-        returns (uint256 shares, uint256 amount0, uint256 amount1)
+        returns (bool success, uint256 shares, uint256 amount0, uint256 amount1)
     {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = hub.poolState(poolId);
 
         (uint160 sqrtPriceX96, int24 currentTick,,) = IBunniHook(address(params.poolKey.hooks)).slot0s(poolId);
+
+        // hooklet call
+        success = state.hooklet.hookletBeforeDepositView(sender, params);
+        if (!success) return (false, 0, 0, 0);
 
         DepositLogicReturnData memory depositReturnData = _depositLogic(
             DepositLogicInputData({
@@ -268,19 +292,27 @@ contract BunniQuoter is IBunniQuoter {
                 sqrtPriceX96: sqrtPriceX96
             })
         );
+        if (!depositReturnData.success) {
+            return (false, 0, 0, 0);
+        }
         amount0 = depositReturnData.amount0;
         amount1 = depositReturnData.amount1;
 
         (uint256 rawAmount0, uint256 reserveAmount0) = address(state.vault0) != address(0)
-            ? (amount0 - depositReturnData.reserveAmount0, depositReturnData.reserveAmount0.mulWad(WAD - params.vaultFee0))
+            ? (amount0 - depositReturnData.reserveAmount0, depositReturnData.reserveAmount0)
             : (amount0, 0);
         (uint256 rawAmount1, uint256 reserveAmount1) = address(state.vault1) != address(0)
-            ? (amount1 - depositReturnData.reserveAmount1, depositReturnData.reserveAmount1.mulWad(WAD - params.vaultFee1))
+            ? (amount1 - depositReturnData.reserveAmount1, depositReturnData.reserveAmount1)
             : (amount1, 0);
 
         // compute shares
         uint256 existingShareSupply = state.bunniToken.totalSupply();
+        (uint256 addedAmount0, uint256 addedAmount1) = (rawAmount0 + reserveAmount0, rawAmount1 + reserveAmount1);
         if (existingShareSupply == 0) {
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (addedAmount0 < MIN_DEPOSIT_BALANCE_INCREASE && addedAmount1 < MIN_DEPOSIT_BALANCE_INCREASE) {
+                return (false, 0, 0, 0);
+            }
             // no existing shares, just give WAD - MIN_INITIAL_SHARES
             shares = WAD - MIN_INITIAL_SHARES;
         } else {
@@ -288,22 +320,36 @@ contract BunniQuoter is IBunniQuoter {
             shares = FixedPointMathLib.min(
                 depositReturnData.balance0 == 0
                     ? type(uint256).max
-                    : existingShareSupply.mulDiv(rawAmount0 + reserveAmount0, depositReturnData.balance0),
+                    : existingShareSupply.mulDiv(addedAmount0, depositReturnData.balance0),
                 depositReturnData.balance1 == 0
                     ? type(uint256).max
-                    : existingShareSupply.mulDiv(rawAmount1 + reserveAmount1, depositReturnData.balance1)
+                    : existingShareSupply.mulDiv(addedAmount1, depositReturnData.balance1)
             );
         }
+
+        // hooklet call
+        success = state.hooklet.hookletAfterDepositView(
+            sender, params, IHooklet.DepositReturnData({shares: shares, amount0: amount0, amount1: amount1})
+        );
     }
 
-    function quoteWithdraw(IBunniHub.WithdrawParams calldata params)
+    function quoteWithdraw(address sender, IBunniHub.WithdrawParams calldata params)
         external
         view
         override
-        returns (uint256 amount0, uint256 amount1)
+        returns (bool success, uint256 amount0, uint256 amount1)
     {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = hub.poolState(poolId);
+        IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
+
+        if (!hook.canWithdraw(poolId)) {
+            return (false, 0, 0);
+        }
+
+        // hooklet call
+        success = state.hooklet.hookletBeforeWithdrawView(sender, params);
+        if (!success) return (false, 0, 0);
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
 
@@ -316,6 +362,11 @@ contract BunniQuoter is IBunniQuoter {
         uint256 rawAmount1 = state.rawBalance1.mulDiv(params.shares, currentTotalSupply);
         amount0 = reserveAmount0 + rawAmount0;
         amount1 = reserveAmount1 + rawAmount1;
+
+        // hooklet call
+        success = state.hooklet.hookletAfterWithdrawView(
+            sender, params, IHooklet.WithdrawReturnData({amount0: amount0, amount1: amount1})
+        );
     }
 
     /// -----------------------------------------------------------------------
@@ -332,6 +383,7 @@ contract BunniQuoter is IBunniQuoter {
     }
 
     struct DepositLogicReturnData {
+        bool success;
         uint256 reserveAmount0;
         uint256 reserveAmount1;
         uint256 amount0;
@@ -409,6 +461,14 @@ contract BunniQuoter is IBunniQuoter {
                 }
             }
 
+            // ensure that the added amounts are not too small to mess with the shares math
+            if (
+                totalLiquidity == 0 || (returnData.amount0 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity0X96 != 0)
+                    || (returnData.amount1 < MIN_DEPOSIT_BALANCE_INCREASE && totalDensity1X96 != 0)
+            ) {
+                return DepositLogicReturnData(false, 0, 0, 0, 0, 0, 0);
+            }
+
             // update token amounts to deposit into vaults
             (returnData.reserveAmount0, returnData.reserveAmount1) = (
                 returnData.amount0
@@ -437,6 +497,28 @@ contract BunniQuoter is IBunniQuoter {
             returnData.reserveAmount0 = balance0 == 0 ? 0 : returnData.amount0.mulDiv(reserveBalance0, balance0);
             returnData.reserveAmount1 = balance1 == 0 ? 0 : returnData.amount1.mulDiv(reserveBalance1, balance1);
         }
+
+        // modify reserveAmount0 and reserveAmount1 using ERC4626::maxDeposit()
+        {
+            uint256 maxDeposit0;
+            if (
+                address(inputData.state.vault0) != address(0) && returnData.reserveAmount0 != 0
+                    && returnData.reserveAmount0 > (maxDeposit0 = inputData.state.vault0.maxDeposit(address(this)))
+            ) {
+                returnData.reserveAmount0 = maxDeposit0;
+            }
+        }
+        {
+            uint256 maxDeposit1;
+            if (
+                address(inputData.state.vault1) != address(0) && returnData.reserveAmount1 != 0
+                    && returnData.reserveAmount1 > (maxDeposit1 = inputData.state.vault1.maxDeposit(address(this)))
+            ) {
+                returnData.reserveAmount1 = maxDeposit1;
+            }
+        }
+
+        returnData.success = true;
     }
 
     /// @dev Checks if the pool should surge based on the vault share price changes since the last swap.
