@@ -502,26 +502,27 @@ library BunniHookLogic {
         uint256 reserveBalance0,
         uint256 reserveBalance1
     ) private returns (bool shouldSurge) {
-        if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
-            // only surge if both vaults are set because otherwise total liquidity won't automatically increase
+        if (address(bunniState.vault0) != address(0) || address(bunniState.vault1) != address(0)) {
+            // only surge if at least one vault is set because otherwise total liquidity won't automatically increase
             // so there's no risk of being sandwiched
 
-            // compute share prices
-            VaultSharePrices memory sharePrices = VaultSharePrices({
-                initialized: true,
-                sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
-                sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
-            });
+            // load share prices at last swap
+            VaultSharePrices memory prevSharePrices = s.vaultSharePricesAtLastSwap[id];
+
+            // compute current share prices
+            uint120 sharePrice0 =
+                bunniState.reserve0 == 0 ? 0 : reserveBalance0.divWadUp(bunniState.reserve0).toUint120();
+            uint120 sharePrice1 =
+                bunniState.reserve1 == 0 ? 0 : reserveBalance1.divWadUp(bunniState.reserve1).toUint120();
 
             // compare with share prices at last swap to see if we need to apply the surge fee
-            VaultSharePrices memory prevSharePrices = s.vaultSharePricesAtLastSwap[id];
             if (
                 prevSharePrices.initialized
                     && (
-                        dist(sharePrices.sharePrice0, prevSharePrices.sharePrice0)
-                            >= prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
-                            || dist(sharePrices.sharePrice1, prevSharePrices.sharePrice1)
-                                >= prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
+                        dist(sharePrice0, prevSharePrices.sharePrice0)
+                            > prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
+                            || dist(sharePrice1, prevSharePrices.sharePrice1)
+                                > prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
                     )
             ) {
                 // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
@@ -530,10 +531,11 @@ library BunniHookLogic {
 
             // update share prices at last swap
             if (
-                !prevSharePrices.initialized || sharePrices.sharePrice0 != prevSharePrices.sharePrice0
-                    || sharePrices.sharePrice1 != prevSharePrices.sharePrice1
+                !prevSharePrices.initialized || sharePrice0 != prevSharePrices.sharePrice0
+                    || sharePrice1 != prevSharePrices.sharePrice1
             ) {
-                s.vaultSharePricesAtLastSwap[id] = sharePrices;
+                s.vaultSharePricesAtLastSwap[id] =
+                    VaultSharePrices({initialized: true, sharePrice0: sharePrice0, sharePrice1: sharePrice1});
             }
         }
     }
