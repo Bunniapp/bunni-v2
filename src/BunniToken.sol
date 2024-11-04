@@ -4,6 +4,8 @@ pragma solidity ^0.8.15;
 
 import {Clone} from "clones-with-immutable-args/Clone.sol";
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
+
 import "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
@@ -299,6 +301,19 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
             }
         }
     }
+
+    /// -----------------------------------------------------------------------
+    /// EIP-2612
+    /// -----------------------------------------------------------------------
+
+    function incrementNonce() external override {
+        address msgSender = LibMulticaller.senderOrSigner();
+        _incrementNonce(msgSender);
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Internal utilities
+    /// -----------------------------------------------------------------------
 
     /// @dev Compute the updated unclaimed reward of a referrer
     function _updatedUnclaimedReward(

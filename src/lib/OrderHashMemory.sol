@@ -74,7 +74,11 @@ library OrderHashMemory {
         );
     }
 
-    function hashAsWitness(IFloodPlain.Order memory order, address spender) internal pure returns (bytes32) {
+    function hashAsWitness(IFloodPlain.Order memory order, address spender)
+        internal
+        pure
+        returns (bytes32 orderHash, bytes32 hashWithWitness)
+    {
         IFloodPlain.Item[] memory offer = order.offer;
         bytes32[] memory tokenPermissionHashes = new bytes32[](offer.length);
         bytes32[] memory offerHashes = new bytes32[](offer.length);
@@ -90,14 +94,15 @@ library OrderHashMemory {
             );
         }
 
-        return keccak256(
+        orderHash = hash(order);
+        hashWithWitness = keccak256(
             abi.encode(
                 _PERMIT_TYPEHASH,
                 keccak256(abi.encodePacked(tokenPermissionHashes)),
                 spender,
                 order.nonce,
                 order.deadline,
-                hash(order)
+                orderHash
             )
         );
     }
