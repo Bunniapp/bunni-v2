@@ -18,6 +18,7 @@ import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./base/Errors.sol";
@@ -43,6 +44,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     using SafeTransferLib for *;
+    using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
@@ -333,7 +335,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                                 && p.rebalanceOrderTTL != 0
                         )
                 ) && (p.oracleMinInterval != 0)
-                && (!p.amAmmEnabled || (p.maxAmAmmFee != 0 && p.maxAmAmmFee <= MAX_AMAMM_FEE));
+                && (!p.amAmmEnabled || (p.maxAmAmmFee != 0 && p.maxAmAmmFee <= MAX_AMAMM_FEE && p.minRentMultiplier != 0));
         }
     }
 
@@ -514,6 +516,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
     /// AmAmm support
     /// -----------------------------------------------------------------------
+
+    function MIN_RENT(PoolId id) internal view returns (uint128) {
+        // minimum rent should be propotional to the pool's BunniToken total supply
+        bytes memory hookParams = hub.hookParams(id);
+        bytes32 secondWord;
+        /// @solidity memory-safe-assembly
+        assembly {
+            secondWord := mload(add(hookParams, 64))
+        }
+        uint48 minRentMultiplier = uint48(bytes6(secondWord << 56));
+        uint256 minRent = hub.bunniTokenOfPool(id).totalSupply().mulWadUp(minRentMultiplier);
+
+        // if the min rent value is somehow more than uint128.max, cap it to uint128.max
+        return minRent > type(uint128).max ? type(uint128).max : uint128(minRent);
+    }
 
     /// @dev precedence is poolOverride > globalOverride > poolEnabled
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {

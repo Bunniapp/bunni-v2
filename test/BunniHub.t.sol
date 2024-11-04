@@ -98,6 +98,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
     uint32 internal constant ORACLE_MIN_INTERVAL = 1 hours;
     uint24 internal constant POOL_MAX_AMAMM_FEE = 0.05e6; // 5%
+    uint48 internal constant MIN_RENT_MULTIPLIER = 1e10;
     uint256 internal constant HOOK_FLAGS = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         + Hooks.BEFORE_SWAP_FLAG + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
 
@@ -1096,7 +1097,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             REBALANCE_ORDER_TTL,
             true, // amAmmEnabled
             ORACLE_MIN_INTERVAL,
-            POOL_MAX_AMAMM_FEE
+            POOL_MAX_AMAMM_FEE,
+            MIN_RENT_MULTIPLIER
         );
 
         bytes32 name_ = bytes32(bytes(name));
@@ -1177,6 +1179,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertTrue(p.amAmmEnabled, "amAmmEnabled incorrect");
         assertEq(p.oracleMinInterval, ORACLE_MIN_INTERVAL, "oracleMinInterval incorrect");
         assertEq(p.maxAmAmmFee, POOL_MAX_AMAMM_FEE, "maxAmAmmFee incorrect");
+        assertEq(p.minRentMultiplier, MIN_RENT_MULTIPLIER, "minRentMultiplier incorrect");
     }
 
     function test_hookHasInsufficientTokens() external {
@@ -1255,7 +1258,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1354,7 +1358,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1456,7 +1461,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1606,7 +1612,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 amAmmEnabled,
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1685,7 +1692,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1760,7 +1768,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1894,7 +1903,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 poolEnabled, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
         PoolId id = key.toId();
@@ -2190,7 +2200,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             ),
             salt
         );
@@ -2227,7 +2238,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             ),
             bytes32(0)
         );
