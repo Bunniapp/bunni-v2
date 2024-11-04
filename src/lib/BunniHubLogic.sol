@@ -161,13 +161,17 @@ library BunniHubLogic {
             reserveAmount1 = reserveChangeInUnderlying;
         }
 
+        // update amount0 and amount1 to be the actual amounts added to the pool balance
+        amount0 = address(state.vault0) != address(0) ? rawAmount0 + reserveAmount0 : rawAmount0;
+        amount1 = address(state.vault1) != address(0) ? rawAmount1 + reserveAmount1 : rawAmount1;
+
         // mint shares using actual token amounts
         shares = _mintShares(
             state.bunniToken,
             params.recipient,
-            address(state.vault0) != address(0) ? rawAmount0 + reserveAmount0 : rawAmount0,
+            amount0,
             depositReturnData.balance0,
-            address(state.vault1) != address(0) ? rawAmount1 + reserveAmount1 : rawAmount1,
+            amount1,
             depositReturnData.balance1,
             params.referrer
         );

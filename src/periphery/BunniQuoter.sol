@@ -274,10 +274,10 @@ contract BunniQuoter is IBunniQuoter {
         amount1 = depositReturnData.amount1;
 
         (uint256 rawAmount0, uint256 reserveAmount0) = address(state.vault0) != address(0)
-            ? (amount0 - depositReturnData.reserveAmount0, depositReturnData.reserveAmount0.mulWad(WAD - params.vaultFee0))
+            ? (amount0 - depositReturnData.reserveAmount0, depositReturnData.reserveAmount0)
             : (amount0, 0);
         (uint256 rawAmount1, uint256 reserveAmount1) = address(state.vault1) != address(0)
-            ? (amount1 - depositReturnData.reserveAmount1, depositReturnData.reserveAmount1.mulWad(WAD - params.vaultFee1))
+            ? (amount1 - depositReturnData.reserveAmount1, depositReturnData.reserveAmount1)
             : (amount1, 0);
 
         // compute shares
