@@ -734,7 +734,7 @@ library BunniHookLogic {
             offer: offer,
             consideration: consideration,
             deadline: block.timestamp + rebalanceOrderTTL,
-            nonce: block.number,
+            nonce: uint256(keccak256(abi.encode(block.number, id))), // combine block.number and pool id to avoid nonce collisions between pools
             preHooks: preHooks,
             postHooks: postHooks
         });
