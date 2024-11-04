@@ -200,7 +200,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         (Currency currency, uint256 amount, PoolKey memory key, bool zeroForOne) =
             abi.decode(callbackData, (Currency, uint256, PoolKey, bool));
 
-        // settle and mint
+        // sync poolManager balance and transfer the output tokens to poolManager
+        poolManager.sync(currency);
+        if (!currency.isNative()) {
+            Currency.unwrap(currency).safeTransfer(address(poolManager), amount);
+        }
+
+        // settle the transferred tokens and mint claim tokens
         uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}();
         poolManager.mint(address(this), currency.toId(), paid);
 
@@ -510,10 +516,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
 
         // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
-        poolManager.sync(args.currency);
-        if (!args.currency.isNative()) {
-            Currency.unwrap(args.currency).safeTransfer(address(poolManager), orderOutputAmount);
-        }
+
         poolManager.unlock(
             abi.encode(
                 HookUnlockCallbackType.REBALANCE_POSTHOOK,
