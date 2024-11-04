@@ -52,6 +52,7 @@ import {IHooklet} from "../src/interfaces/IHooklet.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
 import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
 import {Permit2Deployer} from "./utils/Permit2Deployer.sol";
+import {BunniHookLogic} from "../src/lib/BunniHookLogic.sol";
 import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {OrderHashMemory} from "../src/lib/OrderHashMemory.sol";
@@ -96,6 +97,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint16 internal constant REBALANCE_TWAP_SECONDS_AGO = 1 hours;
     uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
     uint32 internal constant ORACLE_MIN_INTERVAL = 1 hours;
+    uint24 internal constant POOL_MAX_AMAMM_FEE = 0.05e6; // 5%
+    uint48 internal constant MIN_RENT_MULTIPLIER = 1e10;
     uint256 internal constant HOOK_FLAGS = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         + Hooks.BEFORE_SWAP_FLAG + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
 
@@ -254,17 +257,43 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         // make deposit
-        (uint256 beforeBalance0, uint256 beforeBalance1) =
-            (currency0.balanceOf(address(this)), currency1.balanceOf(address(this)));
+        (uint256 beforeBalance0, uint256 beforeBalance1) = hub.poolBalances(key.toId());
         (uint256 shares, uint256 amount0, uint256 amount1) =
             _makeDeposit(key, depositAmount0, depositAmount1, address(this), snapLabel);
-        uint256 actualDepositedAmount0 = beforeBalance0 + depositAmount0 - currency0.balanceOf(address(this));
-        uint256 actualDepositedAmount1 = beforeBalance1 + depositAmount1 - currency1.balanceOf(address(this));
+        (uint256 afterBalance0, uint256 afterBalance1) = hub.poolBalances(key.toId());
 
         // check return values
-        assertEqDecimal(amount0, actualDepositedAmount0, DECIMALS, "amount0 incorrect");
-        assertEqDecimal(amount1, actualDepositedAmount1, DECIMALS, "amount1 incorrect");
+        assertApproxEqAbsDecimal(amount0, afterBalance0 - beforeBalance0, 1, DECIMALS, "amount0 incorrect");
+        assertApproxEqAbsDecimal(amount1, afterBalance1 - beforeBalance1, 1, DECIMALS, "amount1 incorrect");
         assertEqDecimal(shares, bunniToken.balanceOf(address(this)), DECIMALS, "shares incorrect");
+    }
+
+    function test_deposit_msgValueNonZeroWhenNoETH() public {
+        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        // make deposit with msg.value being non-zero
+        // mint tokens
+        uint256 depositAmount0 = 1 ether;
+        uint256 depositAmount1 = 1 ether;
+        _mint(key.currency0, address(this), depositAmount0);
+        _mint(key.currency1, address(this), depositAmount1);
+
+        // deposit tokens
+        IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
+            poolKey: key,
+            amount0Desired: depositAmount0,
+            amount1Desired: depositAmount1,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            recipient: address(this),
+            refundRecipient: address(this),
+            vaultFee0: 0,
+            vaultFee1: 0,
+            referrer: 0
+        });
+        vm.expectRevert(BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken.selector);
+        hub.deposit{value: 1 ether}(depositParams);
     }
 
     function test_withdraw(uint256 depositAmount0, uint256 depositAmount1) public {
@@ -330,6 +359,47 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             key.currency1.balanceOf(address(this)) - beforeBalance1, withdrawAmount1, 10, "token1 balance incorrect"
         );
         assertEqDecimal(bunniToken.balanceOf(address(this)), 0, DECIMALS, "didn't burn shares");
+    }
+
+    function test_withdraw_revertWhenRebalanceOrderIsActive() public {
+        MockLDF ldf_ = new MockLDF();
+        ldf_.setMinTick(-30);
+
+        // deploy pool and init liquidity
+        Currency currency0 = Currency.wrap(address(token0));
+        Currency currency1 = Currency.wrap(address(token1));
+        (IBunniToken bunniToken, PoolKey memory key) =
+            _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)), ldf_);
+
+        // shift liquidity to the right
+        // the LDF will demand more token0, so we'll have too much of token1
+        // the rebalance should swap from token1 to token0
+        ldf_.setMinTick(-20);
+
+        // make small swap to trigger rebalance
+        uint256 swapAmount = 1e3;
+        _mint(key.currency0, address(this), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        _swap(key, params, 0, "");
+
+        // try withdrawing liquidity
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(0x6969),
+            shares: bunniToken.balanceOf(address(0x6969)),
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: false
+        });
+        vm.startPrank(address(0x6969));
+        vm.expectRevert(BunniHub__WithdrawalPaused.selector);
+        hub.withdraw(withdrawParams);
+        vm.stopPrank();
     }
 
     function test_queueWithdraw_happyPath(uint256 depositAmount0, uint256 depositAmount1) public {
@@ -1093,7 +1163,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             REBALANCE_TWAP_SECONDS_AGO,
             REBALANCE_ORDER_TTL,
             true, // amAmmEnabled
-            ORACLE_MIN_INTERVAL
+            ORACLE_MIN_INTERVAL,
+            POOL_MAX_AMAMM_FEE,
+            MIN_RENT_MULTIPLIER
         );
 
         bytes32 name_ = bytes32(bytes(name));
@@ -1155,6 +1227,26 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(state.targetRawTokenRatio1, 0.1e6, "targetRawTokenRatio1 incorrect");
         assertEq(state.maxRawTokenRatio1, 0.12e6, "maxRawTokenRatio1 incorrect");
         assertEq(address(state.hooklet), address(hooklet_), "hooklet incorrect");
+
+        // verify decoded hookParams
+        DecodedHookParams memory p = BunniHookLogic.decodeHookParams(hookParams);
+        assertEq(p.feeMin, FEE_MIN, "feeMin incorrect");
+        assertEq(p.feeMax, FEE_MAX, "feeMax incorrect");
+        assertEq(p.feeQuadraticMultiplier, FEE_QUADRATIC_MULTIPLIER, "feeQuadraticMultiplier incorrect");
+        assertEq(p.feeTwapSecondsAgo, FEE_TWAP_SECONDS_AGO, "feeTwapSecondsAgo incorrect");
+        assertEq(p.surgeFee, SURGE_FEE, "surgeFee incorrect");
+        assertEq(p.surgeFeeHalfLife, SURGE_HALFLIFE, "surgeFeeHalfLife incorrect");
+        assertEq(p.surgeFeeAutostartThreshold, SURGE_AUTOSTART_TIME, "surgeFeeAutostartThreshold incorrect");
+        assertEq(p.vaultSurgeThreshold0, VAULT_SURGE_THRESHOLD_0, "vaultSurgeThreshold0 incorrect");
+        assertEq(p.vaultSurgeThreshold1, VAULT_SURGE_THRESHOLD_1, "vaultSurgeThreshold1 incorrect");
+        assertEq(p.rebalanceThreshold, REBALANCE_THRESHOLD, "rebalanceThreshold incorrect");
+        assertEq(p.rebalanceMaxSlippage, REBALANCE_MAX_SLIPPAGE, "rebalanceMaxSlippage incorrect");
+        assertEq(p.rebalanceTwapSecondsAgo, REBALANCE_TWAP_SECONDS_AGO, "rebalanceTwapSecondsAgo incorrect");
+        assertEq(p.rebalanceOrderTTL, REBALANCE_ORDER_TTL, "rebalanceOrderTTL incorrect");
+        assertTrue(p.amAmmEnabled, "amAmmEnabled incorrect");
+        assertEq(p.oracleMinInterval, ORACLE_MIN_INTERVAL, "oracleMinInterval incorrect");
+        assertEq(p.maxAmAmmFee, POOL_MAX_AMAMM_FEE, "maxAmAmmFee incorrect");
+        assertEq(p.minRentMultiplier, MIN_RENT_MULTIPLIER, "minRentMultiplier incorrect");
     }
 
     function test_hookHasInsufficientTokens() external {
@@ -1236,7 +1328,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1336,7 +1430,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1437,7 +1533,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1586,7 +1684,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 amAmmEnabled,
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1664,7 +1764,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1690,8 +1792,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // check if actual amounts match quoted amounts
         assertApproxEqRel(actualShares, shares, 1e12, "actual shares doesn't match quoted shares");
-        assertEq(actualAmount0, amount0, "actual amount0 doesn't match quoted amount0");
-        assertEq(actualAmount1, amount1, "actual amount1 doesn't match quoted amount1");
+        assertApproxEqAbs(actualAmount0, amount0, 1, "actual amount0 doesn't match quoted amount0");
+        assertApproxEqAbs(actualAmount1, amount1, 1, "actual amount1 doesn't match quoted amount1");
     }
 
     function test_rebalance_basicOrderCreationAndFulfillment(
@@ -1738,7 +1840,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
 
@@ -1779,8 +1883,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(orderEtchedLog.topics[0], IOnChainOrders.OrderEtched.selector, "not OrderEtched event");
         IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
         IFloodPlain.Order memory order = signedOrder.order;
+        (, bytes32 permit2Hash) = _hashFloodOrder(order);
         assertEq(
-            bunniHook.isValidSignature(_newOrderHash(order), abi.encode(key.toId())),
+            bunniHook.isValidSignature(permit2Hash, abi.encode(key.toId())),
             IERC1271.isValidSignature.selector,
             "order signature not valid"
         );
@@ -1871,7 +1976,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 poolEnabled, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             )
         );
         PoolId id = key.toId();
@@ -2166,7 +2273,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             ),
             salt
         );
@@ -2202,7 +2311,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_TWAP_SECONDS_AGO,
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
-                ORACLE_MIN_INTERVAL
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
             ),
             bytes32(0)
         );
@@ -2535,14 +2646,14 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     /// @dev The hash that Permit2 uses when verifying the order's signature.
     /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
     /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
-    function _newOrderHash(IFloodPlain.Order memory order) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                IEIP712(permit2).DOMAIN_SEPARATOR(),
-                OrderHashMemory.hashAsWitness(order, address(floodPlain))
-            )
-        );
+    /// Also returns the Flood order hash
+    function _hashFloodOrder(IFloodPlain.Order memory order)
+        internal
+        view
+        returns (bytes32 orderHash, bytes32 permit2Hash)
+    {
+        (orderHash, permit2Hash) = OrderHashMemory.hashAsWitness(order, address(floodPlain));
+        permit2Hash = keccak256(abi.encodePacked("\x19\x01", IEIP712(permit2).DOMAIN_SEPARATOR(), permit2Hash));
     }
 
     /// @notice Precompute a contract address deployed via CREATE2

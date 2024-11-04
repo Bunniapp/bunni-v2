@@ -162,10 +162,12 @@ contract BunniQuoter is IBunniQuoter {
 
         // exit if it's an exact output swap and outputAmount < params.amountSpecified
         // ensure swap never moves price in the opposite direction
+        // ensure the inputAmount is non-zero when it's an exact output swap
         if (
             (!exactIn && outputAmount < uint256(params.amountSpecified))
                 || (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
+                || (params.amountSpecified > 0 && inputAmount == 0)
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
         }
@@ -277,10 +279,10 @@ contract BunniQuoter is IBunniQuoter {
         amount1 = depositReturnData.amount1;
 
         (uint256 rawAmount0, uint256 reserveAmount0) = address(state.vault0) != address(0)
-            ? (amount0 - depositReturnData.reserveAmount0, depositReturnData.reserveAmount0.mulWad(WAD - params.vaultFee0))
+            ? (amount0 - depositReturnData.reserveAmount0, depositReturnData.reserveAmount0)
             : (amount0, 0);
         (uint256 rawAmount1, uint256 reserveAmount1) = address(state.vault1) != address(0)
-            ? (amount1 - depositReturnData.reserveAmount1, depositReturnData.reserveAmount1.mulWad(WAD - params.vaultFee1))
+            ? (amount1 - depositReturnData.reserveAmount1, depositReturnData.reserveAmount1)
             : (amount1, 0);
 
         // compute shares
@@ -305,10 +307,15 @@ contract BunniQuoter is IBunniQuoter {
         external
         view
         override
-        returns (uint256 amount0, uint256 amount1)
+        returns (bool success, uint256 amount0, uint256 amount1)
     {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = hub.poolState(poolId);
+        IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
+
+        if (!hook.canWithdraw(poolId)) {
+            return (false, 0, 0);
+        }
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
 

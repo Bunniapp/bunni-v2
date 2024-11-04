@@ -271,9 +271,11 @@ library BunniHookLogic {
         }
 
         // ensure swap never moves price in the opposite direction
+        // ensure the inputAmount is non-zero when it's an exact output swap
         if (
             (params.zeroForOne && updatedSqrtPriceX96 > slot0.sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < slot0.sqrtPriceX96)
+                || (params.amountSpecified > 0 && inputAmount == 0)
         ) {
             revert BunniHook__InvalidSwap();
         }
@@ -677,7 +679,9 @@ library BunniHookLogic {
             return (false, inputToken, outputToken, inputAmount, outputAmount);
         }
         inputAmount = inputTokenExcessBalance - inputTokenTarget;
-        outputAmount = outputTokenTarget.mulDivUp(1e5 - input.hookParams.rebalanceMaxSlippage, 1e5);
+        outputAmount = outputTokenTarget.mulDivUp(
+            REBALANCE_MAX_SLIPPAGE_BASE - input.hookParams.rebalanceMaxSlippage, REBALANCE_MAX_SLIPPAGE_BASE
+        );
 
         success = true;
     }
@@ -734,9 +738,8 @@ library BunniHookLogic {
         });
 
         // record order for verification later
-        s.rebalanceOrderHash[id] = _newOrderHash(order, env);
+        (s.rebalanceOrderHash[id], s.rebalanceOrderPermit2Hash[id]) = _hashFloodOrder(order, env);
         s.rebalanceOrderDeadline[id] = order.deadline;
-        s.rebalanceOrderHookArgsHash[id] = keccak256(abi.encode(hookArgs));
 
         // approve input token to permit2
         if (inputERC20Token.allowance(address(this), env.permit2) < inputAmount) {
@@ -793,14 +796,14 @@ library BunniHookLogic {
     /// @dev The hash that Permit2 uses when verifying the order's signature.
     /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
     /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
-    function _newOrderHash(IFloodPlain.Order memory order, Env calldata env) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                IEIP712(env.permit2).DOMAIN_SEPARATOR(),
-                OrderHashMemory.hashAsWitness(order, address(env.floodPlain))
-            )
-        );
+    /// Also returns the Flood order hash
+    function _hashFloodOrder(IFloodPlain.Order memory order, Env calldata env)
+        internal
+        view
+        returns (bytes32 orderHash, bytes32 permit2Hash)
+    {
+        (orderHash, permit2Hash) = OrderHashMemory.hashAsWitness(order, address(env.floodPlain));
+        permit2Hash = keccak256(abi.encodePacked("\x19\x01", IEIP712(env.permit2).DOMAIN_SEPARATOR(), permit2Hash));
     }
 
     /// @dev Decodes hookParams into params used by this hook
@@ -809,7 +812,7 @@ library BunniHookLogic {
     function _decodeParams(bytes memory hookParams) internal pure returns (DecodedHookParams memory p) {
         // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
         bytes32 firstWord;
-        // | oracleMinInterval - 4 bytes |
+        // | oracleMinInterval - 4 bytes | maxAmAmmFee - 3 bytes | minRentMultiplier - 6 bytes |
         bytes32 secondWord;
         /// @solidity memory-safe-assembly
         assembly {
@@ -831,5 +834,7 @@ library BunniHookLogic {
         p.rebalanceOrderTTL = uint16(bytes2(firstWord << 232));
         p.amAmmEnabled = uint8(bytes1(firstWord << 248)) != 0;
         p.oracleMinInterval = uint32(bytes4(secondWord));
+        p.maxAmAmmFee = uint24(bytes3(secondWord << 32));
+        p.minRentMultiplier = uint48(bytes6(secondWord << 56));
     }
 }
