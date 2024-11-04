@@ -68,8 +68,9 @@ contract BunniQuoter is IBunniQuoter {
         PoolState memory bunniState = hub.poolState(id);
 
         // hooklet call
-        (bool feeOverridden, uint24 feeOverride, bool priceOverridden, uint160 sqrtPriceX96Override) =
+        (bool success_, bool feeOverridden, uint24 feeOverride, bool priceOverridden, uint160 sqrtPriceX96Override) =
             bunniState.hooklet.hookletBeforeSwapView(sender, key, params);
+        if (!success_) return (false, 0, 0, 0, 0, 0, 0);
 
         // override price if needed
         if (priceOverridden) {
@@ -250,20 +251,36 @@ contract BunniQuoter is IBunniQuoter {
             outputAmount = uint256(actualOutputAmount);
         }
 
-        // if we reached this point, the swap was successful
-        success = true;
+        // hooklet call
+        success = bunniState.hooklet.hookletAfterSwapView(
+            sender,
+            key,
+            params,
+            IHooklet.SwapReturnData({
+                updatedSqrtPriceX96: updatedSqrtPriceX96,
+                updatedTick: updatedTick,
+                inputAmount: inputAmount,
+                outputAmount: outputAmount,
+                swapFee: swapFee,
+                totalLiquidity: totalLiquidity
+            })
+        );
     }
 
-    function quoteDeposit(IBunniHub.DepositParams calldata params)
+    function quoteDeposit(address sender, IBunniHub.DepositParams calldata params)
         external
         view
         override
-        returns (uint256 shares, uint256 amount0, uint256 amount1)
+        returns (bool success, uint256 shares, uint256 amount0, uint256 amount1)
     {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = hub.poolState(poolId);
 
         (uint160 sqrtPriceX96, int24 currentTick,,) = IBunniHook(address(params.poolKey.hooks)).slot0s(poolId);
+
+        // hooklet call
+        success = state.hooklet.hookletBeforeDepositView(sender, params);
+        if (!success) return (false, 0, 0, 0);
 
         DepositLogicReturnData memory depositReturnData = _depositLogic(
             DepositLogicInputData({
@@ -301,9 +318,14 @@ contract BunniQuoter is IBunniQuoter {
                     : existingShareSupply.mulDiv(rawAmount1 + reserveAmount1, depositReturnData.balance1)
             );
         }
+
+        // hooklet call
+        success = state.hooklet.hookletAfterDepositView(
+            sender, params, IHooklet.DepositReturnData({shares: shares, amount0: amount0, amount1: amount1})
+        );
     }
 
-    function quoteWithdraw(IBunniHub.WithdrawParams calldata params)
+    function quoteWithdraw(address sender, IBunniHub.WithdrawParams calldata params)
         external
         view
         override
@@ -317,6 +339,10 @@ contract BunniQuoter is IBunniQuoter {
             return (false, 0, 0);
         }
 
+        // hooklet call
+        success = state.hooklet.hookletBeforeWithdrawView(sender, params);
+        if (!success) return (false, 0, 0);
+
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
 
         // compute token amount to withdraw and the component amounts
@@ -328,6 +354,11 @@ contract BunniQuoter is IBunniQuoter {
         uint256 rawAmount1 = state.rawBalance1.mulDiv(params.shares, currentTotalSupply);
         amount0 = reserveAmount0 + rawAmount0;
         amount1 = reserveAmount1 + rawAmount1;
+
+        // hooklet call
+        success = state.hooklet.hookletAfterWithdrawView(
+            sender, params, IHooklet.WithdrawReturnData({amount0: amount0, amount1: amount1})
+        );
     }
 
     /// -----------------------------------------------------------------------

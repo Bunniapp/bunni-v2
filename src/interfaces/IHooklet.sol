@@ -98,6 +98,16 @@ interface IHooklet {
         external
         returns (bytes4 selector);
 
+    /// @notice View version of beforeDeposit(), used when computing deposit quotes like in BunniQuoter.
+    /// Should always have the same behavior as beforeDeposit().
+    /// @param sender The address of the account that initiated the deposit.
+    /// @param params The deposit's input parameters.
+    /// @return selector IHooklet.beforeDeposit.selector if the call was successful.
+    function beforeDepositView(address sender, IBunniHub.DepositParams calldata params)
+        external
+        view
+        returns (bytes4 selector);
+
     /// @notice Called after a deposit operation.
     /// @param sender The address of the account that initiated the deposit.
     /// @param params The deposit's input parameters.
@@ -109,12 +119,34 @@ interface IHooklet {
         DepositReturnData calldata returnData
     ) external returns (bytes4 selector);
 
+    /// @notice View version of afterDeposit(), used when computing deposit quotes like in BunniQuoter.
+    /// Should always have the same behavior as afterDeposit().
+    /// @param sender The address of the account that initiated the deposit.
+    /// @param params The deposit's input parameters.
+    /// @param returnData The deposit operation's return data.
+    /// @return selector IHooklet.afterDeposit.selector if the call was successful.
+    function afterDepositView(
+        address sender,
+        IBunniHub.DepositParams calldata params,
+        DepositReturnData calldata returnData
+    ) external view returns (bytes4 selector);
+
     /// @notice Called before a withdraw operation.
     /// @param sender The address of the account that initiated the withdraw.
     /// @param params The withdraw's input parameters.
     /// @return selector IHooklet.beforeWithdraw.selector if the call was successful.
     function beforeWithdraw(address sender, IBunniHub.WithdrawParams calldata params)
         external
+        returns (bytes4 selector);
+
+    /// @notice View version of beforeWithdraw(), used when computing withdraw quotes like in BunniQuoter.
+    /// Should always have the same behavior as beforeWithdraw().
+    /// @param sender The address of the account that initiated the withdraw.
+    /// @param params The withdraw's input parameters.
+    /// @return selector IHooklet.beforeWithdraw.selector if the call was successful.
+    function beforeWithdrawView(address sender, IBunniHub.WithdrawParams calldata params)
+        external
+        view
         returns (bytes4 selector);
 
     /// @notice Called after a withdraw operation.
@@ -127,6 +159,18 @@ interface IHooklet {
         IBunniHub.WithdrawParams calldata params,
         WithdrawReturnData calldata returnData
     ) external returns (bytes4 selector);
+
+    /// @notice View version of afterWithdraw(), used when computing withdraw quotes like in BunniQuoter.
+    /// Should always have the same behavior as afterWithdraw().
+    /// @param sender The address of the account that initiated the withdraw.
+    /// @param params The withdraw's input parameters.
+    /// @param returnData The withdraw operation's return data.
+    /// @return selector IHooklet.afterWithdraw.selector if the call was successful.
+    function afterWithdrawView(
+        address sender,
+        IBunniHub.WithdrawParams calldata params,
+        WithdrawReturnData calldata returnData
+    ) external view returns (bytes4 selector);
 
     /// @notice Called before a swap operation. Allows the hooklet to override the swap fee & price
     /// of the pool before the swap is executed.
@@ -170,4 +214,18 @@ interface IHooklet {
         IPoolManager.SwapParams calldata params,
         SwapReturnData calldata returnData
     ) external returns (bytes4 selector);
+
+    /// @notice View version of afterSwap(), used when computing swap quotes like in BunniQuoter.
+    /// Should always have the same behavior as afterSwap().
+    /// @param sender The address of the account that initiated the swap.
+    /// @param key The Uniswap v4 pool's key.
+    /// @param params The swap's input parameters.
+    /// @param returnData The swap operation's return data.
+    /// @return selector IHooklet.afterSwap.selector if the call was successful.
+    function afterSwapView(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        SwapReturnData calldata returnData
+    ) external view returns (bytes4 selector);
 }

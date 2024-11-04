@@ -34,12 +34,28 @@ contract HookletMock is IHooklet {
         return IHooklet.beforeDeposit.selector;
     }
 
+    function beforeDepositView(address, /* sender */ IBunniHub.DepositParams calldata /* params */ )
+        external
+        pure
+        returns (bytes4 selector)
+    {
+        return IHooklet.beforeDepositView.selector;
+    }
+
     function afterDeposit(
         address, /* sender */
         IBunniHub.DepositParams calldata, /* params */
         DepositReturnData calldata /* returnData */
     ) external pure returns (bytes4 selector) {
         return IHooklet.afterDeposit.selector;
+    }
+
+    function afterDepositView(
+        address, /* sender */
+        IBunniHub.DepositParams calldata, /* params */
+        DepositReturnData calldata /* returnData */
+    ) external pure returns (bytes4 selector) {
+        return IHooklet.afterDepositView.selector;
     }
 
     function beforeWithdraw(address, /* sender */ IBunniHub.WithdrawParams calldata /* params */ )
@@ -50,12 +66,28 @@ contract HookletMock is IHooklet {
         return IHooklet.beforeWithdraw.selector;
     }
 
+    function beforeWithdrawView(address, /* sender */ IBunniHub.WithdrawParams calldata /* params */ )
+        external
+        pure
+        returns (bytes4 selector)
+    {
+        return IHooklet.beforeWithdrawView.selector;
+    }
+
     function afterWithdraw(
         address, /* sender */
         IBunniHub.WithdrawParams calldata, /* params */
         WithdrawReturnData calldata /* returnData */
     ) external pure returns (bytes4 selector) {
         return IHooklet.afterWithdraw.selector;
+    }
+
+    function afterWithdrawView(
+        address, /* sender */
+        IBunniHub.WithdrawParams calldata, /* params */
+        WithdrawReturnData calldata /* returnData */
+    ) external pure returns (bytes4 selector) {
+        return IHooklet.afterWithdrawView.selector;
     }
 
     function beforeSwap(
@@ -89,6 +121,15 @@ contract HookletMock is IHooklet {
         SwapReturnData calldata /* returnData */
     ) external pure returns (bytes4 selector) {
         return IHooklet.afterSwap.selector;
+    }
+
+    function afterSwapView(
+        address, /* sender */
+        PoolKey calldata, /* key */
+        IPoolManager.SwapParams calldata, /* params */
+        SwapReturnData calldata /* returnData */
+    ) external pure returns (bytes4 selector) {
+        return IHooklet.afterSwapView.selector;
     }
 
     function setBeforeSwapOverride(bool feeOverridden_, uint24 fee_, bool priceOverridden_, uint160 sqrtPriceX96_)

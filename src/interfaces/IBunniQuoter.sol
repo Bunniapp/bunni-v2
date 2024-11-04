@@ -21,12 +21,12 @@ interface IBunniQuoter {
             uint256 totalLiquidity
         );
 
-    function quoteDeposit(IBunniHub.DepositParams calldata params)
+    function quoteDeposit(address sender, IBunniHub.DepositParams calldata params)
         external
         view
-        returns (uint256 shares, uint256 amount0, uint256 amount1);
+        returns (bool success, uint256 shares, uint256 amount0, uint256 amount1);
 
-    function quoteWithdraw(IBunniHub.WithdrawParams calldata params)
+    function quoteWithdraw(address sender, IBunniHub.WithdrawParams calldata params)
         external
         view
         returns (bool success, uint256 amount0, uint256 amount1);
