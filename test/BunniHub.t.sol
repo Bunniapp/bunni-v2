@@ -56,6 +56,7 @@ import {BunniHookLogic} from "../src/lib/BunniHookLogic.sol";
 import {BunniQuoter} from "../src/periphery/BunniQuoter.sol";
 import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {OrderHashMemory} from "../src/lib/OrderHashMemory.sol";
+import {ReentrancyGuard} from "../src/base/ReentrancyGuard.sol";
 import {ERC4626WithFeeMock} from "./mocks/ERC4626WithFeeMock.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
@@ -121,6 +122,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     IFloodPlain internal floodPlain;
     BunniLens internal lens;
     BunniZone internal zone;
+    uint256 deposit0;
+    uint256 deposit1;
 
     function setUp() public {
         vm.warp(1e9); // init block timestamp to reasonable value
@@ -2041,6 +2044,108 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
         _swap(key, params, 0, "");
+    }
+
+    // Implementation of IFulfiller interface
+    function sourceConsideration(
+        bytes28, /* selectorExtension */
+        IFloodPlain.Order calldata order,
+        address, /* caller */
+        bytes calldata data
+    ) external returns (uint256) {
+        // deposit liquidity between rebalanceOrderPreHook and rebalanceOrderPostHook
+        IBunniHub.DepositParams memory depositParams = abi.decode(data, (IBunniHub.DepositParams));
+        (, deposit0, deposit1) = hub.deposit(depositParams);
+
+        return order.consideration.amount;
+    }
+
+    function test_rebalance_arb() external {
+        uint256 swapAmount = 1e6;
+        uint32 alpha = 359541238;
+        uint24 feeMin = 0.3e6;
+        uint24 feeMax = 0.5e6;
+        uint24 feeQuadraticMultiplier = 1e6;
+
+        MockLDF ldf_ = new MockLDF();
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
+        ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            ERC4626(address(0)),
+            ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
+            )
+        );
+
+        // shift liquidity to the right
+        // the LDF will demand more token0, so we'll have too much of token1
+        // the rebalance should swap from token1 to token0
+        ldf_.setMinTick(-20);
+
+        // make small swap to trigger rebalance
+        _mint(key.currency0, address(this), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        vm.recordLogs();
+        _swap(key, params, 0, "");
+
+        // obtain the order from the logs
+        Vm.Log[] memory logs_ = vm.getRecordedLogs();
+        Vm.Log memory orderEtchedLog;
+        for (uint256 i = 0; i < logs_.length; i++) {
+            if (logs_[i].emitter == address(floodPlain) && logs_[i].topics[0] == IOnChainOrders.OrderEtched.selector) {
+                orderEtchedLog = logs_[i];
+                break;
+            }
+        }
+        IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
+        IFloodPlain.Order memory order = signedOrder.order;
+
+        // prepare deposit data
+        IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
+            poolKey: key,
+            amount0Desired: 1e18,
+            amount1Desired: 1e18,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            recipient: address(this),
+            refundRecipient: address(this),
+            vaultFee0: 0,
+            vaultFee1: 0,
+            referrer: 0
+        });
+        _mint(key.currency0, address(this), depositParams.amount0Desired);
+        _mint(key.currency1, address(this), depositParams.amount1Desired);
+
+        // fulfill order
+        // should revert due to reentrancy
+        _mint(key.currency0, address(this), order.consideration.amount);
+        bytes memory data = abi.encode(depositParams);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuard__ReentrantCall.selector);
+        floodPlain.fulfillOrder(signedOrder, address(this), data);
     }
 
     function test_avoidTransferringBidTokensDuringRebalance() public {

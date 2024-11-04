@@ -195,6 +195,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // pull claim tokens from BunniHub
         hub.hookHandleSwap({key: key, zeroForOne: zeroForOne, inputAmount: 0, outputAmount: amount});
 
+        // lock BunniHub to prevent reentrancy
+        hub.lockForRebalance(key);
+
         // burn and take
         poolManager.burn(address(this), currency.toId(), amount);
         poolManager.take(currency, address(this), amount);
@@ -217,6 +220,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         // settle the transferred tokens and mint claim tokens
         uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}();
         poolManager.mint(address(this), currency.toId(), paid);
+
+        // unlock BunniHub
+        hub.unlockForRebalance(key);
 
         // push claim tokens to BunniHub
         hub.hookHandleSwap({key: key, zeroForOne: zeroForOne, inputAmount: paid, outputAmount: 0});
