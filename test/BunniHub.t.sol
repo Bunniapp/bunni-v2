@@ -2043,6 +2043,112 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         _swap(key, params, 0, "");
     }
 
+    function test_avoidTransferringBidTokensDuringRebalance() public {
+        // Step 1: Create a new pool
+        (IBunniToken bt1, PoolKey memory poolKey1) = _deployPoolAndInitLiquidity();
+
+        // Step 2: Send bids and rent tokens (BT1) to BunniHook
+        uint128 bidAmount = 1e18;
+        deal(address(bt1), address(this), bidAmount);
+        bt1.approve(address(bunniHook), bidAmount);
+        bunniHook.bid(
+            poolKey1.toId(), address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, bidAmount
+        );
+
+        // Record the initial BT1 balance of BunniHook
+        uint256 initialBT1Balance = bt1.balanceOf(address(bunniHook));
+        assertEq(initialBT1Balance, bidAmount, "BunniHook should have BT1 balance");
+
+        // Step 3: Create a new pool with BT1 and AttackerToken
+        ERC20Mock attackerToken = new ERC20Mock();
+        MockLDF mockLDF = new MockLDF();
+        mockLDF.setMinTick(-30); // minTick of MockLDFs need initialization
+
+        // approve tokens
+        vm.startPrank(address(0x6969));
+        bt1.approve(address(permit2), type(uint256).max);
+        attackerToken.approve(address(permit2), type(uint256).max);
+        permit2.approve(address(bt1), address(hub), type(uint160).max, type(uint48).max);
+        permit2.approve(address(attackerToken), address(hub), type(uint160).max, type(uint48).max);
+        vm.stopPrank();
+
+        (Currency currency0, Currency currency1) = address(bt1) < address(attackerToken)
+            ? (Currency.wrap(address(bt1)), Currency.wrap(address(attackerToken)))
+            : (Currency.wrap(address(attackerToken)), Currency.wrap(address(bt1)));
+        (, PoolKey memory poolKey2) = _deployPoolAndInitLiquidity(
+            currency0,
+            currency1,
+            ERC4626(address(0)),
+            ERC4626(address(0)),
+            mockLDF,
+            IHooklet(address(0)),
+            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL
+            ),
+            bytes32(uint256(1))
+        );
+
+        // Step 4: Trigger a rebalance for the attacker's pool
+        // Shift liquidity to create an imbalance such that we need to swap attackerToken into bt1
+        // Shift right if bt1 is token0, shift left if bt1 is token1
+        mockLDF.setMinTick(address(bt1) < address(attackerToken) ? -20 : -40);
+
+        // Make a small swap to trigger rebalance
+        uint256 swapAmount = 1e6;
+        deal(address(bt1), address(this), swapAmount);
+        bt1.approve(address(swapper), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: address(bt1) < address(attackerToken),
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: address(bt1) < address(attackerToken)
+                ? TickMath.MIN_SQRT_PRICE + 1
+                : TickMath.MAX_SQRT_PRICE - 1
+        });
+
+        // Record logs to capture the OrderEtched event
+        vm.recordLogs();
+        swapper.swap(poolKey2, params, type(uint256).max, 0);
+
+        // Find the OrderEtched event
+        Vm.Log[] memory logs_ = vm.getRecordedLogs();
+        Vm.Log memory orderEtchedLog;
+        for (uint256 i = 0; i < logs_.length; i++) {
+            if (logs_[i].emitter == address(floodPlain) && logs_[i].topics[0] == IOnChainOrders.OrderEtched.selector) {
+                orderEtchedLog = logs_[i];
+                break;
+            }
+        }
+        require(orderEtchedLog.emitter == address(floodPlain), "OrderEtched event not found");
+
+        // Decode the order from the event
+        IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
+        IFloodPlain.Order memory order = signedOrder.order;
+
+        // Fulfill the rebalance order
+        deal(address(bt1), address(this), order.consideration.amount);
+        bt1.approve(address(floodPlain), order.consideration.amount);
+        floodPlain.fulfillOrder(signedOrder);
+
+        // Step 5: Verify that the BT1 balance of BunniHook is still bidAmount
+        uint256 finalBT1Balance = bt1.balanceOf(address(bunniHook));
+        assertEq(finalBT1Balance, bidAmount, "BT1 balance of BunniHook should not change after rebalance");
+    }
+
     function test_DoS_pool() public {
         // Deployment data
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(0);
@@ -2251,7 +2357,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             weth.deposit{value: amount}();
             weth.transfer(to, amount);
         } else {
-            ERC20Mock(Currency.unwrap(currency)).mint(to, amount);
+            deal(Currency.unwrap(currency), to, amount);
         }
     }
 
