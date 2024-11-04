@@ -43,8 +43,9 @@ library HookletLib {
                     revert(0x1c, 0x04)
                 }
                 // bubble up revert
-                returndatacopy(0, 0, returndatasize())
-                revert(0, returndatasize())
+                let fmp := mload(0x40)
+                returndatacopy(fmp, 0, returndatasize())
+                revert(fmp, returndatasize())
             }
             // allocate result byte array from the free memory pointer
             result := mload(0x40)
@@ -63,32 +64,31 @@ library HookletLib {
     function staticcallHooklet(IHooklet self, bytes4 selector, bytes memory data)
         internal
         view
-        returns (bytes memory result)
+        returns (bool success, bytes memory result)
     {
         bytes4 decodedSelector;
         assembly ("memory-safe") {
-            if iszero(staticcall(gas(), self, add(data, 0x20), mload(data), 0, 0)) {
-                if iszero(returndatasize()) {
-                    // if the call failed without a revert reason, revert with `HookletLib__FailedHookletCall()`
-                    mstore(0, 0x855e32e7)
-                    revert(0x1c, 0x04)
-                }
-                // bubble up revert
-                returndatacopy(0, 0, returndatasize())
-                revert(0, returndatasize())
+            switch staticcall(gas(), self, add(data, 0x20), mload(data), 0, 0)
+            case 0 {
+                // call reverted, set success to false
+                success := 0
             }
-            // allocate result byte array from the free memory pointer
-            result := mload(0x40)
-            // store new free memory pointer at the end of the array padded to 32 bytes
-            mstore(0x40, add(result, and(add(returndatasize(), 0x3f), not(0x1f))))
-            // store length in memory
-            mstore(result, returndatasize())
-            // copy return data to result
-            returndatacopy(add(result, 0x20), 0, returndatasize())
-            // get the selector from the return data
-            decodedSelector := mload(add(result, 0x20))
+            default {
+                // call succeeded, set success to true
+                success := 1
+                // allocate result byte array from the free memory pointer
+                result := mload(0x40)
+                // store new free memory pointer at the end of the array padded to 32 bytes
+                mstore(0x40, add(result, and(add(returndatasize(), 0x3f), not(0x1f))))
+                // store length in memory
+                mstore(result, returndatasize())
+                // copy return data to result
+                returndatacopy(add(result, 0x20), 0, returndatasize())
+                // get the selector from the return data
+                decodedSelector := mload(add(result, 0x20))
+            }
         }
-        if (decodedSelector != selector) HookletLib__InvalidHookletResponse.selector.revertWith();
+        if (decodedSelector != selector) return (false, bytes(""));
     }
 
     modifier noSelfCall(IHooklet self, address sender) {
@@ -131,6 +131,21 @@ library HookletLib {
         }
     }
 
+    function hookletBeforeDepositView(IHooklet self, address sender, IBunniHub.DepositParams calldata params)
+        internal
+        view
+        noSelfCall(self, sender)
+        returns (bool success)
+    {
+        if (self.hasPermission(BEFORE_DEPOSIT_FLAG)) {
+            (success,) = self.staticcallHooklet(
+                IHooklet.beforeDepositView.selector, abi.encodeCall(IHooklet.beforeDepositView, (sender, params))
+            );
+        } else {
+            success = true;
+        }
+    }
+
     function hookletAfterDeposit(
         IHooklet self,
         address sender,
@@ -141,6 +156,22 @@ library HookletLib {
             self.callHooklet(
                 IHooklet.afterDeposit.selector, abi.encodeCall(IHooklet.afterDeposit, (sender, params, returnData))
             );
+        }
+    }
+
+    function hookletAfterDepositView(
+        IHooklet self,
+        address sender,
+        IBunniHub.DepositParams calldata params,
+        IHooklet.DepositReturnData memory returnData
+    ) internal view noSelfCall(self, sender) returns (bool success) {
+        if (self.hasPermission(AFTER_DEPOSIT_FLAG)) {
+            (success,) = self.staticcallHooklet(
+                IHooklet.afterDepositView.selector,
+                abi.encodeCall(IHooklet.afterDepositView, (sender, params, returnData))
+            );
+        } else {
+            success = true;
         }
     }
 
@@ -155,6 +186,21 @@ library HookletLib {
         }
     }
 
+    function hookletBeforeWithdrawView(IHooklet self, address sender, IBunniHub.WithdrawParams calldata params)
+        internal
+        view
+        noSelfCall(self, sender)
+        returns (bool success)
+    {
+        if (self.hasPermission(BEFORE_WITHDRAW_FLAG)) {
+            (success,) = self.staticcallHooklet(
+                IHooklet.beforeWithdrawView.selector, abi.encodeCall(IHooklet.beforeWithdrawView, (sender, params))
+            );
+        } else {
+            success = true;
+        }
+    }
+
     function hookletAfterWithdraw(
         IHooklet self,
         address sender,
@@ -165,6 +211,22 @@ library HookletLib {
             self.callHooklet(
                 IHooklet.afterWithdraw.selector, abi.encodeCall(IHooklet.afterWithdraw, (sender, params, returnData))
             );
+        }
+    }
+
+    function hookletAfterWithdrawView(
+        IHooklet self,
+        address sender,
+        IBunniHub.WithdrawParams calldata params,
+        IHooklet.WithdrawReturnData memory returnData
+    ) internal view noSelfCall(self, sender) returns (bool success) {
+        if (self.hasPermission(AFTER_WITHDRAW_FLAG)) {
+            (success,) = self.staticcallHooklet(
+                IHooklet.afterWithdrawView.selector,
+                abi.encodeCall(IHooklet.afterWithdrawView, (sender, params, returnData))
+            );
+        } else {
+            success = true;
         }
     }
 
@@ -218,7 +280,7 @@ library HookletLib {
         internal
         view
         noSelfCall(self, sender)
-        returns (bool feeOverridden, uint24 fee, bool priceOverridden, uint160 sqrtPriceX96)
+        returns (bool success, bool feeOverridden, uint24 fee, bool priceOverridden, uint160 sqrtPriceX96)
     {
         if (
             self.hasPermission(BEFORE_SWAP_FLAG)
@@ -226,9 +288,11 @@ library HookletLib {
                     self.hasPermission(BEFORE_SWAP_OVERRIDE_FEE_FLAG) || self.hasPermission(BEFORE_SWAP_OVERRIDE_PRICE_FLAG)
                 )
         ) {
-            bytes memory result = self.staticcallHooklet(
+            bytes memory result;
+            (success, result) = self.staticcallHooklet(
                 IHooklet.beforeSwapView.selector, abi.encodeCall(IHooklet.beforeSwapView, (sender, key, params))
             );
+            if (!success) return (false, false, 0, false, 0);
             (bool canOverrideFee, bool canOverridePrice) =
                 (self.hasPermission(BEFORE_SWAP_OVERRIDE_FEE_FLAG), self.hasPermission(BEFORE_SWAP_OVERRIDE_PRICE_FLAG));
 
@@ -252,6 +316,8 @@ library HookletLib {
             fee = feeOverridden ? uint24(fee.clamp(0, SWAP_FEE_BASE)) : 0;
             sqrtPriceX96 =
                 priceOverridden ? uint160(sqrtPriceX96.clamp(TickMath.MIN_SQRT_PRICE, TickMath.MAX_SQRT_PRICE)) : 0;
+        } else {
+            return (true, false, 0, false, 0);
         }
     }
 
@@ -267,6 +333,23 @@ library HookletLib {
         self.callHooklet(
             IHooklet.afterSwap.selector, abi.encodeCall(IHooklet.afterSwap, (sender, key, params, returnData))
         );
+    }
+
+    function hookletAfterSwapView(
+        IHooklet self,
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        IHooklet.SwapReturnData memory returnData
+    ) internal view noSelfCall(self, sender) returns (bool success) {
+        if (self.hasPermission(AFTER_SWAP_FLAG)) {
+            (success,) = self.staticcallHooklet(
+                IHooklet.afterSwapView.selector,
+                abi.encodeCall(IHooklet.afterSwapView, (sender, key, params, returnData))
+            );
+        } else {
+            success = true;
+        }
     }
 
     function hasPermission(IHooklet self, uint160 flag) internal pure returns (bool) {

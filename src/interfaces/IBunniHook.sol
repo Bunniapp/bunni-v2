@@ -158,6 +158,12 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @notice Whether am-AMM is enabled for the given pool.
     function getAmAmmEnabled(PoolId id) external view returns (bool);
 
+    /// @notice Whether liquidity can be withdrawn from the given pool.
+    /// Currently used for pausing withdrawals when there is an active rebalance order.
+    /// @param id The pool id
+    /// @return Whether liquidity can be withdrawn from the given pool.
+    function canWithdraw(PoolId id) external view returns (bool);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------
