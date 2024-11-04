@@ -19,6 +19,13 @@ uint56 constant WITHDRAW_GRACE_PERIOD = 15 minutes;
 uint256 constant REFERRAL_REWARD_PER_TOKEN_PRECISION = 1e30;
 uint256 constant MODIFIER_BASE = 1e6;
 uint256 constant MIN_DEPOSIT_BALANCE_INCREASE = 1e6;
+uint24 constant MAX_AMAMM_FEE = 0.1e6;
+uint256 constant REBALANCE_MAX_SLIPPAGE_BASE = 1e5;
+uint16 constant MAX_SURGE_HALFLIFE = 1 hours;
+uint16 constant MAX_SURGE_AUTOSTART_TIME = 1 hours;
+uint16 constant MAX_REBALANCE_MAX_SLIPPAGE = 0.25e5; // max value for rebalanceMaxSlippage is 25%
+uint16 constant MAX_REBALANCE_TWAP_SECONDS_AGO = 3 hours;
+uint16 constant MAX_REBALANCE_ORDER_TTL = 1 hours;
 
 /// @dev The max referrer value.
 uint24 constant MAX_REFERRER = 0x7fffff;
