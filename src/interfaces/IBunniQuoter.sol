@@ -29,5 +29,5 @@ interface IBunniQuoter {
     function quoteWithdraw(IBunniHub.WithdrawParams calldata params)
         external
         view
-        returns (uint256 amount0, uint256 amount1);
+        returns (bool success, uint256 amount0, uint256 amount1);
 }

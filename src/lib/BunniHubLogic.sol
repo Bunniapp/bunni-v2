@@ -364,6 +364,10 @@ library BunniHubLogic {
             revert BunniHub__NeedToUseQueuedWithdrawal();
         }
 
+        if (!hook.canWithdraw(poolId)) {
+            revert BunniHub__WithdrawalPaused();
+        }
+
         /// -----------------------------------------------------------------------
         /// Hooklet call
         /// -----------------------------------------------------------------------
