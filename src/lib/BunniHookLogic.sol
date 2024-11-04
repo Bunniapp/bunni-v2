@@ -804,7 +804,7 @@ library BunniHookLogic {
     function _decodeParams(bytes memory hookParams) internal pure returns (DecodedHookParams memory p) {
         // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
         bytes32 firstWord;
-        // | oracleMinInterval - 4 bytes |
+        // | oracleMinInterval - 4 bytes | maxAmAmmFee - 3 bytes | minRentMultiplier - 6 bytes |
         bytes32 secondWord;
         /// @solidity memory-safe-assembly
         assembly {
@@ -826,5 +826,7 @@ library BunniHookLogic {
         p.rebalanceOrderTTL = uint16(bytes2(firstWord << 232));
         p.amAmmEnabled = uint8(bytes1(firstWord << 248)) != 0;
         p.oracleMinInterval = uint32(bytes4(secondWord));
+        p.maxAmAmmFee = uint24(bytes3(secondWord << 32));
+        p.minRentMultiplier = uint48(bytes6(secondWord << 56));
     }
 }

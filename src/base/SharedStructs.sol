@@ -59,6 +59,8 @@ struct HubStorage {
 /// @member rebalanceOrderTTL The time-to-live for a rebalance order, in seconds. At most MAX_REBALANCE_ORDER_TTL.
 /// @member amAmmEnabled Whether the am-AMM is enabled for this pool
 /// @member oracleMinInterval The minimum interval between TWAP oracle updates, in seconds
+/// @member maxAmAmmFee The maximum swap fee that can be set by the am-AMM manager. Must <= MAX_AMAMM_FEE.
+/// @member minRentMultiplier The multiplier applied to the BunniToken total supply to compute the minimum rent. 18 decimals. Must be > 0 unless amAmmEnabled == false.
 struct DecodedHookParams {
     uint24 feeMin;
     uint24 feeMax;
@@ -75,6 +77,8 @@ struct DecodedHookParams {
     uint16 rebalanceOrderTTL;
     bool amAmmEnabled;
     uint32 oracleMinInterval;
+    uint24 maxAmAmmFee;
+    uint48 minRentMultiplier;
 }
 
 /// @notice Contains mappings used by both BunniHook and BunniLogic. Makes passing

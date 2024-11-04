@@ -18,6 +18,7 @@ import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./base/Errors.sol";
@@ -43,6 +44,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     using SafeTransferLib for *;
+    using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
@@ -339,7 +341,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                                 && p.rebalanceTwapSecondsAgo < MAX_REBALANCE_TWAP_SECONDS_AGO && p.rebalanceOrderTTL != 0
                                 && p.rebalanceOrderTTL < MAX_REBALANCE_ORDER_TTL
                         )
-                ) && (p.oracleMinInterval != 0);
+                ) && (p.oracleMinInterval != 0)
+                && (!p.amAmmEnabled || (p.maxAmAmmFee != 0 && p.maxAmAmmFee <= MAX_AMAMM_FEE && p.minRentMultiplier != 0));
         }
     }
 
@@ -541,6 +544,21 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// AmAmm support
     /// -----------------------------------------------------------------------
 
+    function MIN_RENT(PoolId id) internal view returns (uint128) {
+        // minimum rent should be propotional to the pool's BunniToken total supply
+        bytes memory hookParams = hub.hookParams(id);
+        bytes32 secondWord;
+        /// @solidity memory-safe-assembly
+        assembly {
+            secondWord := mload(add(hookParams, 64))
+        }
+        uint48 minRentMultiplier = uint48(bytes6(secondWord << 56));
+        uint256 minRent = hub.bunniTokenOfPool(id).totalSupply().mulWadUp(minRentMultiplier);
+
+        // if the min rent value is somehow more than uint128.max, cap it to uint128.max
+        return minRent > type(uint128).max ? type(uint128).max : uint128(minRent);
+    }
+
     /// @dev precedence is poolOverride > globalOverride > poolEnabled
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
         BoolOverride poolOverride = amAmmEnabledOverride[id];
@@ -564,16 +582,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     function _payloadIsValid(PoolId id, bytes7 payload) internal view virtual override returns (bool) {
         // use feeMax from hookParams
         bytes memory hookParams = hub.hookParams(id);
-        bytes32 firstWord;
+        bytes32 secondWord;
         /// @solidity memory-safe-assembly
         assembly {
-            firstWord := mload(add(hookParams, 32))
+            secondWord := mload(add(hookParams, 64))
         }
-        uint24 maxSwapFee = uint24(bytes3(firstWord << 24));
+        uint24 maxAmAmmFee = uint24(bytes3(secondWord << 32));
 
-        // payload is valid if swapFee0For1 and swapFee1For0 are at most maxSwapFee
+        // payload is valid if swapFee0For1 and swapFee1For0 are at most maxAmAmmFee
         (uint24 swapFee0For1, uint24 swapFee1For0,) = decodeAmAmmPayload(payload);
-        return swapFee0For1 <= maxSwapFee && swapFee1For0 <= maxSwapFee;
+        return swapFee0For1 <= maxAmAmmFee && swapFee1For0 <= maxAmAmmFee;
     }
 
     function _burnBidToken(PoolId id, uint256 amount) internal virtual override {
