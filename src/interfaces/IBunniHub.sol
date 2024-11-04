@@ -121,7 +121,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
         returns (uint256 shares, uint256 amount0, uint256 amount1);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
-    /// @param shares The amount of share tokens to burn
+    /// @param shares The amount of share tokens to burn. Ignored if an expired queued withdrawal exists.
     struct QueueWithdrawParams {
         PoolKey poolKey;
         uint200 shares;
