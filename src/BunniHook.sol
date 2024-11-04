@@ -544,6 +544,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// AmAmm support
     /// -----------------------------------------------------------------------
 
+    function K(PoolId) internal view virtual override returns (uint40) {
+        return 24 hours;
+    }
+
+    function EPOCH_SIZE(PoolId) internal view virtual override returns (uint256) {
+        return 1 seconds;
+    }
+
     function MIN_RENT(PoolId id) internal view returns (uint128) {
         // minimum rent should be propotional to the pool's BunniToken total supply
         bytes memory hookParams = hub.hookParams(id);

@@ -403,8 +403,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_happyPath(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -422,8 +422,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
-        shares -= 100;
+        uint128 rentDeposit = 1e6;
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        shares -= rentDeposit;
 
         // wait until address(this) is the manager
         skip(24 hours);
@@ -452,8 +453,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_fail_didNotQueue(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -471,8 +472,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
-        shares -= 100;
+        uint128 rentDeposit = 1e6;
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        shares -= rentDeposit;
 
         // wait until address(this) is the manager
         skip(24 hours);
@@ -505,8 +507,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_fail_notReady(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -524,8 +526,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
-        shares -= 100;
+        uint128 rentDeposit = 1e6;
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        shares -= rentDeposit;
 
         // wait until address(this) is the manager
         skip(24 hours);
@@ -551,8 +554,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_fail_gracePeriodExpired(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e6, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e6, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -570,8 +573,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         bunniHook.setGlobalAmAmmEnabledOverride(IBunniHook.BoolOverride.TRUE);
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, 100);
-        shares -= 100;
+        uint128 rentDeposit = 1e6;
+        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        shares -= rentDeposit;
 
         // wait until address(this) is the manager
         skip(24 hours);
