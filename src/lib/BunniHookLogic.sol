@@ -184,6 +184,20 @@ library BunniHookLogic {
             revert BunniHook__InvalidSwap();
         }
 
+        // compute total token balances
+        (uint256 reserveBalance0, uint256 reserveBalance1) = (
+            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+        (uint256 balance0, uint256 balance1) =
+            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
+
+        // if it's an exact output swap, revert if the requested output is greater than the balance
+        bool exactIn = params.amountSpecified < 0;
+        if (!exactIn && uint256(params.amountSpecified) > (params.zeroForOne ? balance1 : balance0)) {
+            revert BunniHook__RequestedOutputExceedsBalance();
+        }
+
         // decode hook params
         DecodedHookParams memory hookParams = _decodeParams(bunniState.hookParams);
 
@@ -205,14 +219,6 @@ library BunniHookLogic {
                 s, id, slot0.tick, hookParams.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
             )
             : int24(0);
-
-        // compute total token balances
-        (uint256 reserveBalance0, uint256 reserveBalance1) = (
-            getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
-            getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
-        );
-        (uint256 balance0, uint256 balance1) =
-            (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // query the LDF to get total liquidity and token densities
         bytes32 ldfState = bunniState.statefulLdf ? s.ldfStates[id] : bytes32(0);
@@ -256,15 +262,20 @@ library BunniHookLogic {
                 ldfParams: bunniState.ldfParams,
                 ldfState: ldfState,
                 swapParams: params
-            }),
-            balance0: balance0,
-            balance1: balance1
+            })
         });
 
+        // revert if it's an exact output swap and outputAmount < params.amountSpecified
+        if (!exactIn && outputAmount < uint256(params.amountSpecified)) {
+            revert BunniHook__InsufficientOutput();
+        }
+
         // ensure swap never moves price in the opposite direction
+        // ensure the inputAmount is non-zero when it's an exact output swap
         if (
             (params.zeroForOne && updatedSqrtPriceX96 > slot0.sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < slot0.sqrtPriceX96)
+                || (params.amountSpecified > 0 && inputAmount == 0)
         ) {
             revert BunniHook__InvalidSwap();
         }
@@ -313,7 +324,6 @@ library BunniHookLogic {
             params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
         uint24 swapFee;
         uint256 swapFeeAmount;
-        bool exactIn = params.amountSpecified < 0;
         useAmAmmFee = hookParams.amAmmEnabled && amAmmManager != address(0);
         swapFee = useAmAmmFee
             ? (
@@ -382,7 +392,7 @@ library BunniHookLogic {
             inputAmount += swapFeeAmount + hookFeesAmount;
 
             // return beforeSwapDelta
-            // give out min(amountSpecified, outputAmount) such that if amountSpecified is greater we only give outputAmount and let the tx revert
+            // give out min(amountSpecified, outputAmount) such that we only give out as much as requested
             int256 actualOutputAmount = FixedPointMathLib.min(params.amountSpecified, outputAmount.toInt256());
             outputAmount = uint256(actualOutputAmount);
             beforeSwapDelta = toBeforeSwapDelta({
@@ -492,26 +502,27 @@ library BunniHookLogic {
         uint256 reserveBalance0,
         uint256 reserveBalance1
     ) private returns (bool shouldSurge) {
-        if (address(bunniState.vault0) != address(0) && address(bunniState.vault1) != address(0)) {
-            // only surge if both vaults are set because otherwise total liquidity won't automatically increase
+        if (address(bunniState.vault0) != address(0) || address(bunniState.vault1) != address(0)) {
+            // only surge if at least one vault is set because otherwise total liquidity won't automatically increase
             // so there's no risk of being sandwiched
 
-            // compute share prices
-            VaultSharePrices memory sharePrices = VaultSharePrices({
-                initialized: true,
-                sharePrice0: bunniState.reserve0 == 0 ? 0 : reserveBalance0.mulDivUp(WAD, bunniState.reserve0).toUint120(),
-                sharePrice1: bunniState.reserve1 == 0 ? 0 : reserveBalance1.mulDivUp(WAD, bunniState.reserve1).toUint120()
-            });
+            // load share prices at last swap
+            VaultSharePrices memory prevSharePrices = s.vaultSharePricesAtLastSwap[id];
+
+            // compute current share prices
+            uint120 sharePrice0 =
+                bunniState.reserve0 == 0 ? 0 : reserveBalance0.divWadUp(bunniState.reserve0).toUint120();
+            uint120 sharePrice1 =
+                bunniState.reserve1 == 0 ? 0 : reserveBalance1.divWadUp(bunniState.reserve1).toUint120();
 
             // compare with share prices at last swap to see if we need to apply the surge fee
-            VaultSharePrices memory prevSharePrices = s.vaultSharePricesAtLastSwap[id];
             if (
                 prevSharePrices.initialized
                     && (
-                        dist(sharePrices.sharePrice0, prevSharePrices.sharePrice0)
-                            >= prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
-                            || dist(sharePrices.sharePrice1, prevSharePrices.sharePrice1)
-                                >= prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
+                        dist(sharePrice0, prevSharePrices.sharePrice0)
+                            > prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
+                            || dist(sharePrice1, prevSharePrices.sharePrice1)
+                                > prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
                     )
             ) {
                 // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
@@ -520,10 +531,11 @@ library BunniHookLogic {
 
             // update share prices at last swap
             if (
-                !prevSharePrices.initialized || sharePrices.sharePrice0 != prevSharePrices.sharePrice0
-                    || sharePrices.sharePrice1 != prevSharePrices.sharePrice1
+                !prevSharePrices.initialized || sharePrice0 != prevSharePrices.sharePrice0
+                    || sharePrice1 != prevSharePrices.sharePrice1
             ) {
-                s.vaultSharePricesAtLastSwap[id] = sharePrices;
+                s.vaultSharePricesAtLastSwap[id] =
+                    VaultSharePrices({initialized: true, sharePrice0: sharePrice0, sharePrice1: sharePrice1});
             }
         }
     }
@@ -669,7 +681,9 @@ library BunniHookLogic {
             return (false, inputToken, outputToken, inputAmount, outputAmount);
         }
         inputAmount = inputTokenExcessBalance - inputTokenTarget;
-        outputAmount = outputTokenTarget.mulDivUp(1e5 - input.hookParams.rebalanceMaxSlippage, 1e5);
+        outputAmount = outputTokenTarget.mulDivUp(
+            REBALANCE_MAX_SLIPPAGE_BASE - input.hookParams.rebalanceMaxSlippage, REBALANCE_MAX_SLIPPAGE_BASE
+        );
 
         success = true;
     }
@@ -720,15 +734,14 @@ library BunniHookLogic {
             offer: offer,
             consideration: consideration,
             deadline: block.timestamp + rebalanceOrderTTL,
-            nonce: block.number,
+            nonce: uint256(keccak256(abi.encode(block.number, id))), // combine block.number and pool id to avoid nonce collisions between pools
             preHooks: preHooks,
             postHooks: postHooks
         });
 
         // record order for verification later
-        s.rebalanceOrderHash[id] = _newOrderHash(order, env);
+        (s.rebalanceOrderHash[id], s.rebalanceOrderPermit2Hash[id]) = _hashFloodOrder(order, env);
         s.rebalanceOrderDeadline[id] = order.deadline;
-        s.rebalanceOrderHookArgsHash[id] = keccak256(abi.encode(hookArgs));
 
         // approve input token to permit2
         if (inputERC20Token.allowance(address(this), env.permit2) < inputAmount) {
@@ -785,14 +798,14 @@ library BunniHookLogic {
     /// @dev The hash that Permit2 uses when verifying the order's signature.
     /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
     /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
-    function _newOrderHash(IFloodPlain.Order memory order, Env calldata env) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                IEIP712(env.permit2).DOMAIN_SEPARATOR(),
-                OrderHashMemory.hashAsWitness(order, address(env.floodPlain))
-            )
-        );
+    /// Also returns the Flood order hash
+    function _hashFloodOrder(IFloodPlain.Order memory order, Env calldata env)
+        internal
+        view
+        returns (bytes32 orderHash, bytes32 permit2Hash)
+    {
+        (orderHash, permit2Hash) = OrderHashMemory.hashAsWitness(order, address(env.floodPlain));
+        permit2Hash = keccak256(abi.encodePacked("\x19\x01", IEIP712(env.permit2).DOMAIN_SEPARATOR(), permit2Hash));
     }
 
     /// @dev Decodes hookParams into params used by this hook
@@ -801,7 +814,7 @@ library BunniHookLogic {
     function _decodeParams(bytes memory hookParams) internal pure returns (DecodedHookParams memory p) {
         // | feeMin - 3 bytes | feeMax - 3 bytes | feeQuadraticMultiplier - 3 bytes | feeTwapSecondsAgo - 3 bytes | surgeFee - 3 bytes | surgeFeeHalfLife - 2 bytes | surgeFeeAutostartThreshold - 2 bytes | vaultSurgeThreshold0 - 2 bytes | vaultSurgeThreshold1 - 2 bytes | rebalanceThreshold - 2 bytes | rebalanceMaxSlippage - 2 bytes | rebalanceTwapSecondsAgo - 2 bytes | rebalanceOrderTTL - 2 bytes | amAmmEnabled - 1 byte |
         bytes32 firstWord;
-        // | oracleMinInterval - 4 bytes |
+        // | oracleMinInterval - 4 bytes | maxAmAmmFee - 3 bytes | minRentMultiplier - 6 bytes |
         bytes32 secondWord;
         /// @solidity memory-safe-assembly
         assembly {
@@ -823,5 +836,7 @@ library BunniHookLogic {
         p.rebalanceOrderTTL = uint16(bytes2(firstWord << 232));
         p.amAmmEnabled = uint8(bytes1(firstWord << 248)) != 0;
         p.oracleMinInterval = uint32(bytes4(secondWord));
+        p.maxAmAmmFee = uint24(bytes3(secondWord << 32));
+        p.minRentMultiplier = uint48(bytes6(secondWord << 56));
     }
 }

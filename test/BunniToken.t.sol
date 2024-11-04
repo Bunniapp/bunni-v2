@@ -55,6 +55,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     uint16 internal constant REBALANCE_TWAP_SECONDS_AGO = 1 hours;
     uint16 internal constant REBALANCE_ORDER_TTL = 10 minutes;
     uint32 internal constant ORACLE_MIN_INTERVAL = 1 hours;
+    uint24 internal constant POOL_MAX_AMAMM_FEE = 0.05e6; // 5%
+    uint48 internal constant MIN_RENT_MULTIPLIER = 1e10;
     uint256 internal constant HOOK_FLAGS = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         + Hooks.BEFORE_SWAP_FLAG + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
     uint256 internal constant MAX_REL_ERROR = 1e4;
@@ -135,7 +137,9 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             REBALANCE_TWAP_SECONDS_AGO,
             REBALANCE_ORDER_TTL,
             true, // amAmmEnabled
-            ORACLE_MIN_INTERVAL
+            ORACLE_MIN_INTERVAL,
+            POOL_MAX_AMAMM_FEE,
+            MIN_RENT_MULTIPLIER
         );
         (bunniToken, key) = hub.deployBunniToken(
             IBunniHub.DeployBunniTokenParams({
@@ -642,6 +646,58 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
                 "balance incorrect"
             );
         }
+    }
+
+    function test_claim_mint_doubleCount() public {
+        bool isToken0 = true;
+        uint256 amountToDistribute = 1 ether;
+        // register depositors and referrers
+        uint24 referrer1 = 0;
+        uint24 referrer2 = 1;
+        address depositor1 = makeAddr("depositor1");
+        address referrer1Address = makeAddr("referrer1");
+        hub.setReferrerAddress(referrer1, referrer1Address);
+        address depositor2 = makeAddr("depositor2");
+        address referrer2Address = makeAddr("referrer2");
+        hub.setReferrerAddress(referrer2, referrer2Address);
+        //
+        // 1. `Depositor1` deposits 1 ether. referrer1 gets score
+        console.log("Depositor1 deposits token using referrer1");
+        _makeDeposit(key, 1 ether, 1 ether, depositor1, referrer1);
+        console.log("ScoreOf referrer1", bunniToken.scoreOf(referrer1));
+        //
+        // 2. `Depositor2` deposits 1 ether. referrer2 gets score.
+        console.log("Depositor2 deposits token using referrer2");
+        _makeDeposit(key, 1 ether, 1 ether, depositor2, referrer2);
+        console.log("ScoreOf referrer2", bunniToken.scoreOf(referrer2));
+        //
+        // 3. Distribute rewards to the `BunniToken`
+        console.log("\nOwner distributes 1 ether rewards...");
+        Currency token = isToken0 ? currency0 : currency1;
+        poolManager.unlock(abi.encode(token, amountToDistribute));
+        bunniToken.distributeReferralRewards(isToken0, amountToDistribute);
+        //
+        (uint256 referrer1Reward0, uint256 referrer1Reward1) = bunniToken.claimReferralRewards(referrer1);
+        (uint256 referrer2Reward0, uint256 referrer2Reward1) = bunniToken.getClaimableReferralRewards(referrer2);
+        console.log("ScoreOf referrer1", bunniToken.scoreOf(referrer1));
+        console.log("ScoreOf referrer2", bunniToken.scoreOf(referrer2));
+        console.log("Rewards claimed by referrer1", referrer1Reward0, referrer1Reward1);
+        console.log("Rewards claimable by referrer2", referrer2Reward0, referrer2Reward1);
+        //
+        // 4. Malicious `Depositor1` deposits 0.1 ether again but he changes the referrer1 to referrer2
+        console.log("\nMalicious Depositor1 deposits more token using referrer2 (referrer is modified)");
+        _makeDeposit(key, 0.1 ether, 0.1 ether, depositor1, referrer2);
+        (referrer1Reward0, referrer1Reward1) = bunniToken.getClaimableReferralRewards(referrer1);
+        (uint256 referrer2Reward0After, uint256 referrer2Reward1After) =
+            bunniToken.getClaimableReferralRewards(referrer2);
+        console.log("ScoreOf referrer1", bunniToken.scoreOf(referrer1));
+        console.log("ScoreOf referrer2", bunniToken.scoreOf(referrer2));
+        console.log("Rewards claimable by referrer1", referrer1Reward0, referrer1Reward1);
+        console.log("Rewards claimable by referrer2", referrer2Reward0After, referrer2Reward1After);
+
+        // referrer2 reward should not change
+        assertEq(referrer2Reward0, referrer2Reward0After, "referrer2 reward0 incorrect");
+        assertEq(referrer2Reward1, referrer2Reward1After, "referrer2 reward1 incorrect");
     }
 
     /// @inheritdoc IUnlockCallback

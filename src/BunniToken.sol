@@ -4,6 +4,8 @@ pragma solidity ^0.8.15;
 
 import {Clone} from "clones-with-immutable-args/Clone.sol";
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
+
 import "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
@@ -242,63 +244,97 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     }
 
     /// @dev Should accrue rewards for the referrers of `from` and `to` in both token0 and token1
-    function _beforeTokenTransfer(address from, address to, uint256) internal override {
+    /// If we're minting tokens to an account to referrer == 0 with a non-zero referrer, we need to accrue rewards
+    /// to the new referrer before minting to avoid double counting the account's balance for the new referrer.
+    function _beforeTokenTransfer(address from, address to, uint256, uint24 newReferrer) internal override {
         uint256 rewardPerToken0 = referrerRewardPerToken0;
         uint256 rewardPerToken1 = referrerRewardPerToken1;
 
-        uint24 fromReferrer;
-        uint24 toReferrer;
+        uint24 fromReferrer = from == address(0) ? 0 : referrerOf(from);
+        uint256 fromReferrerScore = scoreOf(fromReferrer);
 
-        if (from != address(0)) {
-            fromReferrer = referrerOf(from);
-            uint256 fromReferrerScore = scoreOf(fromReferrer);
+        // accrue token0 rewards
+        referrerRewardUnclaimed0[fromReferrer] = _updatedUnclaimedReward(
+            fromReferrerScore,
+            rewardPerToken0,
+            referrerRewardPerTokenPaid0[fromReferrer],
+            referrerRewardUnclaimed0[fromReferrer]
+        );
+        referrerRewardPerTokenPaid0[fromReferrer] = rewardPerToken0;
+
+        // accrue token1 rewards
+        referrerRewardUnclaimed1[fromReferrer] = _updatedUnclaimedReward(
+            fromReferrerScore,
+            rewardPerToken1,
+            referrerRewardPerTokenPaid1[fromReferrer],
+            referrerRewardUnclaimed1[fromReferrer]
+        );
+        referrerRewardPerTokenPaid1[fromReferrer] = rewardPerToken1;
+
+        uint24 toReferrer = to == address(0) ? 0 : referrerOf(to);
+
+        // no need to accrue rewards again if from and to have the same referrer
+        if (fromReferrer != toReferrer) {
+            uint256 toReferrerScore = scoreOf(toReferrer);
 
             // accrue token0 rewards
-            referrerRewardUnclaimed0[fromReferrer] = _updatedUnclaimedReward(
-                fromReferrerScore,
+            referrerRewardUnclaimed0[toReferrer] = _updatedUnclaimedReward(
+                toReferrerScore,
                 rewardPerToken0,
-                referrerRewardPerTokenPaid0[fromReferrer],
-                referrerRewardUnclaimed0[fromReferrer]
+                referrerRewardPerTokenPaid0[toReferrer],
+                referrerRewardUnclaimed0[toReferrer]
             );
-            referrerRewardPerTokenPaid0[fromReferrer] = rewardPerToken0;
+            referrerRewardPerTokenPaid0[toReferrer] = rewardPerToken0;
 
             // accrue token1 rewards
-            referrerRewardUnclaimed1[fromReferrer] = _updatedUnclaimedReward(
-                fromReferrerScore,
+            referrerRewardUnclaimed1[toReferrer] = _updatedUnclaimedReward(
+                toReferrerScore,
                 rewardPerToken1,
-                referrerRewardPerTokenPaid1[fromReferrer],
-                referrerRewardUnclaimed1[fromReferrer]
+                referrerRewardPerTokenPaid1[toReferrer],
+                referrerRewardUnclaimed1[toReferrer]
             );
-            referrerRewardPerTokenPaid1[fromReferrer] = rewardPerToken1;
+            referrerRewardPerTokenPaid1[toReferrer] = rewardPerToken1;
         }
 
-        if (to != address(0)) {
-            toReferrer = referrerOf(to);
+        // should accrue rewards to new referrer if the referrer of `to` will be updated
+        // referrer is immutable after set so the only time this can happen is when `toReferrer == 0`
+        // and `newReferrer != 0`
+        // also should not accrue rewards if `newReferrer == fromReferrer` since we already accrued rewards for `fromReferrer`
+        if (toReferrer == 0 && newReferrer != 0 && newReferrer != fromReferrer) {
+            uint256 newReferrerScore = scoreOf(newReferrer);
 
-            // no need to accrue rewards again if from and to have the same referrer
-            if (!(from != address(0) && fromReferrer == toReferrer)) {
-                uint256 toReferrerScore = scoreOf(toReferrer);
+            // accrue token0 rewards to new referrer
+            referrerRewardUnclaimed0[newReferrer] = _updatedUnclaimedReward(
+                newReferrerScore,
+                rewardPerToken0,
+                referrerRewardPerTokenPaid0[newReferrer],
+                referrerRewardUnclaimed0[newReferrer]
+            );
+            referrerRewardPerTokenPaid0[newReferrer] = rewardPerToken0;
 
-                // accrue token0 rewards
-                referrerRewardUnclaimed0[toReferrer] = _updatedUnclaimedReward(
-                    toReferrerScore,
-                    rewardPerToken0,
-                    referrerRewardPerTokenPaid0[toReferrer],
-                    referrerRewardUnclaimed0[toReferrer]
-                );
-                referrerRewardPerTokenPaid0[toReferrer] = rewardPerToken0;
-
-                // accrue token1 rewards
-                referrerRewardUnclaimed1[toReferrer] = _updatedUnclaimedReward(
-                    toReferrerScore,
-                    rewardPerToken1,
-                    referrerRewardPerTokenPaid1[toReferrer],
-                    referrerRewardUnclaimed1[toReferrer]
-                );
-                referrerRewardPerTokenPaid1[toReferrer] = rewardPerToken1;
-            }
+            // accrue token1 rewards to new referrer
+            referrerRewardUnclaimed1[newReferrer] = _updatedUnclaimedReward(
+                newReferrerScore,
+                rewardPerToken1,
+                referrerRewardPerTokenPaid1[newReferrer],
+                referrerRewardUnclaimed1[newReferrer]
+            );
+            referrerRewardPerTokenPaid1[newReferrer] = rewardPerToken1;
         }
     }
+
+    /// -----------------------------------------------------------------------
+    /// EIP-2612
+    /// -----------------------------------------------------------------------
+
+    function incrementNonce() external override {
+        address msgSender = LibMulticaller.senderOrSigner();
+        _incrementNonce(msgSender);
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Internal utilities
+    /// -----------------------------------------------------------------------
 
     /// @dev Compute the updated unclaimed reward of a referrer
     function _updatedUnclaimedReward(

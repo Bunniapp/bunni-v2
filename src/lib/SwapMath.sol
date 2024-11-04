@@ -8,8 +8,6 @@ import {SqrtPriceMath} from "./SqrtPriceMath.sol";
 /// @title Computes the result of a swap within ticks
 /// @notice Contains methods for computing the result of a swap within a single tick price range, i.e., a single tick.
 library SwapMath {
-    uint256 internal constant MAX_FEE_PIPS = 1e6;
-
     /// @notice Computes the sqrt price target for the next swap step
     /// @param zeroForOne The direction of the swap, true for currency0 to currency1, false for currency1 to currency0
     /// @param sqrtPriceNextX96 The Q64.96 sqrt price for the next initialized tick
@@ -21,13 +19,15 @@ library SwapMath {
         pure
         returns (uint160 sqrtPriceTargetX96)
     {
-        assembly {
+        assembly ("memory-safe") {
             // a flag to toggle between sqrtPriceNextX96 and sqrtPriceLimitX96
             // when zeroForOne == true, nextOrLimit reduces to sqrtPriceNextX96 >= sqrtPriceLimitX96
             // sqrtPriceTargetX96 = max(sqrtPriceNextX96, sqrtPriceLimitX96)
             // when zeroForOne == false, nextOrLimit reduces to sqrtPriceNextX96 < sqrtPriceLimitX96
             // sqrtPriceTargetX96 = min(sqrtPriceNextX96, sqrtPriceLimitX96)
-            let nextOrLimit := xor(lt(sqrtPriceNextX96, sqrtPriceLimitX96), zeroForOne)
+            sqrtPriceNextX96 := and(sqrtPriceNextX96, 0xffffffffffffffffffffffffffffffffffffffff)
+            sqrtPriceLimitX96 := and(sqrtPriceLimitX96, 0xffffffffffffffffffffffffffffffffffffffff)
+            let nextOrLimit := xor(lt(sqrtPriceNextX96, sqrtPriceLimitX96), and(zeroForOne, 0x1))
             let symDiff := xor(sqrtPriceNextX96, sqrtPriceLimitX96)
             sqrtPriceTargetX96 := xor(sqrtPriceLimitX96, mul(symDiff, nextOrLimit))
         }
@@ -61,12 +61,11 @@ library SwapMath {
                     // `amountIn` is capped by the target price
                     sqrtPriceNextX96 = sqrtPriceTargetX96;
                 } else {
+                    // exhaust the remaining amount
+                    amountIn = amountRemainingAbs;
                     sqrtPriceNextX96 = SqrtPriceMath.getNextSqrtPriceFromInput(
                         sqrtPriceCurrentX96, liquidity, amountRemainingAbs, zeroForOne
                     );
-                    amountIn = zeroForOne
-                        ? SqrtPriceMath.getAmount0Delta(sqrtPriceNextX96, sqrtPriceCurrentX96, liquidity, true)
-                        : SqrtPriceMath.getAmount1Delta(sqrtPriceCurrentX96, sqrtPriceNextX96, liquidity, true);
                 }
                 amountOut = zeroForOne
                     ? SqrtPriceMath.getAmount1Delta(sqrtPriceNextX96, sqrtPriceCurrentX96, liquidity, false)

@@ -55,18 +55,10 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     );
     event SetZone(IZone zone);
     event SetModifiers(uint32 indexed hookFeeModifier, uint32 indexed referrerRewardModifier);
-    event SetAmAmmEnabledOverride(PoolId indexed id, BoolOverride indexed boolOverride);
-    event SetGlobalAmAmmEnabledOverride(BoolOverride indexed boolOverride);
 
     /// -----------------------------------------------------------------------
     /// Structs and enums
     /// -----------------------------------------------------------------------
-
-    enum BoolOverride {
-        UNSET,
-        TRUE,
-        FALSE
-    }
 
     /// @notice The state of a TWAP oracle for a given pool
     /// @member index The index of the last written observation for the pool
@@ -166,6 +158,12 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @notice Whether am-AMM is enabled for the given pool.
     function getAmAmmEnabled(PoolId id) external view returns (bool);
 
+    /// @notice Whether liquidity can be withdrawn from the given pool.
+    /// Currently used for pausing withdrawals when there is an active rebalance order.
+    /// @param id The pool id
+    /// @return Whether liquidity can be withdrawn from the given pool.
+    function canWithdraw(PoolId id) external view returns (bool);
+
     /// -----------------------------------------------------------------------
     /// External functions
     /// -----------------------------------------------------------------------
@@ -205,15 +203,6 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @param newHookFeeModifier The new hook fee modifier. 6 decimals.
     /// @param newReferralRewardModifier The new referral reward modifier. 6 decimals.
     function setModifiers(uint32 newHookFeeModifier, uint32 newReferralRewardModifier) external;
-
-    /// @notice Overrides amAmmEnabled for the given pool. Only callable by the owner.
-    /// @param id The pool id
-    /// @param boolOverride The new override value
-    function setAmAmmEnabledOverride(PoolId id, BoolOverride boolOverride) external;
-
-    /// @notice Overrides amAmmEnabled for all pools. Only callable by the owner.
-    /// @param boolOverride The new override value
-    function setGlobalAmAmmEnabledOverride(BoolOverride boolOverride) external;
 
     /// -----------------------------------------------------------------------
     /// Rebalance functions

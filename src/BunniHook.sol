@@ -18,6 +18,7 @@ import {IERC1271} from "permit2/src/interfaces/IERC1271.sol";
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "./lib/Math.sol";
 import "./base/Errors.sol";
@@ -43,6 +44,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     using SafeTransferLib for *;
+    using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
@@ -72,9 +74,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// mappings to BunniHookLogic easier & cheaper.
     HookStorage internal s;
 
-    /// @notice The poolwise amAmmEnabled override. Top precedence.
-    mapping(PoolId => BoolOverride) internal amAmmEnabledOverride;
-
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e6`.
     uint32 internal hookFeeModifier;
 
@@ -83,9 +82,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     /// @notice The FloodZone contract used in rebalance orders.
     IZone internal floodZone;
-
-    /// @notice Enables/disables am-AMM globally. Takes precedence over amAmmEnabled in hookParams, overriden by amAmmEnabledOverride.
-    BoolOverride internal globalAmAmmEnabledOverride;
 
     /// -----------------------------------------------------------------------
     /// Constructor
@@ -109,6 +105,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
+        require(
+            address(hub_) != address(0) && address(floodPlain_) != address(0) && address(permit2) != address(0)
+                && address(weth_) != address(0) && owner_ != address(0)
+        );
 
         hookFeeModifier = hookFeeModifier_;
         referralRewardModifier = referralRewardModifier_;
@@ -133,7 +133,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     {
         // verify rebalance order
         PoolId id = abi.decode(signature, (PoolId)); // we use the signature field to store the pool id
-        if (s.rebalanceOrderHash[id] == hash) {
+        if (s.rebalanceOrderPermit2Hash[id] == hash) {
             return this.isValidSignature.selector;
         }
     }
@@ -208,7 +208,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         (Currency currency, uint256 amount, PoolKey memory key, bool zeroForOne) =
             abi.decode(callbackData, (Currency, uint256, PoolKey, bool));
 
-        // settle and mint
+        // sync poolManager balance and transfer the output tokens to poolManager
+        poolManager.sync(currency);
+        if (!currency.isNative()) {
+            Currency.unwrap(currency).safeTransfer(address(poolManager), amount);
+        }
+
+        // settle the transferred tokens and mint claim tokens
         uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}();
         poolManager.mint(address(this), currency.toId(), paid);
 
@@ -271,18 +277,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         emit SetModifiers(newHookFeeModifier, newReferralRewardModifier);
     }
 
-    /// @inheritdoc IBunniHook
-    function setAmAmmEnabledOverride(PoolId id, BoolOverride boolOverride) external onlyOwner {
-        amAmmEnabledOverride[id] = boolOverride;
-        emit SetAmAmmEnabledOverride(id, boolOverride);
-    }
-
-    /// @inheritdoc IBunniHook
-    function setGlobalAmAmmEnabledOverride(BoolOverride boolOverride) external onlyOwner {
-        globalAmAmmEnabledOverride = boolOverride;
-        emit SetGlobalAmAmmEnabledOverride(boolOverride);
-    }
-
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
@@ -331,16 +325,20 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 && (p.feeQuadraticMultiplier == 0 || p.feeMin == p.feeMax || p.feeTwapSecondsAgo != 0)
                 && (p.surgeFee < SWAP_FEE_BASE)
                 && (uint256(p.surgeFeeHalfLife) * uint256(p.vaultSurgeThreshold0) * uint256(p.vaultSurgeThreshold1) != 0)
+                && (p.surgeFeeHalfLife < MAX_SURGE_HALFLIFE && p.surgeFeeAutostartThreshold < MAX_SURGE_AUTOSTART_TIME)
                 && (
                     (
                         p.rebalanceThreshold == 0 && p.rebalanceMaxSlippage == 0 && p.rebalanceTwapSecondsAgo == 0
                             && p.rebalanceOrderTTL == 0
                     )
                         || (
-                            p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0 && p.rebalanceTwapSecondsAgo != 0
-                                && p.rebalanceOrderTTL != 0
+                            p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0
+                                && p.rebalanceMaxSlippage < REBALANCE_MAX_SLIPPAGE_BASE && p.rebalanceTwapSecondsAgo != 0
+                                && p.rebalanceTwapSecondsAgo < MAX_REBALANCE_TWAP_SECONDS_AGO && p.rebalanceOrderTTL != 0
+                                && p.rebalanceOrderTTL < MAX_REBALANCE_ORDER_TTL
                         )
-                ) && (p.oracleMinInterval != 0);
+                ) && (p.oracleMinInterval != 0)
+                && (!p.amAmmEnabled || (p.maxAmAmmFee != 0 && p.maxAmAmmFee <= MAX_AMAMM_FEE && p.minRentMultiplier != 0));
         }
     }
 
@@ -372,6 +370,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     {
         VaultSharePrices memory prices = s.vaultSharePricesAtLastSwap[id];
         return (prices.initialized, prices.sharePrice0, prices.sharePrice1);
+    }
+
+    /// @inheritdoc IBunniHook
+    function canWithdraw(PoolId id) external view returns (bool) {
+        return block.timestamp > s.rebalanceOrderDeadline[id];
     }
 
     /// -----------------------------------------------------------------------
@@ -440,9 +443,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             revert BunniHook__Unauthorized();
         }
 
-        // ensure args can be trusted
-        if (keccak256(abi.encode(hookArgs)) != s.rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
-            revert BunniHook__InvalidRebalanceOrderHookArgs();
+        PoolId id = hookArgs.key.toId();
+
+        // verify the order hash originated from BunniHook
+        // this also verifies hookArgs is valid since it's hashed into the order hash
+        bytes32 orderHash;
+        // orderHash = bytes32(msg.data[msg.data.length - 32:msg.data.length]);
+        assembly ("memory-safe") {
+            orderHash := calldataload(sub(calldatasize(), 32))
+        }
+        if (s.rebalanceOrderHash[id] != orderHash) {
+            revert BunniHook__InvalidRebalanceOrderHash();
         }
 
         RebalanceOrderPreHookArgs calldata args = hookArgs.preHookArgs;
@@ -466,8 +477,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             )
         );
 
-        // ensure we have exactly args.amount tokens
-        if (args.currency.balanceOfSelf() != args.amount) {
+        // ensure we have at least args.amount tokens so that there is enough input for the order
+        if (args.currency.balanceOfSelf() < args.amount) {
             revert BunniHook__PrehookPostConditionFailed();
         }
 
@@ -485,16 +496,23 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             revert BunniHook__Unauthorized();
         }
 
-        // ensure args can be trusted
-        if (keccak256(abi.encode(hookArgs)) != s.rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
-            revert BunniHook__InvalidRebalanceOrderHookArgs();
+        PoolId id = hookArgs.key.toId();
+
+        // verify the order hash originated from BunniHook
+        // this also verifies hookArgs is valid since it's hashed into the order hash
+        bytes32 orderHash;
+        // orderHash = bytes32(msg.data[msg.data.length - 32:msg.data.length]);
+        assembly ("memory-safe") {
+            orderHash := calldataload(sub(calldatasize(), 32))
+        }
+        if (s.rebalanceOrderHash[id] != orderHash) {
+            revert BunniHook__InvalidRebalanceOrderHash();
         }
 
         // invalidate the rebalance order hash
         // don't delete the deadline to maintain a min rebalance interval
-        PoolId id = hookArgs.key.toId();
         delete s.rebalanceOrderHash[id];
-        delete s.rebalanceOrderHookArgsHash[id];
+        delete s.rebalanceOrderPermit2Hash[id];
 
         // surge fee should be applied after the rebalance has been executed
         // since totalLiquidity will be increased
@@ -521,10 +539,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         orderOutputAmount -= outputBalanceBefore;
 
         // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
-        poolManager.sync(args.currency);
-        if (!args.currency.isNative()) {
-            Currency.unwrap(args.currency).safeTransfer(address(poolManager), orderOutputAmount);
-        }
+
         poolManager.unlock(
             abi.encode(
                 HookUnlockCallbackType.REBALANCE_POSTHOOK,
@@ -537,16 +552,31 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// AmAmm support
     /// -----------------------------------------------------------------------
 
+    function K(PoolId) internal view virtual override returns (uint40) {
+        return 24 hours;
+    }
+
+    function EPOCH_SIZE(PoolId) internal view virtual override returns (uint256) {
+        return 1 seconds;
+    }
+
+    function MIN_RENT(PoolId id) internal view returns (uint128) {
+        // minimum rent should be propotional to the pool's BunniToken total supply
+        bytes memory hookParams = hub.hookParams(id);
+        bytes32 secondWord;
+        /// @solidity memory-safe-assembly
+        assembly {
+            secondWord := mload(add(hookParams, 64))
+        }
+        uint48 minRentMultiplier = uint48(bytes6(secondWord << 56));
+        uint256 minRent = hub.bunniTokenOfPool(id).totalSupply().mulWadUp(minRentMultiplier);
+
+        // if the min rent value is somehow more than uint128.max, cap it to uint128.max
+        return minRent > type(uint128).max ? type(uint128).max : uint128(minRent);
+    }
+
     /// @dev precedence is poolOverride > globalOverride > poolEnabled
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
-        BoolOverride poolOverride = amAmmEnabledOverride[id];
-
-        if (poolOverride != BoolOverride.UNSET) return poolOverride == BoolOverride.TRUE;
-
-        BoolOverride globalOverride = globalAmAmmEnabledOverride;
-
-        if (globalOverride != BoolOverride.UNSET) return globalOverride == BoolOverride.TRUE;
-
         bytes memory hookParams = hub.hookParams(id);
         bytes32 firstWord;
         /// @solidity memory-safe-assembly
@@ -560,16 +590,16 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     function _payloadIsValid(PoolId id, bytes7 payload) internal view virtual override returns (bool) {
         // use feeMax from hookParams
         bytes memory hookParams = hub.hookParams(id);
-        bytes32 firstWord;
+        bytes32 secondWord;
         /// @solidity memory-safe-assembly
         assembly {
-            firstWord := mload(add(hookParams, 32))
+            secondWord := mload(add(hookParams, 64))
         }
-        uint24 maxSwapFee = uint24(bytes3(firstWord << 24));
+        uint24 maxAmAmmFee = uint24(bytes3(secondWord << 32));
 
-        // payload is valid if swapFee0For1 and swapFee1For0 are at most maxSwapFee
+        // payload is valid if swapFee0For1 and swapFee1For0 are at most maxAmAmmFee
         (uint24 swapFee0For1, uint24 swapFee1For0,) = decodeAmAmmPayload(payload);
-        return swapFee0For1 <= maxSwapFee && swapFee1For0 <= maxSwapFee;
+        return swapFee0For1 <= maxAmAmmFee && swapFee1For0 <= maxAmAmmFee;
     }
 
     function _burnBidToken(PoolId id, uint256 amount) internal virtual override {
