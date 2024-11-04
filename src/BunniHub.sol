@@ -439,6 +439,11 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             // it's safe to use absAmount here since at worst the vault.deposit() call pulled less token
             // than requested
             actualRawBalanceChange = -absAmount.toInt256();
+
+            // revoke token approval to vault if necessary
+            if (token.allowance(address(this), address(vault)) != 0) {
+                address(token).safeApprove(address(vault), 0);
+            }
         } else if (rawBalanceChange > 0) {
             // sync poolManager balance before transferring assets to it
             poolManager.sync(currency);

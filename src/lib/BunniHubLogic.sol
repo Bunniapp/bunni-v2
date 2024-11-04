@@ -686,6 +686,11 @@ library BunniHubLogic {
         ) {
             revert BunniHub__VaultFeeIncorrect();
         }
+
+        // revoke token approval to vault if necessary
+        if (token.allowance(address(this), address(vault)) != 0) {
+            address(token).safeApprove(address(vault), 0);
+        }
     }
 
     /// @dev Withdraws tokens from a vault.
