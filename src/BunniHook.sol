@@ -103,6 +103,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
+        require(
+            address(hub_) != address(0) && address(floodPlain_) != address(0) && address(permit2) != address(0)
+                && address(weth_) != address(0) && owner_ != address(0)
+        );
 
         hookFeeModifier = hookFeeModifier_;
         referralRewardModifier = referralRewardModifier_;
@@ -127,7 +131,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     {
         // verify rebalance order
         PoolId id = abi.decode(signature, (PoolId)); // we use the signature field to store the pool id
-        if (s.rebalanceOrderHash[id] == hash) {
+        if (s.rebalanceOrderPermit2Hash[id] == hash) {
             return this.isValidSignature.selector;
         }
     }
@@ -325,14 +329,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 && (p.feeQuadraticMultiplier == 0 || p.feeMin == p.feeMax || p.feeTwapSecondsAgo != 0)
                 && (p.surgeFee < SWAP_FEE_BASE)
                 && (uint256(p.surgeFeeHalfLife) * uint256(p.vaultSurgeThreshold0) * uint256(p.vaultSurgeThreshold1) != 0)
+                && (p.surgeFeeHalfLife < MAX_SURGE_HALFLIFE && p.surgeFeeAutostartThreshold < MAX_SURGE_AUTOSTART_TIME)
                 && (
                     (
                         p.rebalanceThreshold == 0 && p.rebalanceMaxSlippage == 0 && p.rebalanceTwapSecondsAgo == 0
                             && p.rebalanceOrderTTL == 0
                     )
                         || (
-                            p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0 && p.rebalanceTwapSecondsAgo != 0
-                                && p.rebalanceOrderTTL != 0
+                            p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0
+                                && p.rebalanceMaxSlippage < REBALANCE_MAX_SLIPPAGE_BASE && p.rebalanceTwapSecondsAgo != 0
+                                && p.rebalanceTwapSecondsAgo < MAX_REBALANCE_TWAP_SECONDS_AGO && p.rebalanceOrderTTL != 0
+                                && p.rebalanceOrderTTL < MAX_REBALANCE_ORDER_TTL
                         )
                 ) && (p.oracleMinInterval != 0)
                 && (!p.amAmmEnabled || (p.maxAmAmmFee != 0 && p.maxAmAmmFee <= MAX_AMAMM_FEE && p.minRentMultiplier != 0));
@@ -367,6 +374,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     {
         VaultSharePrices memory prices = s.vaultSharePricesAtLastSwap[id];
         return (prices.initialized, prices.sharePrice0, prices.sharePrice1);
+    }
+
+    /// @inheritdoc IBunniHook
+    function canWithdraw(PoolId id) external view returns (bool) {
+        return block.timestamp > s.rebalanceOrderDeadline[id];
     }
 
     /// -----------------------------------------------------------------------
@@ -435,9 +447,17 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             revert BunniHook__Unauthorized();
         }
 
-        // ensure args can be trusted
-        if (keccak256(abi.encode(hookArgs)) != s.rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
-            revert BunniHook__InvalidRebalanceOrderHookArgs();
+        PoolId id = hookArgs.key.toId();
+
+        // verify the order hash originated from BunniHook
+        // this also verifies hookArgs is valid since it's hashed into the order hash
+        bytes32 orderHash;
+        // orderHash = bytes32(msg.data[msg.data.length - 32:msg.data.length]);
+        assembly ("memory-safe") {
+            orderHash := calldataload(sub(calldatasize(), 32))
+        }
+        if (s.rebalanceOrderHash[id] != orderHash) {
+            revert BunniHook__InvalidRebalanceOrderHash();
         }
 
         RebalanceOrderPreHookArgs calldata args = hookArgs.preHookArgs;
@@ -471,16 +491,23 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             revert BunniHook__Unauthorized();
         }
 
-        // ensure args can be trusted
-        if (keccak256(abi.encode(hookArgs)) != s.rebalanceOrderHookArgsHash[hookArgs.key.toId()]) {
-            revert BunniHook__InvalidRebalanceOrderHookArgs();
+        PoolId id = hookArgs.key.toId();
+
+        // verify the order hash originated from BunniHook
+        // this also verifies hookArgs is valid since it's hashed into the order hash
+        bytes32 orderHash;
+        // orderHash = bytes32(msg.data[msg.data.length - 32:msg.data.length]);
+        assembly ("memory-safe") {
+            orderHash := calldataload(sub(calldatasize(), 32))
+        }
+        if (s.rebalanceOrderHash[id] != orderHash) {
+            revert BunniHook__InvalidRebalanceOrderHash();
         }
 
         // invalidate the rebalance order hash
         // don't delete the deadline to maintain a min rebalance interval
-        PoolId id = hookArgs.key.toId();
         delete s.rebalanceOrderHash[id];
-        delete s.rebalanceOrderHookArgsHash[id];
+        delete s.rebalanceOrderPermit2Hash[id];
 
         // surge fee should be applied after the rebalance has been executed
         // since totalLiquidity will be increased

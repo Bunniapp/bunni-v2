@@ -54,9 +54,9 @@ struct HubStorage {
 /// @member rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
 ///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
 ///         When set to 0, rebalancing is disabled.
-/// @member rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals.
-/// @member rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing
-/// @member rebalanceOrderTTL The time-to-live for a rebalance order, in seconds
+/// @member rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals. At most MAX_REBALANCE_MAX_SLIPPAGE.
+/// @member rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing. At most MAX_REBALANCE_TWAP_SECONDS_AGO.
+/// @member rebalanceOrderTTL The time-to-live for a rebalance order, in seconds. At most MAX_REBALANCE_ORDER_TTL.
 /// @member amAmmEnabled Whether the am-AMM is enabled for this pool
 /// @member oracleMinInterval The minimum interval between TWAP oracle updates, in seconds
 /// @member maxAmAmmFee The maximum swap fee that can be set by the am-AMM manager. Must <= MAX_AMAMM_FEE.
@@ -86,8 +86,8 @@ struct DecodedHookParams {
 /// @member observations The list of observations for a given pool ID
 /// @member states The current TWAP oracle state for a given pool ID
 /// @member rebalanceOrderHash The hash of the currently active rebalance order
+/// @member rebalanceOrderPermit2Hash The Permit2 hash that's verified when BunniHook.isValidSignature() is called
 /// @member rebalanceOrderDeadline The deadline for the currently active rebalance order
-/// @member rebalanceOrderHookArgsHash The hash of the hook args for the currently active rebalance order
 /// @member vaultSharePricesAtLastSwap The share prices of the vaults used by the pool at the last swap
 /// @member ldfStates The LDF state for a given pool ID
 /// @member slot0s The slot0 state for a given pool ID
@@ -95,8 +95,8 @@ struct HookStorage {
     mapping(PoolId => Oracle.Observation[MAX_CARDINALITY]) observations;
     mapping(PoolId => IBunniHook.ObservationState) states;
     mapping(PoolId id => bytes32) rebalanceOrderHash;
+    mapping(PoolId id => bytes32) rebalanceOrderPermit2Hash;
     mapping(PoolId id => uint256) rebalanceOrderDeadline;
-    mapping(PoolId id => bytes32) rebalanceOrderHookArgsHash;
     mapping(PoolId => VaultSharePrices) vaultSharePricesAtLastSwap;
     mapping(PoolId => bytes32) ldfStates;
     mapping(PoolId => Slot0) slot0s;

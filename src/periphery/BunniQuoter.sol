@@ -157,9 +157,11 @@ contract BunniQuoter is IBunniQuoter {
         });
 
         // ensure swap never moves price in the opposite direction
+        // ensure the inputAmount is non-zero when it's an exact output swap
         if (
             (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
+                || (params.amountSpecified > 0 && inputAmount == 0)
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
         }
@@ -300,10 +302,15 @@ contract BunniQuoter is IBunniQuoter {
         external
         view
         override
-        returns (uint256 amount0, uint256 amount1)
+        returns (bool success, uint256 amount0, uint256 amount1)
     {
         PoolId poolId = params.poolKey.toId();
         PoolState memory state = hub.poolState(poolId);
+        IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
+
+        if (!hook.canWithdraw(poolId)) {
+            return (false, 0, 0);
+        }
 
         uint256 currentTotalSupply = state.bunniToken.totalSupply();
 

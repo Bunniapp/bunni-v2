@@ -262,9 +262,11 @@ library BunniHookLogic {
         });
 
         // ensure swap never moves price in the opposite direction
+        // ensure the inputAmount is non-zero when it's an exact output swap
         if (
             (params.zeroForOne && updatedSqrtPriceX96 > slot0.sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < slot0.sqrtPriceX96)
+                || (params.amountSpecified > 0 && inputAmount == 0)
         ) {
             revert BunniHook__InvalidSwap();
         }
@@ -669,7 +671,9 @@ library BunniHookLogic {
             return (false, inputToken, outputToken, inputAmount, outputAmount);
         }
         inputAmount = inputTokenExcessBalance - inputTokenTarget;
-        outputAmount = outputTokenTarget.mulDivUp(1e5 - input.hookParams.rebalanceMaxSlippage, 1e5);
+        outputAmount = outputTokenTarget.mulDivUp(
+            REBALANCE_MAX_SLIPPAGE_BASE - input.hookParams.rebalanceMaxSlippage, REBALANCE_MAX_SLIPPAGE_BASE
+        );
 
         success = true;
     }
@@ -726,9 +730,8 @@ library BunniHookLogic {
         });
 
         // record order for verification later
-        s.rebalanceOrderHash[id] = _newOrderHash(order, env);
+        (s.rebalanceOrderHash[id], s.rebalanceOrderPermit2Hash[id]) = _hashFloodOrder(order, env);
         s.rebalanceOrderDeadline[id] = order.deadline;
-        s.rebalanceOrderHookArgsHash[id] = keccak256(abi.encode(hookArgs));
 
         // approve input token to permit2
         if (inputERC20Token.allowance(address(this), env.permit2) < inputAmount) {
@@ -785,14 +788,14 @@ library BunniHookLogic {
     /// @dev The hash that Permit2 uses when verifying the order's signature.
     /// See https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol#L65
     /// Always calls permit2 for the domain separator to maintain cross-chain replay protection in the event of a fork
-    function _newOrderHash(IFloodPlain.Order memory order, Env calldata env) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                IEIP712(env.permit2).DOMAIN_SEPARATOR(),
-                OrderHashMemory.hashAsWitness(order, address(env.floodPlain))
-            )
-        );
+    /// Also returns the Flood order hash
+    function _hashFloodOrder(IFloodPlain.Order memory order, Env calldata env)
+        internal
+        view
+        returns (bytes32 orderHash, bytes32 permit2Hash)
+    {
+        (orderHash, permit2Hash) = OrderHashMemory.hashAsWitness(order, address(env.floodPlain));
+        permit2Hash = keccak256(abi.encodePacked("\x19\x01", IEIP712(env.permit2).DOMAIN_SEPARATOR(), permit2Hash));
     }
 
     /// @dev Decodes hookParams into params used by this hook

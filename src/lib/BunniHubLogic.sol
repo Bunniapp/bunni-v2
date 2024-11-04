@@ -79,6 +79,14 @@ library BunniHubLogic {
         PoolState memory state = getPoolState(s, poolId);
 
         /// -----------------------------------------------------------------------
+        /// Validation
+        /// -----------------------------------------------------------------------
+
+        if (msg.value != 0 && !params.poolKey.currency0.isNative() && !params.poolKey.currency1.isNative()) {
+            revert BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken();
+        }
+
+        /// -----------------------------------------------------------------------
         /// Hooklet call
         /// -----------------------------------------------------------------------
 
@@ -362,6 +370,10 @@ library BunniHubLogic {
         IAmAmm.Bid memory topBid = hook.getTopBidWrite(poolId);
         if (hook.getAmAmmEnabled(poolId) && topBid.manager != address(0) && !params.useQueuedWithdrawal) {
             revert BunniHub__NeedToUseQueuedWithdrawal();
+        }
+
+        if (!hook.canWithdraw(poolId)) {
+            revert BunniHub__WithdrawalPaused();
         }
 
         /// -----------------------------------------------------------------------
@@ -673,6 +685,11 @@ library BunniHubLogic {
                 && percentDelta(reserveChangeInUnderlying, postFeeAmount) > MAX_VAULT_FEE_ERROR
         ) {
             revert BunniHub__VaultFeeIncorrect();
+        }
+
+        // revoke token approval to vault if necessary
+        if (token.allowance(address(this), address(vault)) != 0) {
+            address(token).safeApprove(address(vault), 0);
         }
     }
 
