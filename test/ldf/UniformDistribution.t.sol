@@ -8,7 +8,7 @@ import "../../src/ldf/UniformDistribution.sol";
 import "../../src/ldf/LibUniformDistribution.sol";
 
 contract UniformDistributionTest is LiquidityDensityFunctionTest {
-    uint256 internal constant INVCUM0_MAX_ERROR = 3;
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
@@ -76,7 +76,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
 
         uint256 maxCumulativeAmount0 =
             LibUniformDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
-        vm.assume(maxCumulativeAmount0 != 0);
+        vm.assume(maxCumulativeAmount0 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
         console2.log("cumulativeAmount0", cumulativeAmount0);
@@ -94,20 +94,14 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         uint256 resultCumulativeAmount0 =
             LibUniformDistribution.cumulativeAmount0(resultRoundedTick, liquidity, tickSpacing, tickLower, tickUpper);
 
-        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
-        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
-        assertLe(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
-            cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
-        );
+        assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick > tickLower && cumulativeAmount0 > 1e7) {
+        if (resultRoundedTick < tickUpper && cumulativeAmount0 > 1e2) {
             // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
             uint256 nextCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
-                resultRoundedTick - tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
+                resultRoundedTick + tickSpacing, liquidity, tickSpacing, tickLower, tickUpper
             );
-            assertGt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 <= cumulativeAmount0");
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
         }
     }
 
@@ -132,7 +126,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
 
         uint256 maxCumulativeAmount1 =
             LibUniformDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, tickLower, tickUpper);
-        vm.assume(maxCumulativeAmount1 != 0);
+        vm.assume(maxCumulativeAmount1 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
         console2.log("cumulativeAmount1", cumulativeAmount1);

@@ -15,11 +15,11 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     uint256 geometric_dist_1_failures;
 
     // Invariant: Given a valid cumulative amount of token0, the cumulative amount calculated
-    //            using the rounded tick from inverseCommulativeAmount0() should be less than
+    //            using the rounded tick from inverseCommulativeAmount0() should be greater than
     //            or equal to the specified cumulative amount for UniformDistribution in rounded
     //            ticks [roundedTick, tickUpper).
     // Issue: TOB-BUNNI-19
-    function inverse_cummulative_amount0_less_than_equal_to_cummulative_amount0_in_uniform_distribution(
+    function inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_uniform_distribution(
         int24 tickSpacing,
         uint256 totalLiquidity,
         uint256 cumulativeAmount0,
@@ -91,10 +91,10 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 tickUpper
             );
 
-        assertLte(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+        assertGte(
+            resultCumulativeAmount0,
             cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
+            "resultCumulativeAmount0 < cumulativeAmount0"
         );
     }
     // Invariant: Given a valid cumulative amount of token1, the cumulative amount calculated
@@ -185,7 +185,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     //            using the rounded tick from inverseCommulativeAmount0() should be less than
     //            or equal to the specified cumulative amount for GeometricDistribution in rounded
     //            ticks [roundedTick, tickUpper).
-    function inverse_cummulative_amount0_less_than_equal_to_cummulative_amount0_in_geometric_distribution(
+    function inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_geometric_distribution(
         int24 tickSpacing,
         uint256 totalLiquidity,
         uint256 cumulativeAmount0,
@@ -265,10 +265,10 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 length,
                 alphaX96
             );
-        assertLte(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+        assertGte(
+            resultCumulativeAmount0,
             cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
+            "resultCumulativeAmount0 < cumulativeAmount0"
         );
     }
 
@@ -372,7 +372,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     //            using the rounded tick from inverseCommulativeAmount0() should be less than
     //            or equal to the specified cumulative amount for DoubleGeometricDistribution in rounded
     //            ticks [roundedTick, tickUpper).
-    function inverse_cummulative_amount0_less_than_equal_to_cummulative_amount0_in_double_geometric(
+    function inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_double_geometric(
         uint256 liquidity,
         uint256 cumulativeAmount0,
         int24 tickSpacing,
@@ -509,12 +509,10 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 weight1
             );
 
-        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
-        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
-        assertLte(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+        assertGte(
+            resultCumulativeAmount0,
             cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
+            "resultCumulativeAmount0 < cumulativeAmount0"
         );
     }
 
@@ -669,7 +667,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     //            using the rounded tick from inverseCommulativeAmount0() should be less than
     //            or equal to the specified cumulative amount for CarpetedGeometricDistribution in rounded
     //            ticks [roundedTick, tickUpper).
-    function inverse_cummulative_amount0_less_than_equal_to_cummulative_amount0_in_carpeted_geometric(
+    function inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_geometric(
         uint256 liquidity,
         uint256 cumulativeAmount0,
         int24 tickSpacing,
@@ -759,13 +757,10 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 weightCarpet
             );
 
-        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
-        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
-
-        assertLte(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+        assertGte(
+            resultCumulativeAmount0,
             cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
+            "resultCumulativeAmount0 < cumulativeAmount0"
         );
     }
 
@@ -993,13 +988,10 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 params
             );
 
-        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
-        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
-
-        assertLte(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
+        assertGte(
+            resultCumulativeAmount0,
             cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
+            "resultCumulativeAmount0 < cumulativeAmount0"
         );
     }
 

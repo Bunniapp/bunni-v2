@@ -10,7 +10,7 @@ import "../../src/ldf/LibGeometricDistribution.sol";
 contract GeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
-    uint256 internal constant INVCUM0_MAX_ERROR = 3;
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new GeometricDistribution()));
@@ -93,6 +93,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         uint256 maxCumulativeAmount0 =
             LibGeometricDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, minTick, length, alphaX96);
+        vm.assume(maxCumulativeAmount0 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
         console2.log("cumulativeAmount0", cumulativeAmount0);
@@ -112,20 +113,13 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
             resultRoundedTick, liquidity, tickSpacing, minTick, length, alphaX96
         );
 
-        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
-        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
-        assertLe(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
-            cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
-        );
+        assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick > minTick && cumulativeAmount0 > 1.2e4) {
-            // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
+        if (resultRoundedTick < minTick + length * tickSpacing) {
             uint256 nextCumulativeAmount0 = LibGeometricDistribution.cumulativeAmount0(
-                resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
+                resultRoundedTick + tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
             );
-            assertGt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 <= cumulativeAmount0");
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
         }
     }
 
@@ -154,7 +148,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         uint256 maxCumulativeAmount1 =
             LibGeometricDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, minTick, length, alphaX96);
-        vm.assume(maxCumulativeAmount1 != 0);
+        vm.assume(maxCumulativeAmount1 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
         console2.log("cumulativeAmount1", cumulativeAmount1);

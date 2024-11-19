@@ -163,6 +163,12 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
                 BunniSwapMath.computeSwap(input2);
 
+            console.log("amountSpecified", amountSpecified);
+            console.log("inputAmount0", inputAmount0);
+            console.log("outputAmount0", outputAmount0);
+            console.log("inputAmount1", inputAmount1);
+            console.log("outputAmount1", outputAmount1);
+
             if (amountSpecified < 0) {
                 assertWithMsg(inputAmount0 >= outputAmount1, "Round trips swaps are profitable");
             } else {

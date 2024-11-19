@@ -58,6 +58,14 @@ abstract contract LiquidityDensityFunctionTest is Test {
         key.tickSpacing = tickSpacing;
         (, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96,,) =
             ldf.query(key, roundedTick, 0, currentTick, decodedLDFParams, LDF_STATE);
+        uint256 cumulativeAmount0 = ldf.cumulativeAmount0(
+            key, roundedTick + tickSpacing, FixedPoint96.Q96, 0, currentTick, decodedLDFParams, LDF_STATE
+        );
+        uint256 cumulativeAmount1 = ldf.cumulativeAmount1(
+            key, roundedTick - tickSpacing, FixedPoint96.Q96, 0, currentTick, decodedLDFParams, LDF_STATE
+        );
+        assertEq(cumulativeAmount0, cumulativeAmount0DensityX96, "cumulativeAmount0 incorrect");
+        assertEq(cumulativeAmount1, cumulativeAmount1DensityX96, "cumulativeAmount1 incorrect");
         uint256 bruteForceAmount0X96 =
             _bruteForceCumulativeAmount0Density(roundedTick + tickSpacing, tickSpacing, decodedLDFParams);
         uint256 bruteForceAmount1X96 =

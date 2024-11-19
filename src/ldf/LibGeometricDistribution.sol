@@ -23,7 +23,6 @@ library LibGeometricDistribution {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
-    int256 internal constant ROUND_TICK_TOLERANCE = 1e12;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
@@ -81,8 +80,8 @@ library LibGeometricDistribution {
                 uint256 denominator = dist(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
                     * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
 
-                cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(
-                    alphaX96 - Q96, sqrtRatioMinTick
+                cumulativeAmount0DensityX96 = (alphaX96 - Q96).fullMulDivUp(numerator, denominator).mulDivUp(
+                    Q96 - sqrtRatioNegTickSpacing, sqrtRatioMinTick
                 );
             }
 
@@ -97,12 +96,12 @@ library LibGeometricDistribution {
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
                 uint256 numerator1 = alphaX96 - Q96;
                 uint256 denominator1 = baseX96 - Q96;
-                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x), Q96).mulDiv(
+                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x), Q96).mulDivUp(
                     (x * tickSpacing).getSqrtPriceAtTick(), Q96
                 ) - alphaInvPowLengthX96;
                 uint256 denominator2 = Q96 - alphaInvPowLengthX96;
-                cumulativeAmount1DensityX96 = Q96.mulDiv(numerator1, denominator1).mulDiv(numerator2, denominator2)
-                    .mulDiv(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
+                cumulativeAmount1DensityX96 = Q96.mulDivUp(numerator2, denominator2).mulDivUp(numerator1, denominator1)
+                    .mulDivUp(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
             }
         } else {
             // alpha <= 1
@@ -119,7 +118,7 @@ library LibGeometricDistribution {
                     (Q96 - alphaX96) * (baseX96.rpow(uint24(x + 1), Q96) - baseX96.rpow(uint24(length), Q96));
                 uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
                 cumulativeAmount0DensityX96 =
-                    (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(Q96, sqrtRatioMinTick);
+                    (Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(numerator, denominator).mulDivUp(Q96, sqrtRatioMinTick);
             }
 
             // compute cumulativeAmount1DensityX96 for the rounded tick to the left of the rounded current tick
@@ -132,7 +131,7 @@ library LibGeometricDistribution {
                 uint256 numerator = dist(Q96, baseX96.rpow(uint24(x), Q96)) * (Q96 - alphaX96);
                 uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
                 cumulativeAmount1DensityX96 =
-                    (sqrtRatioTickSpacing - Q96).fullMulDiv(numerator, denominator).mulDiv(sqrtRatioMinTick, Q96);
+                    (sqrtRatioTickSpacing - Q96).fullMulDivUp(numerator, denominator).mulDivUp(sqrtRatioMinTick, Q96);
             }
         }
     }
@@ -183,8 +182,8 @@ library LibGeometricDistribution {
                 uint256 denominator = dist(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
                     * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
 
-                cumulativeAmount0DensityX96 = (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(
-                    alphaX96 - Q96, sqrtRatioMinTick
+                cumulativeAmount0DensityX96 = (alphaX96 - Q96).fullMulDivUp(numerator, denominator).mulDivUp(
+                    Q96 - sqrtRatioNegTickSpacing, sqrtRatioMinTick
                 );
             }
         } else {
@@ -202,11 +201,11 @@ library LibGeometricDistribution {
                     (Q96 - alphaX96) * (baseX96.rpow(uint24(x), Q96) - baseX96.rpow(uint24(length), Q96));
                 uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
                 cumulativeAmount0DensityX96 =
-                    (Q96 - sqrtRatioNegTickSpacing).fullMulDiv(numerator, denominator).mulDiv(Q96, sqrtRatioMinTick);
+                    (Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(numerator, denominator).mulDivUp(Q96, sqrtRatioMinTick);
             }
         }
 
-        amount0 = cumulativeAmount0DensityX96.fullMulDiv(totalLiquidity, Q96);
+        amount0 = cumulativeAmount0DensityX96.fullMulDivUp(totalLiquidity, Q96);
     }
 
     /// @dev Computes the cumulative amount of token1 in the rounded ticks [tickLower, roundedTick].
@@ -236,8 +235,6 @@ library LibGeometricDistribution {
         }
 
         uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtPriceAtTick();
-        uint256 sqrtRatioMinTick = minTick.getSqrtPriceAtTick();
-        uint256 sqrtRatioNegMinTick = (-minTick).getSqrtPriceAtTick();
 
         if (alphaX96 > Q96) {
             // alpha > 1
@@ -251,16 +248,17 @@ library LibGeometricDistribution {
                 cumulativeAmount1DensityX96 = 0;
             } else {
                 uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
+                uint256 sqrtRatioNegMinTick = (-minTick).getSqrtPriceAtTick();
 
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
                 uint256 numerator1 = alphaX96 - Q96;
                 uint256 denominator1 = baseX96 - Q96;
-                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x - 1), Q96).mulDiv(
+                uint256 numerator2 = alphaInvX96.rpow(uint24(length - x - 1), Q96).mulDivUp(
                     ((x + 1) * tickSpacing).getSqrtPriceAtTick(), Q96
                 ) - alphaInvPowLengthX96;
                 uint256 denominator2 = Q96 - alphaInvPowLengthX96;
-                cumulativeAmount1DensityX96 = Q96.mulDiv(numerator1, denominator1).mulDiv(numerator2, denominator2)
-                    .mulDiv(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
+                cumulativeAmount1DensityX96 = Q96.mulDivUp(numerator2, denominator2).mulDivUp(numerator1, denominator1)
+                    .mulDivUp(sqrtRatioTickSpacing - Q96, sqrtRatioNegMinTick);
             }
         } else {
             // alpha <= 1
@@ -272,19 +270,20 @@ library LibGeometricDistribution {
                 // cumulativeAmount1DensityX96 is just 0
                 cumulativeAmount1DensityX96 = 0;
             } else {
+                uint256 sqrtRatioMinTick = minTick.getSqrtPriceAtTick();
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
                 uint256 numerator = dist(Q96, baseX96.rpow(uint24(x + 1), Q96)) * (Q96 - alphaX96);
                 uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
                 cumulativeAmount1DensityX96 =
-                    (sqrtRatioTickSpacing - Q96).fullMulDiv(numerator, denominator).mulDiv(sqrtRatioMinTick, Q96);
+                    (sqrtRatioTickSpacing - Q96).fullMulDivUp(numerator, denominator).mulDivUp(sqrtRatioMinTick, Q96);
             }
         }
 
-        amount1 = cumulativeAmount1DensityX96.fullMulDiv(totalLiquidity, Q96);
+        amount1 = cumulativeAmount1DensityX96.fullMulDivUp(totalLiquidity, Q96);
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
-    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
+    ///      The returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
@@ -299,7 +298,7 @@ library LibGeometricDistribution {
             return (true, minTick + length * tickSpacing);
         }
 
-        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.fullMulDiv(Q96, totalLiquidity);
+        uint256 cumulativeAmount0DensityX96 = cumulativeAmount0_.fullMulDivUp(Q96, totalLiquidity);
         uint256 sqrtRatioNegTickSpacing = (-tickSpacing).getSqrtPriceAtTick();
         uint256 sqrtRatioMinTick = minTick.getSqrtPriceAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
@@ -313,9 +312,8 @@ library LibGeometricDistribution {
 
             uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
             uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
-            uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, alphaX96 - Q96).fullMulDiv(
-                denominator, Q96 - sqrtRatioNegTickSpacing
-            ) >> 96; // numerator in cumulativeAmount0 divided by Q96
+            uint256 numerator = cumulativeAmount0DensityX96.mulDivUp(sqrtRatioMinTick, Q96 - sqrtRatioNegTickSpacing)
+                .fullMulDivUp(denominator, alphaX96 - Q96) >> 96; // numerator in cumulativeAmount0 divided by Q96
             uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtPriceAtTick();
             if (Q96 < baseX96 && sqrtRatioNegTickSpacingMulLength < numerator) return (false, 0);
             uint256 tmpX96 = Q96 >= baseX96
@@ -331,33 +329,50 @@ library LibGeometricDistribution {
             // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + lnQ96(Q96 * Q96) + l * lnQ96(a * Q96) - lnQ96(Q96 * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
             // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
             // similarly for abs is -: x = (lnQ96(1.0001^(-wl/2) * Q96 - n) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
-            xWad = (tmpX96.toInt256().lnQ96() + int256(length) * (int256(alphaX96).lnQ96())).sDivWad(lnBaseX96);
+            xWad = (tmpX96.toInt256().lnQ96RoundingUp() + int256(length) * (int256(alphaX96).lnQ96RoundingUp())).sDivWad(
+                lnBaseX96
+            );
         } else {
             uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
-            uint256 numerator = cumulativeAmount0DensityX96.mulDiv(sqrtRatioMinTick, Q96).fullMulDiv(
+            uint256 numerator = cumulativeAmount0DensityX96.mulDivUp(sqrtRatioMinTick, Q96).fullMulDivUp(
                 denominator, Q96 - sqrtRatioNegTickSpacing
             );
             uint256 basePowXX96 = (numerator / (Q96 - alphaX96) + baseX96.rpow(uint24(length), Q96));
-            xWad = basePowXX96.toInt256().lnQ96().sDivWad(lnBaseX96);
+            xWad = basePowXX96.toInt256().lnQ96RoundingUp().sDivWad(lnBaseX96);
         }
 
-        // round xWad to reduce error
-        // limits tick precision to (ROUND_TICK_TOLERANCE / WAD) of a rounded tick
-        xWad = (xWad / ROUND_TICK_TOLERANCE) * ROUND_TICK_TOLERANCE; // clear small errors
-
         // early return if xWad is obviously too small
-        // return left boundary of distribution
-        if (xWad <= -int256(WAD)) {
-            return (true, minTick);
+        // the result (the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input) doesn't exist
+        // thus return success = false
+        if (xWad < 0) {
+            // compare cumulativeAmount0_ with the max value of cumulativeAmount0()
+            // due to precision errors sometimes xWad can be negative when cumulativeAmount0_
+            // is close to the max value
+            uint256 maxCumulativeAmount0 =
+                cumulativeAmount0(minTick, totalLiquidity, tickSpacing, minTick, length, alphaX96);
+            if (cumulativeAmount0_ > maxCumulativeAmount0) {
+                return (false, 0);
+            } else {
+                // xWad shouldn't actually be negative
+                // set it to 0
+                xWad = 0;
+            }
         }
 
         // get rounded tick from xWad
         success = true;
-        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing);
+        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, false);
 
         // ensure roundedTick is within the valid range
-        if (roundedTick < minTick || roundedTick > minTick + length * tickSpacing) {
+        int24 maxTick = minTick + length * tickSpacing;
+        if (roundedTick < minTick || roundedTick > maxTick) {
             return (false, 0);
+        }
+
+        // ensure that roundedTick is not minTick + length * tickSpacing when cumulativeAmount0_ is non-zero
+        // this can happen if the corresponding cumulative density is too small
+        if (roundedTick == maxTick && cumulativeAmount0_ != 0) {
+            return (true, maxTick - tickSpacing);
         }
     }
 
@@ -379,9 +394,8 @@ library LibGeometricDistribution {
 
         uint256 cumulativeAmount1DensityX96 = cumulativeAmount1_.fullMulDiv(Q96, totalLiquidity);
         uint256 sqrtRatioTickSpacing = tickSpacing.getSqrtPriceAtTick();
-        uint256 sqrtRatioNegMinTick = (-minTick).getSqrtPriceAtTick();
         uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
-        int256 lnBaseX96 = int256(baseX96).lnQ96(); // int256 conversion is safe since baseX96 < Q96
+        int256 lnBaseX96 = int256(baseX96).lnQ96RoundingUp(); // int256 conversion is safe since baseX96 < Q96
 
         int256 xWad;
         if (alphaX96 > Q96) {
@@ -389,20 +403,22 @@ library LibGeometricDistribution {
             // need to make sure that alpha^x doesn't overflow by using alpha^-1 during exponentiation
             uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
             uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
+            uint256 sqrtRatioNegMinTick = (-minTick).getSqrtPriceAtTick();
 
             uint256 numerator1 = alphaX96 - Q96;
             uint256 denominator1 = baseX96 - Q96;
             uint256 denominator2 = Q96 - alphaInvPowLengthX96;
-            uint256 numerator2 = cumulativeAmount1DensityX96.fullMulDiv(denominator1, numerator1).fullMulDiv(
-                denominator2, sqrtRatioTickSpacing - Q96
-            ).fullMulDiv(sqrtRatioNegMinTick, Q96);
+            uint256 numerator2 = cumulativeAmount1DensityX96.fullMulDiv(sqrtRatioNegMinTick, sqrtRatioTickSpacing - Q96)
+                .fullMulDiv(denominator1, numerator1).fullMulDiv(denominator2, Q96);
             if (numerator2 + alphaInvPowLengthX96 == 0) return (false, 0);
             xWad = ((numerator2 + alphaInvPowLengthX96).toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96())
                 .sDivWad(lnBaseX96) - int256(WAD);
         } else {
+            uint256 sqrtRatioMinTick = minTick.getSqrtPriceAtTick();
+
             uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
-            uint256 numerator = cumulativeAmount1DensityX96.fullMulDiv(denominator, Q96).fullMulDiv(
-                sqrtRatioNegMinTick, sqrtRatioTickSpacing - Q96
+            uint256 numerator = cumulativeAmount1DensityX96.fullMulDiv(Q96, sqrtRatioMinTick).fullMulDiv(
+                denominator, sqrtRatioTickSpacing - Q96
             );
             if (Q96 > baseX96 && Q96 <= numerator / (Q96 - alphaX96)) return (false, 0);
             uint256 basePowXPlusOneX96 =
@@ -410,20 +426,29 @@ library LibGeometricDistribution {
             xWad = basePowXPlusOneX96.toInt256().lnQ96().sDivWad(lnBaseX96) - int256(WAD);
         }
 
-        // round xWad to reduce error
-        // limits tick precision to (ROUND_TICK_TOLERANCE / WAD) of a rounded tick
-        xWad = (xWad / ROUND_TICK_TOLERANCE) * ROUND_TICK_TOLERANCE; // clear small errors
-
         // early return if xWad is obviously too large
         // the result (the smallest rounded tick whose cumulativeAmount1 is greater than or equal to the input) doesn't exist
         // thus return success = false
-        if (xWad >= length * int256(WAD)) {
-            return (false, 0);
+        int256 xWadMax = (length - 1) * int256(WAD);
+        if (xWad > xWadMax) {
+            // compare cumulativeAmount1_ with the max value of cumulativeAmount1()
+            // due to precision errors sometimes xWad can be greater than xWadMax when cumulativeAmount1_
+            // is close to the max value
+            uint256 maxCumulativeAmount1 = cumulativeAmount1(
+                minTick + (length - 1) * tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96
+            );
+            if (cumulativeAmount1_ > maxCumulativeAmount1) {
+                return (false, 0);
+            } else {
+                // xWad shouldn't actually be greater than xWadMax
+                // set it to xWadMax
+                xWad = xWadMax;
+            }
         }
 
         // get rounded tick from xWad
         success = true;
-        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing);
+        roundedTick = xWadToRoundedTick(xWad, minTick, tickSpacing, true);
 
         // ensure roundedTick is within the valid range
         if (roundedTick < minTick - tickSpacing || roundedTick >= minTick + length * tickSpacing) {
@@ -479,8 +504,8 @@ library LibGeometricDistribution {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
-            // notice that the inverse tick is between two rounded ticks, and we round up to the rounded tick to the right
-            // e.g. go from 1.5 to 2
+            // notice that the inverse tick is between two rounded ticks, and we round down to the rounded tick to the left
+            // e.g. go from 1.5 to 1
             //       input
             //      ├──────┤
             // ┌──┬──┬──┬──┐
@@ -488,9 +513,9 @@ library LibGeometricDistribution {
             // │  │ █│██│██│
             // └──┴──┴──┴──┘
             // 0  1  2  3  4
-            //       │
-            //       ▼
-            //      rick
+            //    │
+            //    ▼
+            //   rick
             (success, roundedTick) = inverseCumulativeAmount0(
                 inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );
@@ -498,22 +523,21 @@ library LibGeometricDistribution {
 
             // compute the cumulative amount up to roundedTick
             // below is an illustration of the cumulative amount at roundedTick
-            // notice that (input - cum) is the remainder of the swap that will be handled by Uniswap math
-            //         cum
-            //       ├─────┤
+            // notice that (cum - input) is the remainder of the swap that will be handled by Uniswap math
+            //       cum
+            //    ├────────┤
             // ┌──┬──┬──┬──┐
             // │  │ █│██│██│
             // │  │ █│██│██│
             // └──┴──┴──┴──┘
             // 0  1  2  3  4
-            //       │
-            //       ▼
-            //      rick
+            //    │
+            //    ▼
+            //   rick
             cumulativeAmount = cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96);
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
-            // because we got rick by rounding up, the liquidity of (rick - tickSpacing) is used by the Uniswap math
             //    liq
             //    ├──┤
             // ┌──┬──┬──┬──┐
@@ -523,10 +547,9 @@ library LibGeometricDistribution {
             // 0  1  2  3  4
             //    │
             //    ▼
-            //   rick - tickSpacing
-            swapLiquidity = (
-                liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, minTick, length, alphaX96) * totalLiquidity
-            ) >> 96;
+            //   rick
+            swapLiquidity =
+                (liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96) * totalLiquidity) >> 96;
         } else {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
