@@ -463,6 +463,7 @@ library BunniHookLogic {
         emit IBunniHook.Swap(
             id,
             sender,
+            exactIn,
             params.zeroForOne,
             inputAmount,
             outputAmount,
