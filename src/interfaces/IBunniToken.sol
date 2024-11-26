@@ -16,6 +16,8 @@ import {IERC20Lockable} from "./IERC20Lockable.sol";
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
 interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlockCallback {
+    event ClaimReferralRewards(uint256 reward0, uint256 reward1);
+
     event SetMetadataURI(string newURI);
 
     function hub() external view returns (IBunniHub);
