@@ -44,8 +44,8 @@ library BunniSwapMath {
     /// @return updatedTick The updated tick after the swap
     /// @return inputAmount The input amount of the swap
     /// @return outputAmount The output amount of the swap
-    function computeSwap(BunniComputeSwapInput calldata input)
-        external
+    function computeSwap(BunniComputeSwapInput memory input)
+        internal
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {
@@ -157,38 +157,33 @@ library BunniSwapMath {
 
             if (success && swapLiquidity != 0) {
                 // use Uniswap math to compute updated sqrt price
+                // the swap ("partial swap" or "naive swap") is always one-for-zero
                 uint160 startSqrtPriceX96 = TickMath.getSqrtPriceAtTick(updatedRoundedTick);
-                bool partialSwapZeroForOne = (exactIn == zeroForOne);
-                int24 tickNext = partialSwapZeroForOne
-                    ? updatedRoundedTick - input.key.tickSpacing
-                    : updatedRoundedTick + input.key.tickSpacing;
+                int24 tickNext = updatedRoundedTick + input.key.tickSpacing;
                 uint160 sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(tickNext);
 
                 // handle the case where sqrtPriceLimitX96 has already been reached
                 // naiveSwapResultSqrtPriceX96 will be between startSqrtPriceX96 and sqrtPriceNextX96
-                // leastChangeSqrtPriceX96 is the sqrt price bound closest to the initial sqrt price before this swap
+                // leastChangeSqrtPriceX96 is the sqrt price bound closest to the initial sqrt price before the partial swap
                 // if it already exceeds the sqrt price limit, we should use the fallback swap logic
-                uint160 leastChangeSqrtPriceX96 = exactIn ? startSqrtPriceX96 : sqrtPriceNextX96;
+                // uint160 leastChangeSqrtPriceX96 = zeroForOne ? sqrtPriceNextX96 : startSqrtPriceX96;
                 if (
-                    (zeroForOne && sqrtPriceLimitX96 <= leastChangeSqrtPriceX96)
-                        || (!zeroForOne && sqrtPriceLimitX96 >= leastChangeSqrtPriceX96)
+                    (zeroForOne && sqrtPriceLimitX96 <= sqrtPriceNextX96)
+                        || (!zeroForOne && sqrtPriceLimitX96 >= startSqrtPriceX96)
                 ) {
-                    int256 amountSpecifiedRemaining = -(inverseCumulativeAmountFnInput - cumulativeAmount).toInt256();
+                    int256 amountSpecifiedRemaining = (exactIn == zeroForOne)
+                        ? (cumulativeAmount - inverseCumulativeAmountFnInput).toInt256()
+                        : -(inverseCumulativeAmountFnInput - cumulativeAmount).toInt256();
                     (uint160 naiveSwapResultSqrtPriceX96, uint256 naiveSwapAmountIn, uint256 naiveSwapAmountOut) =
                     SwapMath.computeSwapStep({
                         sqrtPriceCurrentX96: startSqrtPriceX96,
                         // sqrtPriceLimitX96 is only meaningful if the partial swap and the overall swap are in the same direction
-                        // which is when exactIn is true
-                        sqrtPriceTargetX96: exactIn
-                            ? SwapMath.getSqrtPriceTarget(partialSwapZeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96)
+                        sqrtPriceTargetX96: !zeroForOne
+                            ? uint160(FixedPointMathLib.min(sqrtPriceNextX96, sqrtPriceLimitX96))
                             : sqrtPriceNextX96,
                         liquidity: swapLiquidity,
                         amountRemaining: amountSpecifiedRemaining
                     });
-                    // safe because we test that amountSpecified > amountIn in SwapMath
-                    unchecked {
-                        amountSpecifiedRemaining += naiveSwapAmountIn.toInt256();
-                    }
                     if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
                         // Equivalent to `updatedTick = zeroForOne ? tickNext - 1 : tickNext;`
                         unchecked {
@@ -207,25 +202,50 @@ library BunniSwapMath {
                     updatedSqrtPriceX96 = naiveSwapResultSqrtPriceX96;
 
                     // compute input and output token amounts
+                    // NOTE: The rounding direction of all the values involved are correct:
+                    // - cumulative amounts are rounded up
+                    // - naiveSwapAmountIn is rounded up
+                    // - naiveSwapAmountOut is rounded down
+                    // - currentActiveBalance0 and currentActiveBalance1 are rounded down
+                    // Overall this leads to inputAmount being rounded up and outputAmount being rounded down
+                    // which is safe.
                     if (exactIn) {
                         (inputAmount, outputAmount) = zeroForOne
                             ? (
-                                naiveSwapAmountIn + cumulativeAmount - currentActiveBalance0,
-                                currentActiveBalance1 + naiveSwapAmountOut
-                                    - input.liquidityDensityFunction.cumulativeAmount1(
-                                        input.key,
-                                        updatedRoundedTick - input.key.tickSpacing,
-                                        input.totalLiquidity,
-                                        input.arithmeticMeanTick,
-                                        updatedTick,
-                                        input.ldfParams,
-                                        input.ldfState
+                                (cumulativeAmount - naiveSwapAmountOut) - currentActiveBalance0,
+                                currentActiveBalance1
+                                    - (
+                                        input.liquidityDensityFunction.cumulativeAmount1(
+                                            input.key,
+                                            updatedRoundedTick - input.key.tickSpacing,
+                                            input.totalLiquidity,
+                                            input.arithmeticMeanTick,
+                                            updatedTick,
+                                            input.ldfParams,
+                                            input.ldfState
+                                        ) + naiveSwapAmountIn
                                     )
                             )
                             : (
-                                naiveSwapAmountIn + cumulativeAmount - currentActiveBalance1,
-                                currentActiveBalance0 + naiveSwapAmountOut
-                                    - input.liquidityDensityFunction.cumulativeAmount0(
+                                (naiveSwapAmountIn + cumulativeAmount) - currentActiveBalance1,
+                                currentActiveBalance0
+                                    - (
+                                        input.liquidityDensityFunction.cumulativeAmount0(
+                                            input.key,
+                                            updatedRoundedTick,
+                                            input.totalLiquidity,
+                                            input.arithmeticMeanTick,
+                                            updatedTick,
+                                            input.ldfParams,
+                                            input.ldfState
+                                        ) - naiveSwapAmountOut
+                                    )
+                            );
+                    } else {
+                        (inputAmount, outputAmount) = zeroForOne
+                            ? (
+                                (
+                                    input.liquidityDensityFunction.cumulativeAmount0(
                                         input.key,
                                         updatedRoundedTick,
                                         input.totalLiquidity,
@@ -233,33 +253,23 @@ library BunniSwapMath {
                                         updatedTick,
                                         input.ldfParams,
                                         input.ldfState
-                                    )
-                            );
-                    } else {
-                        (inputAmount, outputAmount) = zeroForOne
-                            ? (
-                                input.liquidityDensityFunction.cumulativeAmount0(
-                                    input.key,
-                                    updatedRoundedTick,
-                                    input.totalLiquidity,
-                                    input.arithmeticMeanTick,
-                                    updatedTick,
-                                    input.ldfParams,
-                                    input.ldfState
-                                ) - naiveSwapAmountOut - currentActiveBalance0,
-                                currentActiveBalance1 - naiveSwapAmountIn - cumulativeAmount
+                                    ) - naiveSwapAmountOut
+                                ) - currentActiveBalance0,
+                                currentActiveBalance1 - (naiveSwapAmountIn + cumulativeAmount)
                             )
                             : (
-                                input.liquidityDensityFunction.cumulativeAmount1(
-                                    input.key,
-                                    updatedRoundedTick - input.key.tickSpacing,
-                                    input.totalLiquidity,
-                                    input.arithmeticMeanTick,
-                                    updatedTick,
-                                    input.ldfParams,
-                                    input.ldfState
-                                ) - naiveSwapAmountOut - currentActiveBalance1,
-                                currentActiveBalance0 - naiveSwapAmountIn - cumulativeAmount
+                                (
+                                    input.liquidityDensityFunction.cumulativeAmount1(
+                                        input.key,
+                                        updatedRoundedTick - input.key.tickSpacing,
+                                        input.totalLiquidity,
+                                        input.arithmeticMeanTick,
+                                        updatedTick,
+                                        input.ldfParams,
+                                        input.ldfState
+                                    ) + naiveSwapAmountIn
+                                ) - currentActiveBalance1,
+                                currentActiveBalance0 - (cumulativeAmount - naiveSwapAmountOut)
                             );
                     }
 

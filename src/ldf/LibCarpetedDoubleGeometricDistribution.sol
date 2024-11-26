@@ -124,7 +124,7 @@ library LibCarpetedDoubleGeometricDistribution {
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
-    ///      The returned tick will be the smallest rounded tick whose cumulativeAmount0 is less than or equal to the input.
+    ///      The returned tick will be the largest rounded tick whose cumulativeAmount0 is greater than or equal to the input.
     ///      In the case that the input exceeds the cumulativeAmount0 of all rounded ticks, the function will return (false, 0).
     function inverseCumulativeAmount0(
         uint256 cumulativeAmount0_,
@@ -316,8 +316,8 @@ library LibCarpetedDoubleGeometricDistribution {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
-            // notice that the inverse tick is between two rounded ticks, and we round up to the rounded tick to the right
-            // e.g. go from 1.5 to 2
+            // notice that the inverse tick is between two rounded ticks, and we round down to the rounded tick to the left
+            // e.g. go from 1.5 to 1
             //       input
             //      ├──────┤
             // ┌──┬──┬──┬──┐
@@ -325,31 +325,30 @@ library LibCarpetedDoubleGeometricDistribution {
             // │  │ █│██│██│
             // └──┴──┴──┴──┘
             // 0  1  2  3  4
-            //       │
-            //       ▼
-            //      rick
+            //    │
+            //    ▼
+            //   rick
             (success, roundedTick) =
                 inverseCumulativeAmount0(inverseCumulativeAmountInput, totalLiquidity, tickSpacing, params);
             if (!success) return (false, 0, 0, 0);
 
             // compute the cumulative amount up to roundedTick
             // below is an illustration of the cumulative amount at roundedTick
-            // notice that (input - cum) is the remainder of the swap that will be handled by Uniswap math
-            //         cum
-            //       ├─────┤
+            // notice that (cum - input) is the remainder of the swap that will be handled by Uniswap math
+            //       cum
+            //    ├────────┤
             // ┌──┬──┬──┬──┐
             // │  │ █│██│██│
             // │  │ █│██│██│
             // └──┴──┴──┴──┘
             // 0  1  2  3  4
-            //       │
-            //       ▼
-            //      rick
+            //    │
+            //    ▼
+            //   rick
             cumulativeAmount = cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, params);
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
-            // because we got rick by rounding up, the liquidity of (rick - tickSpacing) is used by the Uniswap math
             //    liq
             //    ├──┤
             // ┌──┬──┬──┬──┐
@@ -359,8 +358,8 @@ library LibCarpetedDoubleGeometricDistribution {
             // 0  1  2  3  4
             //    │
             //    ▼
-            //   rick - tickSpacing
-            swapLiquidity = (liquidityDensityX96(roundedTick - tickSpacing, tickSpacing, params) * totalLiquidity) >> 96;
+            //   rick
+            swapLiquidity = (liquidityDensityX96(roundedTick, tickSpacing, params) * totalLiquidity) >> 96;
         } else {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)

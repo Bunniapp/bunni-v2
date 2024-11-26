@@ -11,3 +11,5 @@ out/
 .env
 
 .vscode
+medusa/
+crytic-export/

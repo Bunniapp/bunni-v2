@@ -10,7 +10,6 @@ import "../../src/ldf/LibCarpetedDoubleGeometricDistribution.sol";
 contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
-    uint256 internal constant INVCUM0_MAX_ERROR = 3;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new CarpetedDoubleGeometricDistribution()));
@@ -210,20 +209,14 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         uint256 resultCumulativeAmount0 =
             LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(resultRoundedTick, liquidity, tickSpacing, params);
 
-        // NOTE: in rare cases resultCumulativeAmount0 may be slightly greater than cumulativeAmount0
-        // the frequency of such errors is bounded by INVCUM0_MAX_ERROR
-        assertLe(
-            _subError(resultCumulativeAmount0, INVCUM0_MAX_ERROR),
-            cumulativeAmount0,
-            "resultCumulativeAmount0 > cumulativeAmount0"
-        );
+        assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick > minTick && cumulativeAmount0 > 1.2e4) {
+        if (resultRoundedTick < minTick + length0 * tickSpacing + length1 * tickSpacing && cumulativeAmount0 > 1e2) {
             // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
             uint256 nextCumulativeAmount0 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(
-                resultRoundedTick - tickSpacing, liquidity, tickSpacing, params
+                resultRoundedTick + tickSpacing, liquidity, tickSpacing, params
             );
-            assertGt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 <= cumulativeAmount0");
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
         }
     }
 
