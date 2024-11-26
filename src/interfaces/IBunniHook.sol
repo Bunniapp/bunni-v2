@@ -45,6 +45,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     event Swap(
         PoolId indexed id,
         address indexed sender,
+        bool exactIn,
         bool zeroForOne,
         uint256 inputAmount,
         uint256 outputAmount,
