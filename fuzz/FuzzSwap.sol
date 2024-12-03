@@ -61,7 +61,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
         ) {
-            require(inputAmount0 != 0 && outputAmount0 != 0);
+            if (inputAmount0 == 0 || outputAmount0 == 0) return;
 
             if (inputAmount0 != uint64(inputAmount0) || outputAmount0 != uint64(outputAmount0)) return;
 
@@ -78,7 +78,19 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             );
             input2.swapParams.amountSpecified = amountSpecified < 0 ? int256(outputAmount0) : -int256(inputAmount0);
 
-            (,, uint256 inputAmount1, uint256 outputAmount1) = BunniSwapMath.computeSwap(input2);
+            (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
+                BunniSwapMath.computeSwap(input2);
+
+            console2.log("input1 amountSpecified", amountSpecified);
+            console2.log("input2 amountSpecified", input2.swapParams.amountSpecified);
+            console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
+            console2.log("updatedTick", updatedTick);
+            console2.log("inputAmount0", inputAmount0);
+            console2.log("outputAmount0", outputAmount0);
+            console2.log("updatedSqrtPriceX960", updatedSqrtPriceX960);
+            console2.log("updatedTick0", updatedTick0);
+            console2.log("inputAmount1", inputAmount1);
+            console2.log("outputAmount1", outputAmount1);
 
             if (amountSpecified < 0) {
                 assertWithMsg(inputAmount0 >= inputAmount1, "Users can profit from Exact In and Exact Out combination");
