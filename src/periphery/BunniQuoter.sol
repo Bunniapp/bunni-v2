@@ -19,6 +19,7 @@ import "../lib/Math.sol";
 import "../lib/FeeMath.sol";
 import "../lib/QueryTWAP.sol";
 import "../lib/VaultMath.sol";
+import "../types/LDFType.sol";
 import "../base/Constants.sol";
 import "../types/PoolState.sol";
 import "../lib/AmAmmPayload.sol";
@@ -115,7 +116,7 @@ contract BunniQuoter is IBunniQuoter {
         ) ? queryTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
 
         // query the LDF to get total liquidity and token densities
-        bytes32 ldfState = bunniState.statefulLdf ? hook.ldfStates(id) : bytes32(0);
+        bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? hook.ldfStates(id) : bytes32(0);
         (
             uint256 totalLiquidity_,
             uint256 totalDensity0X96,
@@ -132,8 +133,10 @@ contract BunniQuoter is IBunniQuoter {
             ldfParams: bunniState.ldfParams,
             ldfState: ldfState,
             balance0: balance0,
-            balance1: balance1
+            balance1: balance1,
+            idleBalance: bunniState.idleBalance
         });
+        shouldSurge == shouldSurge && bunniState.ldfType != LDFType.STATIC;
         totalLiquidity = totalLiquidity_;
 
         // check surge based on vault share prices
@@ -441,7 +444,8 @@ contract BunniQuoter is IBunniQuoter {
             int24 arithmeticMeanTick =
                 useTwap ? queryTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo) : int24(0);
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
-            bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
+            bytes32 ldfState =
+                inputData.state.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? hook.ldfStates(inputData.poolId) : bytes32(0);
             (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
                 key: inputData.params.poolKey,
                 sqrtPriceX96: inputData.sqrtPriceX96,
@@ -451,7 +455,8 @@ contract BunniQuoter is IBunniQuoter {
                 ldfParams: inputData.state.ldfParams,
                 ldfState: ldfState,
                 balance0: inputData.params.amount0Desired, // use amount0Desired since we're initializing liquidity
-                balance1: inputData.params.amount1Desired // use amount1Desired since we're initializing liquidity
+                balance1: inputData.params.amount1Desired, // use amount1Desired since we're initializing liquidity
+                idleBalance: IdleBalanceLibrary.ZERO // if balances are 0 then idle balance must also be 0
             });
 
             // compute token amounts to add

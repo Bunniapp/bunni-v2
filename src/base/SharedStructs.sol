@@ -8,6 +8,7 @@ import {PoolId, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol"
 import {ERC4626} from "solady/tokens/ERC4626.sol";
 
 import "./Constants.sol";
+import "../types/IdleBalance.sol";
 import {Oracle} from "../lib/Oracle.sol";
 import {RawPoolState} from "../types/PoolState.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
@@ -21,10 +22,11 @@ struct QueuedWithdrawal {
     uint56 unlockTimestamp;
 }
 
-/// @notice THe storage of BunniHub
+/// @notice The storage of BunniHub
 /// @member poolState The state of a given pool
 /// @member reserve0 The vault share tokens owned in vault0
 /// @member reserve1 The vault share tokens owned in vault1
+/// @member idleBalance The balance of the token that's in excess. Used when computing the total liquidity.
 /// @member nonce The nonce for a given bunniSubspace
 /// @member poolIdOfBunniToken The pool ID of a given BunniToken
 /// @member queuedWithdrawals The queued withdrawals for a given pool & user
@@ -33,6 +35,7 @@ struct HubStorage {
     mapping(PoolId poolId => RawPoolState) poolState;
     mapping(PoolId poolId => uint256) reserve0;
     mapping(PoolId poolId => uint256) reserve1;
+    mapping(PoolId poolId => IdleBalance) idleBalance;
     mapping(bytes32 bunniSubspace => uint24) nonce;
     mapping(IBunniToken bunniToken => PoolId) poolIdOfBunniToken;
     mapping(PoolId poolId => mapping(address => QueuedWithdrawal)) queuedWithdrawals;

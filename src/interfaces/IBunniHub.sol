@@ -13,6 +13,8 @@ import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockC
 import {WETH} from "solady/tokens/WETH.sol";
 import {ERC4626} from "solady/tokens/ERC4626.sol";
 
+import "../types/LDFType.sol";
+import "../types/IdleBalance.sol";
 import "../base/SharedStructs.sol";
 import {IERC20} from "./IERC20.sol";
 import {IHooklet} from "./IHooklet.sol";
@@ -172,6 +174,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     /// @param tickSpacing The tick spacing of the Uniswap V4 pool
     /// @param twapSecondsAgo The TWAP time period to use for the liquidity density function
     /// @param liquidityDensityFunction The liquidity density function to use
+    /// @param ldfType The type of LDF. See LDFType.sol for details.
     /// @param hooklet The hooklet to use for the Bunni pool. If it's address(0), then a hooklet is not used.
     /// @param ldfParams The parameters for the liquidity density function
     /// @param hooks The hooks to use for the Uniswap V4 pool
@@ -197,7 +200,7 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
         uint24 twapSecondsAgo;
         ILiquidityDensityFunction liquidityDensityFunction;
         IHooklet hooklet;
-        bool statefulLdf;
+        LDFType ldfType;
         bytes32 ldfParams;
         IBunniHook hooks;
         bytes hookParams;
@@ -260,6 +263,11 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
     function hookHandleSwap(PoolKey calldata key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount)
         external;
 
+    /// @notice Called by the hook to set the idle balance of a Bunni pool.
+    /// @param key The PoolKey of the Uniswap V4 pool
+    /// @param newIdleBalance The new idle balance of the pool
+    function hookSetIdleBalance(PoolKey calldata key, IdleBalance newIdleBalance) external;
+
     /// @notice Sets the address that corresponds to a referrer ID. Only callable by the owner or the current referrer address.
     /// @param referrer The referrer ID
     /// @param referrerAddress The address of the referrer
@@ -293,6 +301,9 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
 
     /// @notice The token balances of a Bunni pool. Reserves in vaults are converted to raw token balances via ERC4626.previewRedeem().
     function poolBalances(PoolId poolId) external view returns (uint256 balance0, uint256 balance1);
+
+    /// @notice The idle balance of a Bunni pool.
+    function idleBalance(PoolId poolId) external view returns (IdleBalance);
 
     /// @notice The address that corresponds to a given referrer ID.
     function getReferrerAddress(uint24 referrer) external view returns (address);

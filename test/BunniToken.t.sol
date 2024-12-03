@@ -19,6 +19,7 @@ import {LibString} from "solady/utils/LibString.sol";
 
 import "../src/lib/Math.sol";
 import "../src/ldf/ShiftMode.sol";
+import "../src/types/LDFType.sol";
 import "../src/base/Constants.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniZone} from "../src/BunniZone.sol";
@@ -149,7 +150,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
                 twapSecondsAgo: 7 days,
                 liquidityDensityFunction: ldf,
                 hooklet: IHooklet(address(0)),
-                statefulLdf: true,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
                 hookParams: hookParams,

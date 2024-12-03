@@ -32,6 +32,7 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "../src/lib/Math.sol";
 import "../src/base/Errors.sol";
+import "../src/types/LDFType.sol";
 import "../src/ldf/ShiftMode.sol";
 import "../src/base/SharedStructs.sol";
 import {MockLDF} from "./mocks/MockLDF.sol";
@@ -1187,7 +1188,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: ldf,
                 hooklet: hooklet_,
-                statefulLdf: true,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
                 hookParams: hookParams,
@@ -1227,7 +1228,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(hub.hookParams(id), hookParams, "hub.hookParams() incorrect");
         assertEq(address(state.vault0), address(0), "vault0 incorrect");
         assertEq(address(state.vault1), address(0), "vault1 incorrect");
-        assertEq(state.statefulLdf, true, "statefulLdf incorrect");
+        assertEq(uint8(state.ldfType), uint8(LDFType.DYNAMIC_AND_STATEFUL), "ldfType incorrect");
         assertEq(state.minRawTokenRatio0, 0.08e6, "minRawTokenRatio0 incorrect");
         assertEq(state.targetRawTokenRatio0, 0.1e6, "targetRawTokenRatio0 incorrect");
         assertEq(state.maxRawTokenRatio0, 0.12e6, "maxRawTokenRatio0 incorrect");
@@ -2308,7 +2309,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: ldf,
                 hooklet: hooklet,
-                statefulLdf: true,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
                 hookParams: hookParams,
@@ -2660,7 +2661,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: ldf_,
                 hooklet: hooklet,
-                statefulLdf: true,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
                 hookParams: hookParams,
@@ -2721,7 +2722,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: ldf_,
                 hooklet: hooklet,
-                statefulLdf: true,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: ldfParams,
                 hooks: bunniHook,
                 hookParams: hookParams,

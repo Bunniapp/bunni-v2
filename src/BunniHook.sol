@@ -24,6 +24,7 @@ import "./lib/Math.sol";
 import "./base/Errors.sol";
 import "./base/Constants.sol";
 import "./lib/AmAmmPayload.sol";
+import "./types/IdleBalance.sol";
 import "./base/SharedStructs.sol";
 import "./interfaces/IBunniHook.sol";
 import {Oracle} from "./lib/Oracle.sol";
@@ -45,6 +46,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     using SafeTransferLib for *;
     using FixedPointMathLib for *;
+    using IdleBalanceLibrary for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
@@ -520,10 +522,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             revert BunniHook__InvalidRebalanceOrderHash();
         }
 
-        // invalidate the rebalance order hash
-        // don't delete the deadline to maintain a min rebalance interval
+        // invalidate the rebalance order
         delete s.rebalanceOrderHash[id];
         delete s.rebalanceOrderPermit2Hash[id];
+        delete s.rebalanceOrderDeadline[id];
 
         // surge fee should be applied after the rebalance has been executed
         // since totalLiquidity will be increased
@@ -549,8 +551,18 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
         orderOutputAmount -= outputBalanceBefore;
 
-        // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
+        // recompute idle balance
+        (uint256 idleBalance, bool isToken0) = hub.idleBalance(id).fromIdleBalance();
+        if (isToken0 == (hookArgs.preHookArgs.currency == hookArgs.key.currency0)) {
+            // Sanity check: the idle token should be the same as the input token of the rebalance swap
+            // Deduct rebalance swap input amount from idle balance
+            // Deduction should never revert since `inputAmount = idleBalance - inputTokenTarget` in BunniHookLogic::_computeRebalanceParams()
+            // meaning `idleBalance >= inputAmount == hookArgs.preHookArgs.amount`
+            idleBalance -= hookArgs.preHookArgs.amount;
+            hub.hookSetIdleBalance(hookArgs.key, idleBalance.toIdleBalance(isToken0));
+        }
 
+        // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
         poolManager.unlock(
             abi.encode(
                 HookUnlockCallbackType.REBALANCE_POSTHOOK,

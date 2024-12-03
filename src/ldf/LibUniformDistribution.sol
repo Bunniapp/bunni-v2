@@ -132,6 +132,10 @@ library LibUniformDistribution {
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
         uint256 maxCumulativeAmount0 =
             SqrtPriceMath.getAmount0Delta(sqrtRatioTickLower, sqrtRatioTickUpper, liquidity, true);
+        if (cumulativeAmount0_ > maxCumulativeAmount0) {
+            // input exceeds the maximum cumulative amount
+            return (false, 0);
+        }
         uint160 sqrtPrice = SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(
             sqrtRatioTickLower, liquidity, maxCumulativeAmount0 - cumulativeAmount0_, false
         );
@@ -174,6 +178,10 @@ library LibUniformDistribution {
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
         uint256 maxCumulativeAmount1 =
             SqrtPriceMath.getAmount1Delta(sqrtRatioTickLower, sqrtRatioTickUpper, liquidity, true);
+        if (cumulativeAmount1_ > maxCumulativeAmount1) {
+            // input exceeds the maximum cumulative amount
+            return (false, 0);
+        }
         uint160 sqrtPrice = SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(
             sqrtRatioTickUpper, liquidity, maxCumulativeAmount1 - cumulativeAmount1_, false
         );

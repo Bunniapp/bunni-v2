@@ -65,3 +65,10 @@ function percentDelta(uint256 a, uint256 b) pure returns (uint256) {
     uint256 absDelta = dist(a, b);
     return FixedPointMathLib.divWad(absDelta, b);
 }
+
+/// @dev Returns ReLU(x - y) = max(x - y, 0)
+function subReLU(uint256 x, uint256 y) pure returns (uint256) {
+    unchecked {
+        return x > y ? x - y : 0;
+    }
+}
