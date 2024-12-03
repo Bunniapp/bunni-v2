@@ -22,7 +22,7 @@ abstract contract FuzzHelper {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
 
-    function findAbsDiff(uint256 x, uint256 y) public returns (uint256) {
+    function findAbsDiff(uint256 x, uint256 y) public pure returns (uint256) {
         if (x > y) return (x - y);
         else return (y - x);
     }

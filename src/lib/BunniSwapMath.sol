@@ -12,6 +12,7 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import "./Math.sol";
 import "../base/Errors.sol";
 import "../base/Constants.sol";
+import "../types/IdleBalance.sol";
 import {SwapMath} from "./SwapMath.sol";
 import {queryLDF} from "./QueryLDF.sol";
 import {SqrtPriceMath} from "./SqrtPriceMath.sol";
@@ -291,7 +292,8 @@ library BunniSwapMath {
                 ldfParams: input.ldfParams,
                 ldfState: input.ldfState,
                 balance0: 0,
-                balance1: 0
+                balance1: 0,
+                idleBalance: IdleBalanceLibrary.ZERO
             });
             (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
                 totalDensity0X96.fullMulDivUp(input.totalLiquidity, Q96),

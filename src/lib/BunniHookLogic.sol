@@ -27,8 +27,10 @@ import "./FeeMath.sol";
 import "./VaultMath.sol";
 import "./AmAmmPayload.sol";
 import "../base/Errors.sol";
+import "../types/LDFType.sol";
 import "../base/Constants.sol";
 import "../types/PoolState.sol";
+import "../types/IdleBalance.sol";
 import "../base/SharedStructs.sol";
 import {Oracle} from "./Oracle.sol";
 import "../interfaces/IBunniHook.sol";
@@ -49,6 +51,7 @@ library BunniHookLogic {
     using SafeTransferLib for *;
     using FixedPointMathLib for *;
     using HookletLib for IHooklet;
+    using IdleBalanceLibrary for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using Oracle for Oracle.Observation[MAX_CARDINALITY];
@@ -220,7 +223,7 @@ library BunniHookLogic {
             : int24(0);
 
         // query the LDF to get total liquidity and token densities
-        bytes32 ldfState = bunniState.statefulLdf ? s.ldfStates[id] : bytes32(0);
+        bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? s.ldfStates[id] : bytes32(0);
         (
             uint256 totalLiquidity,
             uint256 totalDensity0X96,
@@ -237,9 +240,23 @@ library BunniHookLogic {
             ldfParams: bunniState.ldfParams,
             ldfState: ldfState,
             balance0: balance0,
-            balance1: balance1
+            balance1: balance1,
+            idleBalance: bunniState.idleBalance
         });
-        if (bunniState.statefulLdf) s.ldfStates[id] = newLdfState;
+        shouldSurge == shouldSurge && bunniState.ldfType != LDFType.STATIC; // only surge from LDF if LDF type is not static
+        if (bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL) s.ldfStates[id] = newLdfState;
+
+        if (shouldSurge) {
+            // the LDF has been updated, so we need to update the idle balance
+            (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
+                (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
+            (uint256 extraBalance0, uint256 extraBalance1) = (
+                balance0 > currentActiveBalance0 ? balance0 - currentActiveBalance0 : 0,
+                balance1 > currentActiveBalance1 ? balance1 - currentActiveBalance1 : 0
+            );
+            bool isToken0 = extraBalance0 >= extraBalance1;
+            env.hub.hookSetIdleBalance(key, FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(isToken0));
+        }
 
         // check surge based on vault share prices
         shouldSurge =
@@ -473,11 +490,24 @@ library BunniHookLogic {
             totalLiquidity
         );
 
-        // we should rebalance if:
-        // - rebalanceThreshold != 0, i.e. rebalancing is enabled
-        // - shouldSurge == true, since tokens can only go out of balance due to shifting or vault returns
-        // - the deadline of the last rebalance order has passed
-        if (hookParams.rebalanceThreshold != 0 && shouldSurge && block.timestamp > s.rebalanceOrderDeadline[id]) {
+        // we should attempt to rebalance if:
+        // 1) rebalanceThreshold != 0, i.e. rebalancing is enabled
+        // 2.a) either shouldSurge == true, since tokens can only go out of balance due to shifting or vault returns, or:
+        // 2.b) the deadline of the last rebalance order has passed and the order wasn't executed, in which case we should reattempt to rebalance
+        uint256 rebalanceOrderDeadline = shouldSurge ? 0 : s.rebalanceOrderDeadline[id]; // gas: only do SLOAD if shouldSurge == false
+        if (
+            hookParams.rebalanceThreshold != 0
+                && (shouldSurge || (block.timestamp > rebalanceOrderDeadline && rebalanceOrderDeadline != 0))
+        ) {
+            if (shouldSurge) {
+                // surging makes any existing rebalance order meaningless
+                // since the desired token ratio will be different
+                // clear the existing rebalance order
+                delete s.rebalanceOrderHash[id];
+                delete s.rebalanceOrderPermit2Hash[id];
+                delete s.rebalanceOrderDeadline[id];
+            }
+
             _rebalance(
                 s,
                 env,
@@ -609,7 +639,7 @@ library BunniHookLogic {
         );
 
         // compute total liquidity and densities
-        (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+        (uint256 totalLiquidity,,,,,) = queryLDF({
             key: input.key,
             sqrtPriceX96: input.updatedSqrtPriceX96,
             tick: input.updatedTick,
@@ -618,23 +648,17 @@ library BunniHookLogic {
             ldfParams: bunniState.ldfParams,
             ldfState: input.newLdfState,
             balance0: balance0,
-            balance1: balance1
+            balance1: balance1,
+            idleBalance: bunniState.idleBalance
         });
 
-        // compute active balance, which is the balance implied by the total liquidity & the LDF
-        (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
-            (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
-
         // compute excess liquidity if there's any
-        (int24 minUsableTick, int24 maxUsableTick) = (
-            TickMath.minUsableTick(input.key.tickSpacing),
-            TickMath.maxUsableTick(input.key.tickSpacing) - input.key.tickSpacing
-        );
-        uint256 excessLiquidity0 = balance0 > currentActiveBalance0
-            ? (balance0 - currentActiveBalance0).divWad(
+        (uint256 idleBalance, bool willRebalanceToken0) = bunniState.idleBalance.fromIdleBalance();
+        uint256 excessLiquidity = willRebalanceToken0
+            ? idleBalance.divWad(
                 bunniState.liquidityDensityFunction.cumulativeAmount0(
                     input.key,
-                    minUsableTick,
+                    TickMath.minUsableTick(input.key.tickSpacing),
                     WAD,
                     input.arithmeticMeanTick,
                     input.updatedTick,
@@ -642,27 +666,22 @@ library BunniHookLogic {
                     input.newLdfState
                 )
             )
-            : 0;
-        uint256 excessLiquidity1 = balance1 > currentActiveBalance1
-            ? (balance1 - currentActiveBalance1).divWad(
+            : idleBalance.divWad(
                 bunniState.liquidityDensityFunction.cumulativeAmount1(
                     input.key,
-                    maxUsableTick,
+                    TickMath.maxUsableTick(input.key.tickSpacing) - input.key.tickSpacing,
                     WAD,
                     input.arithmeticMeanTick,
                     input.updatedTick,
                     bunniState.ldfParams,
                     input.newLdfState
                 )
-            )
-            : 0;
+            );
 
         // should rebalance if excessLiquidity / totalLiquidity >= 1 / rebalanceThreshold
-        bool shouldRebalance0 =
-            excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / input.hookParams.rebalanceThreshold;
-        bool shouldRebalance1 =
-            excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / input.hookParams.rebalanceThreshold;
-        if (!shouldRebalance0 && !shouldRebalance1) return (false, inputToken, outputToken, inputAmount, outputAmount);
+        bool shouldRebalance =
+            excessLiquidity != 0 && excessLiquidity >= totalLiquidity / input.hookParams.rebalanceThreshold;
+        if (!shouldRebalance) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
         // compute target token densities of the excess liquidity after rebalancing
         // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
@@ -676,9 +695,9 @@ library BunniHookLogic {
             input.updatedCardinality
         );
         uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtPriceAtTick(rebalanceSpotPriceTick);
-        // reusing totalDensity0X96 and totalDensity1X96 to store the token densities of the excess liquidity
+        // totalDensity0X96 and totalDensity1X96 are the token densities of the excess liquidity
         // after rebalancing
-        (, totalDensity0X96, totalDensity1X96,,,) = queryLDF({
+        (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
             key: input.key,
             sqrtPriceX96: rebalanceSpotPriceSqrtRatioX96,
             tick: rebalanceSpotPriceTick,
@@ -687,14 +706,11 @@ library BunniHookLogic {
             ldfParams: bunniState.ldfParams,
             ldfState: input.newLdfState,
             balance0: 0,
-            balance1: 0
+            balance1: 0,
+            idleBalance: IdleBalanceLibrary.ZERO
         });
 
-        // decide which token will be rebalanced (i.e., sold into the other token)
-        bool willRebalanceToken0 = shouldRebalance0 && (!shouldRebalance1 || excessLiquidity0 > excessLiquidity1);
-
         // compute target amounts (i.e. the token amounts of the excess liquidity)
-        uint256 excessLiquidity = willRebalanceToken0 ? excessLiquidity0 : excessLiquidity1;
         uint256 targetAmount0 = excessLiquidity.fullMulDiv(totalDensity0X96, Q96);
         uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
 
@@ -702,15 +718,13 @@ library BunniHookLogic {
         (inputToken, outputToken) = willRebalanceToken0
             ? (input.key.currency0, input.key.currency1)
             : (input.key.currency1, input.key.currency0);
-        uint256 inputTokenExcessBalance =
-            willRebalanceToken0 ? balance0 - currentActiveBalance0 : balance1 - currentActiveBalance1;
         uint256 inputTokenTarget = willRebalanceToken0 ? targetAmount0 : targetAmount1;
         uint256 outputTokenTarget = willRebalanceToken0 ? targetAmount1 : targetAmount0;
-        if (inputTokenExcessBalance < inputTokenTarget) {
+        if (idleBalance < inputTokenTarget) {
             // should never happen
             return (false, inputToken, outputToken, inputAmount, outputAmount);
         }
-        inputAmount = inputTokenExcessBalance - inputTokenTarget;
+        inputAmount = idleBalance - inputTokenTarget;
         outputAmount = outputTokenTarget.mulDivUp(
             REBALANCE_MAX_SLIPPAGE_BASE - input.hookParams.rebalanceMaxSlippage, REBALANCE_MAX_SLIPPAGE_BASE
         );

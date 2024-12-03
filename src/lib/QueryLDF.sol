@@ -9,6 +9,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
+import "../types/IdleBalance.sol";
 import {roundTick} from "./Math.sol";
 import {Q96} from "../base/Constants.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
@@ -41,7 +42,8 @@ function queryLDF(
     bytes32 ldfParams,
     bytes32 ldfState,
     uint256 balance0,
-    uint256 balance1
+    uint256 balance1,
+    IdleBalance idleBalance
 )
     view
     returns (
@@ -71,6 +73,18 @@ function queryLDF(
     );
     totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
     totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
+
+    // modify balance0/balance1 to deduct the idle balance
+    // skip this if a surge happens since the idle balance will need to be recalculated
+    if (!shouldSurge) {
+        (uint256 balance, bool isToken0) = IdleBalanceLibrary.fromIdleBalance(idleBalance);
+        if (isToken0) {
+            balance0 -= balance;
+        } else {
+            balance1 -= balance;
+        }
+    }
+
     uint256 totalLiquidityEstimate0 =
         (balance0 == 0 || totalDensity0X96 == 0) ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
     uint256 totalLiquidityEstimate1 =

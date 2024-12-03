@@ -24,6 +24,9 @@ error Overflow();
 // Before running this with medusa, change the external functions of BunniSwapMath to internals
 // and calldata arguments to memory
 contract FuzzSwap is FuzzHelper, PropertiesAsserts {
+    using FixedPointMathLib for *;
+    using IdleBalanceLibrary for *;
+
     // Invariant: computeSwap in BunniSwapMath should output the same amount of input
     //            and output tokens both in ExactIn and ExactOut configurations given
     //            the same pool state.
@@ -43,7 +46,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
 
         // Initialize parameters before swapinng
-        BunniSwapMath.BunniComputeSwapInput memory input1 = _compute_swap(
+        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
             tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
         );
 
@@ -76,7 +79,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
             if (inputAmount0 != uint64(inputAmount0) || outputAmount0 != uint64(outputAmount0)) return;
 
-            BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
+            (BunniSwapMath.BunniComputeSwapInput memory input2,) = _compute_swap(
                 tickSpacing, balance0, balance1, -amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
             );
             input2.swapParams.amountSpecified = amountSpecified < 0 ? int256(outputAmount0) : -int256(inputAmount0);
@@ -118,7 +121,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
 
         // Initialize parameters before swapinng
-        BunniSwapMath.BunniComputeSwapInput memory input1 = _compute_swap(
+        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
             tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
         );
 
@@ -157,7 +160,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
 
         // Initialize parameters before swapinng
-        BunniSwapMath.BunniComputeSwapInput memory input1 = _compute_swap(
+        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) = _compute_swap(
             tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
         );
 
@@ -186,7 +189,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 tickLower,
                 tickUpper,
                 updatedTick,
-                updatedSqrtPriceX96
+                updatedSqrtPriceX96,
+                idleBalance
             );
             input2.swapParams.amountSpecified = amountSpecified < 0 ? -int256(outputAmount0) : int256(inputAmount0);
             input2.swapParams.zeroForOne = false;
@@ -198,6 +202,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 (amountSpecified < 0 && outputAmount0 > inputAmount1)
                     || (amountSpecified > 0 && inputAmount0 > outputAmount1)
             ) {
+                // not valid roundtrip swap since the swap amounts don't chain together
                 return;
             }
 
@@ -222,10 +227,50 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
     // Internal helper function
     function swap(BunniSwapMath.BunniComputeSwapInput calldata input)
         public
+        view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0)
     {
         require(msg.sender == address(this));
         (updatedSqrtPriceX96, updatedTick, inputAmount0, outputAmount0) = BunniSwapMath.computeSwap(input);
+    }
+
+    function _compute_idle_balance(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int24 tickLower,
+        int24 tickUpper,
+        int24 currentTick,
+        uint160 sqrtPriceX96
+    ) internal view returns (IdleBalance idleBalance) {
+        uint256 totalLiquidity;
+        uint256 totalDensity0X96;
+        uint256 totalDensity1X96;
+        uint256 liquidityDensityOfRoundedTickX96;
+        {
+            PoolKey memory key;
+            key.tickSpacing = tickSpacing;
+            (totalLiquidity, totalDensity0X96, totalDensity1X96, liquidityDensityOfRoundedTickX96,,) = queryLDF({
+                key: key,
+                sqrtPriceX96: sqrtPriceX96,
+                tick: currentTick,
+                arithmeticMeanTick: int24(0),
+                ldf: ldf,
+                ldfParams: bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper)),
+                ldfState: LDF_STATE,
+                balance0: balance0,
+                balance1: balance1,
+                idleBalance: IdleBalanceLibrary.ZERO
+            });
+        }
+
+        (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
+            (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
+        (uint256 extraBalance0, uint256 extraBalance1) = (
+            balance0 > currentActiveBalance0 ? balance0 - currentActiveBalance0 : 0,
+            balance1 > currentActiveBalance1 ? balance1 - currentActiveBalance1 : 0
+        );
+        return FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(extraBalance0 >= extraBalance1);
     }
 
     function _compute_swap(
@@ -237,14 +282,21 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 tickLower,
         int24 tickUpper,
         int24 currentTick
-    ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input) {
+    ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input, IdleBalance idleBalance) {
         tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
         currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
+        tickLower =
+            roundTickSingle(int24(clampBetween(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
+        tickUpper = roundTickSingle(int24(clampBetween(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
 
+        // compute sqrtPriceX96 and idleBalance
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(currentTick);
-        return _compute_swap(
+        idleBalance =
+            _compute_idle_balance(tickSpacing, balance0, balance1, tickLower, tickUpper, currentTick, sqrtPriceX96);
+
+        input = _compute_swap(
             tickSpacing,
             balance0,
             balance1,
@@ -253,7 +305,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             tickLower,
             tickUpper,
             currentTick,
-            sqrtPriceX96
+            sqrtPriceX96,
+            idleBalance
         );
     }
 
@@ -267,16 +320,20 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 tickLower,
         int24 tickUpper,
         int24 currentTick,
-        uint160 sqrtPriceX96
+        uint160 sqrtPriceX96,
+        IdleBalance idleBalance
     ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input) {
-        tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        {
+            tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
 
-        tickLower =
-            roundTickSingle(int24(clampBetween(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
-        tickUpper = roundTickSingle(int24(clampBetween(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-        currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
+            tickLower =
+                roundTickSingle(int24(clampBetween(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
+            tickUpper =
+                roundTickSingle(int24(clampBetween(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
+            currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
+        }
 
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
         // set up pool key
@@ -304,8 +361,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             uint256 totalDensity0X96,
             uint256 totalDensity1X96,
             uint256 liquidityDensityOfRoundedTickX96,
-            bytes32 newLdfState,
-            bool shouldSurge
+            ,
         ) = queryLDF({
             key: key,
             sqrtPriceX96: input.sqrtPriceX96,
@@ -315,7 +371,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             ldfParams: ldfParams,
             ldfState: LDF_STATE,
             balance0: balance0,
-            balance1: balance1
+            balance1: balance1,
+            idleBalance: idleBalance
         });
 
         input.totalLiquidity = totalLiquidity;
@@ -342,7 +399,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
 
         // Initialize parameters before swapinng
-        BunniSwapMath.BunniComputeSwapInput memory input1 = _compute_swap(
+        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
             tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
         );
 
@@ -386,7 +443,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
 
         // Initialize parameters before swapinng
-        BunniSwapMath.BunniComputeSwapInput memory input1 = _compute_swap(
+        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
             tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
         );
 

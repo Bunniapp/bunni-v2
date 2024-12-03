@@ -30,6 +30,7 @@ import "./Math.sol";
 import "./QueryTWAP.sol";
 import "./VaultMath.sol";
 import "../base/Errors.sol";
+import "../types/LDFType.sol";
 import "../base/Constants.sol";
 import "../types/PoolState.sol";
 import "../base/SharedStructs.sol";
@@ -51,6 +52,7 @@ library BunniHubLogic {
     using SafeCastLib for int256;
     using SafeCastLib for uint256;
     using HookletLib for IHooklet;
+    using IdleBalanceLibrary for *;
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
@@ -173,6 +175,11 @@ library BunniHubLogic {
         amount0 = address(state.vault0) != address(0) ? rawAmount0 + reserveAmount0 : rawAmount0;
         amount1 = address(state.vault1) != address(0) ? rawAmount1 + reserveAmount1 : rawAmount1;
 
+        // check slippage
+        if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
+            revert BunniHub__SlippageTooHigh();
+        }
+
         // mint shares using actual token amounts
         shares = _mintShares(
             msgSender,
@@ -185,8 +192,23 @@ library BunniHubLogic {
             params.referrer
         );
 
-        if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
-            revert BunniHub__SlippageTooHigh();
+        if (depositReturnData.balance0 == 0 && depositReturnData.balance1 == 0) {
+            // zero balances, should zero out idle balance if necessary
+            if (state.idleBalance != IdleBalanceLibrary.ZERO) {
+                s.idleBalance[poolId] = IdleBalanceLibrary.ZERO;
+            }
+        } else {
+            // not zero balances, increase idle balance proportionally to the amount added
+            (uint256 balance, bool isToken0) = IdleBalanceLibrary.fromIdleBalance(state.idleBalance);
+            uint256 newBalance = balance
+                + (
+                    isToken0
+                        ? (depositReturnData.balance0 == 0 ? amount0 : amount0.mulDiv(balance, depositReturnData.balance0))
+                        : (depositReturnData.balance1 == 0 ? amount1 : amount1.mulDiv(balance, depositReturnData.balance1))
+                );
+            if (newBalance != balance) {
+                s.idleBalance[poolId] = newBalance.toIdleBalance(isToken0);
+            }
         }
 
         // refund excess ETH
@@ -258,7 +280,8 @@ library BunniHubLogic {
             int24 arithmeticMeanTick =
                 useTwap ? queryTwap(inputData.params.poolKey, inputData.state.twapSecondsAgo) : int24(0);
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
-            bytes32 ldfState = inputData.state.statefulLdf ? hook.ldfStates(inputData.poolId) : bytes32(0);
+            bytes32 ldfState =
+                inputData.state.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? hook.ldfStates(inputData.poolId) : bytes32(0);
             (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,, bytes32 newLdfState,) =
             queryLDF({
                 key: inputData.params.poolKey,
@@ -269,9 +292,12 @@ library BunniHubLogic {
                 ldfParams: inputData.state.ldfParams,
                 ldfState: ldfState,
                 balance0: inputData.params.amount0Desired, // use amount0Desired since we're initializing liquidity
-                balance1: inputData.params.amount1Desired // use amount1Desired since we're initializing liquidity
+                balance1: inputData.params.amount1Desired, // use amount1Desired since we're initializing liquidity
+                idleBalance: IdleBalanceLibrary.ZERO // if balances are 0 then idle balance must also be 0
             });
-            if (inputData.state.statefulLdf) hook.updateLdfState(inputData.poolId, newLdfState);
+            if (inputData.state.ldfType == LDFType.DYNAMIC_AND_STATEFUL) {
+                hook.updateLdfState(inputData.poolId, newLdfState);
+            }
 
             // compute token amounts to add
             (returnData.amount0, returnData.amount1) =
@@ -482,6 +508,15 @@ library BunniHubLogic {
             revert BunniHub__SlippageTooHigh();
         }
 
+        // decrease idle balance proportionally to the amount removed
+        {
+            (uint256 balance, bool isToken0) = IdleBalanceLibrary.fromIdleBalance(state.idleBalance);
+            uint256 newBalance = balance - balance.mulDiv(shares, currentTotalSupply);
+            if (newBalance != balance) {
+                s.idleBalance[poolId] = newBalance.toIdleBalance(isToken0);
+            }
+        }
+
         /// -----------------------------------------------------------------------
         /// External calls
         /// -----------------------------------------------------------------------
@@ -624,7 +659,7 @@ library BunniHubLogic {
             params.ldfParams,
             params.vault0,
             params.vault1,
-            params.statefulLdf,
+            params.ldfType,
             params.minRawTokenRatio0,
             params.targetRawTokenRatio0,
             params.maxRawTokenRatio0,

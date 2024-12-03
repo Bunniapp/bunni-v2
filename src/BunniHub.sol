@@ -237,6 +237,12 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     }
 
     /// @inheritdoc IBunniHub
+    function hookSetIdleBalance(PoolKey calldata key, IdleBalance newIdleBalance) external {
+        if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
+        s.idleBalance[key.toId()] = newIdleBalance;
+    }
+
+    /// @inheritdoc IBunniHub
     function lockForRebalance(PoolKey calldata key) external {
         if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
@@ -293,6 +299,11 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         PoolState memory state = getPoolState(s, poolId);
         balance0 = state.rawBalance0 + getReservesInUnderlying(state.reserve0, state.vault0);
         balance1 = state.rawBalance1 + getReservesInUnderlying(state.reserve1, state.vault1);
+    }
+
+    /// @inheritdoc IBunniHub
+    function idleBalance(PoolId poolId) external view returns (IdleBalance) {
+        return s.idleBalance[poolId];
     }
 
     /// @inheritdoc IBunniHub

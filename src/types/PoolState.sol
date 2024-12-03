@@ -6,6 +6,8 @@ import {PoolId, PoolKey, Currency} from "@uniswap/v4-core/src/interfaces/IPoolMa
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
 import {ERC4626} from "solady/tokens/ERC4626.sol";
 
+import "./LDFType.sol";
+import "./IdleBalance.sol";
 import "../base/Errors.sol";
 import {IHooklet} from "../interfaces/IHooklet.sol";
 import {HubStorage} from "../base/SharedStructs.sol";
@@ -23,7 +25,7 @@ using SSTORE2 for address;
 /// @member hookParams The hook parameters for the pool
 /// @member vault0 The ERC4626 vault used for currency0
 /// @member vault1 The ERC4626 vault used for currency1
-/// @member statefulLdf Whether the LDF is stateful. Each stateful LDF is given a bytes32 state that's updated after each query() call.
+/// @member ldfType The type of LDF. See LDFType.sol for details.
 /// @member minRawTokenRatio0 The minimum (rawBalance / balance) ratio for currency0
 /// @member targetRawTokenRatio0 The target (rawBalance / balance) ratio for currency0
 /// @member maxRawTokenRatio0 The maximum (rawBalance / balance) ratio for currency0
@@ -34,6 +36,7 @@ using SSTORE2 for address;
 /// @member rawBalance1 The raw token balance of currency1. Raw just means it's not stored in a ERC4626 vault.
 /// @member reserve0 The vault share tokens owned in vault0
 /// @member reserve1 The vault share tokens owned in vault1
+/// @member idleBalance The balance of the token that's in excess. Used when computing the total liquidity.
 struct PoolState {
     ILiquidityDensityFunction liquidityDensityFunction;
     IBunniToken bunniToken;
@@ -43,7 +46,7 @@ struct PoolState {
     bytes hookParams;
     ERC4626 vault0;
     ERC4626 vault1;
-    bool statefulLdf;
+    LDFType ldfType;
     uint24 minRawTokenRatio0;
     uint24 targetRawTokenRatio0;
     uint24 maxRawTokenRatio0;
@@ -54,6 +57,7 @@ struct PoolState {
     uint256 rawBalance1;
     uint256 reserve0;
     uint256 reserve1;
+    IdleBalance idleBalance;
 }
 
 /// @notice The raw state of a given pool
@@ -125,12 +129,12 @@ function getPoolParams(address ptr) view returns (PoolState memory state) {
     }
 
     {
-        bool statefulLdf;
+        LDFType ldfType;
         /// @solidity memory-safe-assembly
         assembly {
-            statefulLdf := shr(248, mload(add(immutableParams, 147)))
+            ldfType := shr(248, mload(add(immutableParams, 147)))
         }
-        state.statefulLdf = statefulLdf;
+        state.ldfType = ldfType;
     }
 
     {
@@ -201,7 +205,7 @@ function getPoolParams(address ptr) view returns (PoolState memory state) {
         /// @solidity memory-safe-assembly
         assembly {
             let hookParamsLen := shr(240, mload(add(immutableParams, 186))) // uint16
-            hookParams := add(immutableParams, 156)
+            hookParams := add(immutableParams, 156) // 156 = 186 (hookParamsLen location) + 2 (hookParamsLen is uint16) - 32 (expand hookParamsLen to 32 bytes)
             mstore(hookParams, hookParamsLen) // overwrite length field of `bytes memory hookParams`
         }
         state.hookParams = hookParams;
@@ -217,4 +221,8 @@ function getPoolState(HubStorage storage s, PoolId poolId) view returns (PoolSta
     state.rawBalance1 = rawState.rawBalance1;
     state.reserve0 = address(state.vault0) != address(0) ? s.reserve0[poolId] : 0;
     state.reserve1 = address(state.vault1) != address(0) ? s.reserve1[poolId] : 0;
+
+    // idle balance is only needed when the LDF is not static since static LDFs
+    // can never become imbalanced
+    state.idleBalance = state.ldfType == LDFType.STATIC ? IdleBalanceLibrary.ZERO : s.idleBalance[poolId];
 }
