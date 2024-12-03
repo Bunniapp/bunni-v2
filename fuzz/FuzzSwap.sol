@@ -47,30 +47,16 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
+            tickSpacing,
+            balance0,
+            balance1,
+            amountSpecified,
+            sqrtPriceLimit,
+            tickLower,
+            tickUpper,
+            currentTick,
+            zeroForOne
         );
-
-        input1.swapParams.zeroForOne = zeroForOne;
-
-        // ensure swap makes sense
-        if (
-            (
-                zeroForOne
-                    && (
-                        input1.swapParams.sqrtPriceLimitX96 >= input1.sqrtPriceX96
-                            || input1.swapParams.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE
-                    )
-            )
-                || (
-                    !zeroForOne
-                        && (
-                            input1.swapParams.sqrtPriceLimitX96 <= input1.sqrtPriceX96
-                                || input1.swapParams.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE
-                        )
-                )
-        ) {
-            return;
-        }
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
@@ -80,10 +66,17 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             if (inputAmount0 != uint64(inputAmount0) || outputAmount0 != uint64(outputAmount0)) return;
 
             (BunniSwapMath.BunniComputeSwapInput memory input2,) = _compute_swap(
-                tickSpacing, balance0, balance1, -amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
+                tickSpacing,
+                balance0,
+                balance1,
+                -amountSpecified,
+                sqrtPriceLimit,
+                tickLower,
+                tickUpper,
+                currentTick,
+                zeroForOne
             );
             input2.swapParams.amountSpecified = amountSpecified < 0 ? int256(outputAmount0) : -int256(inputAmount0);
-            input2.swapParams.zeroForOne = zeroForOne;
 
             (,, uint256 inputAmount1, uint256 outputAmount1) = BunniSwapMath.computeSwap(input2);
 
@@ -122,10 +115,17 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
+            tickSpacing,
+            balance0,
+            balance1,
+            amountSpecified,
+            sqrtPriceLimit,
+            tickLower,
+            tickUpper,
+            currentTick,
+            zeroForOne
         );
 
-        input1.swapParams.zeroForOne = zeroForOne;
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
         ) {
@@ -161,18 +161,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) = _compute_swap(
-            tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
+            tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick, true
         );
-
-        input1.swapParams.zeroForOne = true;
-
-        // ensure sqrtPriceLimitX96 makes sense
-        if (
-            input1.swapParams.sqrtPriceLimitX96 >= input1.sqrtPriceX96
-                || input1.swapParams.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE
-        ) {
-            return;
-        }
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
@@ -189,11 +179,11 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 tickLower,
                 tickUpper,
                 updatedTick,
+                false,
                 updatedSqrtPriceX96,
                 idleBalance
             );
             input2.swapParams.amountSpecified = amountSpecified < 0 ? -int256(outputAmount0) : int256(inputAmount0);
-            input2.swapParams.zeroForOne = false;
 
             (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
                 BunniSwapMath.computeSwap(input2);
@@ -281,7 +271,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         uint160 sqrtPriceLimitX96,
         int24 tickLower,
         int24 tickUpper,
-        int24 currentTick
+        int24 currentTick,
+        bool zeroForOne
     ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input, IdleBalance idleBalance) {
         tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
         (int24 minUsableTick, int24 maxUsableTick) =
@@ -305,6 +296,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             tickLower,
             tickUpper,
             currentTick,
+            zeroForOne,
             sqrtPriceX96,
             idleBalance
         );
@@ -320,6 +312,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 tickLower,
         int24 tickUpper,
         int24 currentTick,
+        bool zeroForOne,
         uint160 sqrtPriceX96,
         IdleBalance idleBalance
     ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input) {
@@ -353,7 +346,10 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         // initialize swap params
         input.swapParams.amountSpecified = clampBetween(amountSpecified, type(int64).min, type(int64).max);
-        input.swapParams.sqrtPriceLimitX96 = uint160(clampBetween(sqrtPriceLimitX96, MIN_SQRT_PRICE, MAX_SQRT_PRICE));
+        input.swapParams.sqrtPriceLimitX96 = zeroForOne
+            ? uint160(clampBetween(sqrtPriceLimitX96, MIN_SQRT_PRICE, sqrtPriceX96))
+            : uint160(clampBetween(sqrtPriceLimitX96, sqrtPriceX96, MAX_SQRT_PRICE));
+        input.swapParams.zeroForOne = zeroForOne;
 
         // query the LDF to get total liquidity and token densities
         (
@@ -400,10 +396,17 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
+            tickSpacing,
+            balance0,
+            balance1,
+            amountSpecified,
+            sqrtPriceLimit,
+            tickLower,
+            tickUpper,
+            currentTick,
+            zeroForOne
         );
 
-        input1.swapParams.zeroForOne = zeroForOne;
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
         ) {
@@ -444,10 +447,17 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick
+            tickSpacing,
+            balance0,
+            balance1,
+            amountSpecified,
+            sqrtPriceLimit,
+            tickLower,
+            tickUpper,
+            currentTick,
+            zeroForOne
         );
 
-        input1.swapParams.zeroForOne = zeroForOne;
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
         ) {} catch Panic(uint256) /*errorCode*/ {
