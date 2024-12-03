@@ -3,6 +3,7 @@
 Bunni v2 is a next-gen decentralized exchange with **shapeshifting liquidity**, the next breakthrough in AMM design after Uniswap v3's concentrated liquidity.
 
 To learn more, see:
+
 - [Bunni v2 whitepaper](https://github.com/Bunniapp/whitepaper/blob/main/bunni-v2.pdf)
 - [Documentation](https://docs.bunni.xyz/)
 
@@ -36,6 +37,28 @@ forge build
 
 ```
 forge test
+```
+
+### Medusa fuzzing
+
+Bunni uses [Medusa](https://github.com/crytic/medusa) and [fuzz-utils](https://github.com/crytic/fuzz-utils) for fuzzing.
+
+To start fuzzing, run:
+
+```
+medusa fuzz
+```
+
+To generate Foundry tests from the failed fuzzing runs, run:
+
+```
+fuzz-utils generate ./fuzz/FuzzEntry.sol -c FuzzEntry -cd medusa
+```
+
+To use Foundry to run the failed fuzzing runs, run:
+
+```
+forge test --mc FuzzEntry_Medusa_Test
 ```
 
 ### Contract deployment

@@ -210,37 +210,39 @@ library BunniSwapMath {
                     // - currentActiveBalance0 and currentActiveBalance1 are rounded down
                     // Overall this leads to inputAmount being rounded up and outputAmount being rounded down
                     // which is safe.
+                    // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
+                    // we output 0 instead of reverting.
                     if (exactIn) {
                         (inputAmount, outputAmount) = zeroForOne
                             ? (
                                 (cumulativeAmount - naiveSwapAmountOut) - currentActiveBalance0,
-                                currentActiveBalance1
-                                    - (
-                                        input.liquidityDensityFunction.cumulativeAmount1(
-                                            input.key,
-                                            updatedRoundedTick - input.key.tickSpacing,
-                                            input.totalLiquidity,
-                                            input.arithmeticMeanTick,
-                                            updatedTick,
-                                            input.ldfParams,
-                                            input.ldfState
-                                        ) + naiveSwapAmountIn
-                                    )
+                                subReLU(
+                                    currentActiveBalance1,
+                                    input.liquidityDensityFunction.cumulativeAmount1(
+                                        input.key,
+                                        updatedRoundedTick - input.key.tickSpacing,
+                                        input.totalLiquidity,
+                                        input.arithmeticMeanTick,
+                                        updatedTick,
+                                        input.ldfParams,
+                                        input.ldfState
+                                    ) + naiveSwapAmountIn
+                                )
                             )
                             : (
                                 (naiveSwapAmountIn + cumulativeAmount) - currentActiveBalance1,
-                                currentActiveBalance0
-                                    - (
-                                        input.liquidityDensityFunction.cumulativeAmount0(
-                                            input.key,
-                                            updatedRoundedTick,
-                                            input.totalLiquidity,
-                                            input.arithmeticMeanTick,
-                                            updatedTick,
-                                            input.ldfParams,
-                                            input.ldfState
-                                        ) - naiveSwapAmountOut
-                                    )
+                                subReLU(
+                                    currentActiveBalance0,
+                                    input.liquidityDensityFunction.cumulativeAmount0(
+                                        input.key,
+                                        updatedRoundedTick,
+                                        input.totalLiquidity,
+                                        input.arithmeticMeanTick,
+                                        updatedTick,
+                                        input.ldfParams,
+                                        input.ldfState
+                                    ) - naiveSwapAmountOut
+                                )
                             );
                     } else {
                         (inputAmount, outputAmount) = zeroForOne
@@ -256,7 +258,7 @@ library BunniSwapMath {
                                         input.ldfState
                                     ) - naiveSwapAmountOut
                                 ) - currentActiveBalance0,
-                                currentActiveBalance1 - (naiveSwapAmountIn + cumulativeAmount)
+                                subReLU(currentActiveBalance1, naiveSwapAmountIn + cumulativeAmount)
                             )
                             : (
                                 (
@@ -270,7 +272,7 @@ library BunniSwapMath {
                                         input.ldfState
                                     ) + naiveSwapAmountIn
                                 ) - currentActiveBalance1,
-                                currentActiveBalance0 - (cumulativeAmount - naiveSwapAmountOut)
+                                subReLU(currentActiveBalance0, cumulativeAmount - naiveSwapAmountOut)
                             );
                     }
 
@@ -299,25 +301,11 @@ library BunniSwapMath {
                 totalDensity0X96.fullMulDivUp(input.totalLiquidity, Q96),
                 totalDensity1X96.fullMulDivUp(input.totalLiquidity, Q96)
             );
+            // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
+            // we output 0 instead of reverting.
             (inputAmount, outputAmount) = zeroForOne
-                ? (
-                    updatedActiveBalance0 - currentActiveBalance0,
-                    currentActiveBalance1 < updatedActiveBalance1 ? 0 : currentActiveBalance1 - updatedActiveBalance1
-                )
-                : (
-                    updatedActiveBalance1 - currentActiveBalance1,
-                    currentActiveBalance0 < updatedActiveBalance0 ? 0 : currentActiveBalance0 - updatedActiveBalance0
-                );
-
-            if (exactIn) {
-                uint256 inputAmountSpecified = uint256(-amountSpecified);
-                if (inputAmount > inputAmountSpecified && inputAmount < inputAmountSpecified + 3) {
-                    // if it's an exact input swap and inputAmount is greater than the specified input amount by 1 or 2 wei,
-                    // round down to the specified input amount to avoid reverts. this assumes that it's not feasible to
-                    // extract significant value from the pool if each swap can at most extract 2 wei.
-                    inputAmount = inputAmountSpecified;
-                }
-            }
+                ? (updatedActiveBalance0 - currentActiveBalance0, subReLU(currentActiveBalance1, updatedActiveBalance1))
+                : (updatedActiveBalance1 - currentActiveBalance1, subReLU(currentActiveBalance0, updatedActiveBalance0));
         }
     }
 }
