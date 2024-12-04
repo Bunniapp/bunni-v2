@@ -2352,6 +2352,97 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         );
     }
 
+    function test_idleBalance_startAtZero() public {
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        // idle balance should be 0
+        IdleBalance idleBalance = hub.idleBalance(key.toId());
+        (uint256 balance,) = idleBalance.fromIdleBalance();
+        assertEq(balance, 0, "idle balance not zero at start");
+    }
+
+    function test_idleBalance_ldfShiftUpdatesIdleBalance() public {
+        MockLDF ldf_ = new MockLDF();
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA));
+        ldf_.setMinTick(-30);
+
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(ldf_, ldfParams);
+
+        // shift liquidity to the right
+        // the LDF will demand more token0, so we'll have too much of token1
+        ldf_.setMinTick(-20);
+
+        // make swap to update state
+        uint256 swapAmount = 1e3;
+        _mint(key.currency0, address(this), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        _swap(key, params, 0, "");
+
+        // idle balance should be non-zero and in token1
+        IdleBalance idleBalance = hub.idleBalance(key.toId());
+        (uint256 balance, bool isToken0) = idleBalance.fromIdleBalance();
+        assertGt(balance, 0, "idle balance should be non-zero");
+        assertFalse(isToken0, "idle balance should be in token1");
+    }
+
+    function test_idleBalance_rebalanceUpdatesIdleBalance() public {
+        MockLDF ldf_ = new MockLDF();
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA));
+        ldf_.setMinTick(-30);
+
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(ldf_, ldfParams);
+
+        // shift liquidity to the right
+        // the LDF will demand more token0, so we'll have too much of token1
+        ldf_.setMinTick(-20);
+
+        // make swap to trigger rebalance
+        uint256 swapAmount = 1e3;
+        _mint(key.currency0, address(this), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        vm.recordLogs();
+        _swap(key, params, 0, "");
+
+        IdleBalance idleBalanceBefore = hub.idleBalance(key.toId());
+        (uint256 balanceBefore, bool isToken0Before) = idleBalanceBefore.fromIdleBalance();
+        assertGt(balanceBefore, 0, "idle balance should be non-zero");
+        assertFalse(isToken0Before, "idle balance should be in token1");
+
+        // obtain the order from the logs
+        Vm.Log[] memory logs_ = vm.getRecordedLogs();
+        Vm.Log memory orderEtchedLog;
+        for (uint256 i = 0; i < logs_.length; i++) {
+            if (logs_[i].emitter == address(floodPlain) && logs_[i].topics[0] == IOnChainOrders.OrderEtched.selector) {
+                orderEtchedLog = logs_[i];
+                break;
+            }
+        }
+        IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
+        IFloodPlain.Order memory order = signedOrder.order;
+
+        // fulfill order
+        _mint(key.currency0, address(this), order.consideration.amount);
+        floodPlain.fulfillOrder(signedOrder);
+
+        // idle balance should be reduced by order input
+        IdleBalance idleBalanceAfter = hub.idleBalance(key.toId());
+        (uint256 balanceAfter, bool isToken0After) = idleBalanceAfter.fromIdleBalance();
+        assertEq(
+            balanceAfter,
+            balanceBefore - order.offer[0].amount,
+            "idle balance should be reduced by rebalance order input"
+        );
+        assertFalse(isToken0After, "idle balance should still be in token1");
+    }
+
     /// -----------------------------------------------------------------------
     /// Internal utils
     /// -----------------------------------------------------------------------
@@ -2565,6 +2656,41 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             ldf_,
             IHooklet(address(0)),
             bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                SURGE_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL,
+                POOL_MAX_AMAMM_FEE,
+                MIN_RENT_MULTIPLIER
+            ),
+            bytes32(0)
+        );
+    }
+
+    function _deployPoolAndInitLiquidity(ILiquidityDensityFunction ldf_, bytes32 ldfParams)
+        internal
+        returns (IBunniToken bunniToken, PoolKey memory key)
+    {
+        return _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            ERC4626(address(0)),
+            ERC4626(address(0)),
+            ldf_,
+            IHooklet(address(0)),
+            ldfParams,
             abi.encodePacked(
                 FEE_MIN,
                 FEE_MAX,
