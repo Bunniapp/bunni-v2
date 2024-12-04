@@ -222,16 +222,13 @@ contract BunniQuoter is IBunniQuoter {
                 hookParams.feeMin,
                 hookParams.feeMax,
                 hookParams.feeQuadraticMultiplier,
-                hookParams.surgeFee,
                 hookParams.surgeFeeHalfLife
             );
         swapFee = useAmAmmFee
             ? (
                 amAmmEnableSurgeFee
                     ? uint24(
-                        FixedPointMathLib.max(
-                            amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFee, hookParams.surgeFeeHalfLife)
-                        )
+                        FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife))
                     )
                     : amAmmSwapFee
             )

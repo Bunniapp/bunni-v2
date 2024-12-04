@@ -88,7 +88,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
     address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
     uint24 internal constant TWAP_SECONDS_AGO = 1 days;
-    uint24 internal constant SURGE_FEE = 0.1e6;
     uint16 internal constant SURGE_HALFLIFE = 1 minutes;
     uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
     uint16 internal constant VAULT_SURGE_THRESHOLD_0 = 1e4; // 0.01% change in share price
@@ -1162,7 +1161,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             FEE_MAX,
             FEE_QUADRATIC_MULTIPLIER,
             FEE_TWAP_SECONDS_AGO,
-            SURGE_FEE,
+            POOL_MAX_AMAMM_FEE,
             SURGE_HALFLIFE,
             SURGE_AUTOSTART_TIME,
             VAULT_SURGE_THRESHOLD_0,
@@ -1173,7 +1172,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             REBALANCE_ORDER_TTL,
             true, // amAmmEnabled
             ORACLE_MIN_INTERVAL,
-            POOL_MAX_AMAMM_FEE,
             MIN_RENT_MULTIPLIER
         );
 
@@ -1243,7 +1241,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(p.feeMax, FEE_MAX, "feeMax incorrect");
         assertEq(p.feeQuadraticMultiplier, FEE_QUADRATIC_MULTIPLIER, "feeQuadraticMultiplier incorrect");
         assertEq(p.feeTwapSecondsAgo, FEE_TWAP_SECONDS_AGO, "feeTwapSecondsAgo incorrect");
-        assertEq(p.surgeFee, SURGE_FEE, "surgeFee incorrect");
         assertEq(p.surgeFeeHalfLife, SURGE_HALFLIFE, "surgeFeeHalfLife incorrect");
         assertEq(p.surgeFeeAutostartThreshold, SURGE_AUTOSTART_TIME, "surgeFeeAutostartThreshold incorrect");
         assertEq(p.vaultSurgeThreshold0, VAULT_SURGE_THRESHOLD_0, "vaultSurgeThreshold0 incorrect");
@@ -1327,7 +1324,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 feeMax,
                 feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -1338,7 +1335,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             )
         );
@@ -1429,7 +1425,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 feeMax,
                 feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -1440,7 +1436,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             )
         );
@@ -1532,7 +1527,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 feeMax,
                 feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -1543,7 +1538,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             )
         );
@@ -1683,7 +1677,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 feeMax,
                 feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -1694,7 +1688,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 amAmmEnabled,
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             )
         );
@@ -1763,7 +1756,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 feeMax,
                 feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -1774,7 +1767,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             )
         );
@@ -1841,7 +1833,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 feeMax,
                 feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -1852,7 +1844,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             )
         );
@@ -2083,7 +2074,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 feeMax,
                 feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -2094,7 +2085,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             )
         );
@@ -2196,7 +2186,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 FEE_MAX,
                 FEE_QUADRATIC_MULTIPLIER,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -2207,7 +2197,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             ),
             bytes32(uint256(1))
@@ -2270,7 +2259,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             FEE_MAX,
             FEE_QUADRATIC_MULTIPLIER,
             FEE_TWAP_SECONDS_AGO,
-            SURGE_FEE,
+            POOL_MAX_AMAMM_FEE,
             SURGE_HALFLIFE,
             SURGE_AUTOSTART_TIME,
             VAULT_SURGE_THRESHOLD_0,
@@ -2281,7 +2270,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             REBALANCE_ORDER_TTL,
             true,
             ORACLE_MIN_INTERVAL,
-            POOL_MAX_AMAMM_FEE,
             MIN_RENT_MULTIPLIER
         );
         bytes32 salt;
@@ -2623,7 +2611,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 FEE_MAX,
                 FEE_QUADRATIC_MULTIPLIER,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -2634,7 +2622,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             ),
             salt
@@ -2661,7 +2648,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 FEE_MAX,
                 FEE_QUADRATIC_MULTIPLIER,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -2672,7 +2659,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             ),
             bytes32(0)
@@ -2696,7 +2682,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 FEE_MAX,
                 FEE_QUADRATIC_MULTIPLIER,
                 FEE_TWAP_SECONDS_AGO,
-                SURGE_FEE,
+                POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
                 SURGE_AUTOSTART_TIME,
                 VAULT_SURGE_THRESHOLD_0,
@@ -2707,7 +2693,6 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
                 REBALANCE_ORDER_TTL,
                 true, // amAmmEnabled
                 ORACLE_MIN_INTERVAL,
-                POOL_MAX_AMAMM_FEE,
                 MIN_RENT_MULTIPLIER
             ),
             bytes32(0)

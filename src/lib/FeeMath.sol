@@ -11,18 +11,14 @@ import "../base/Constants.sol";
 using FixedPointMathLib for int256;
 using FixedPointMathLib for uint256;
 
-function computeSurgeFee(uint32 lastSurgeTimestamp, uint24 surgeFee, uint16 surgeFeeHalfLife)
-    view
-    returns (uint24 fee)
-{
+function computeSurgeFee(uint32 lastSurgeTimestamp, uint16 surgeFeeHalfLife) view returns (uint24 fee) {
     // compute surge fee
     // surge fee gets applied after the LDF shifts (if it's dynamic)
     unchecked {
         uint256 timeSinceLastSurge = uint32(block.timestamp) - lastSurgeTimestamp;
+        // max surge fee is hardcoded to 100% (SWAP_FEE_BASE)
         fee = uint24(
-            uint256(surgeFee).mulWadUp(
-                uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad())
-            )
+            SWAP_FEE_BASE.mulWadUp(uint256((-int256(timeSinceLastSurge.mulDiv(LN2_WAD, surgeFeeHalfLife))).expWad()))
         );
     }
 }
@@ -34,12 +30,11 @@ function computeDynamicSwapFee(
     uint24 feeMin,
     uint24 feeMax,
     uint24 feeQuadraticMultiplier,
-    uint24 surgeFee,
     uint16 surgeFeeHalfLife
 ) view returns (uint24 fee) {
     // compute surge fee
     // surge fee gets applied after the LDF shifts (if it's dynamic)
-    fee = computeSurgeFee(lastSurgeTimestamp, surgeFee, surgeFeeHalfLife);
+    fee = computeSurgeFee(lastSurgeTimestamp, surgeFeeHalfLife);
 
     // special case for fixed fee pools
     if (feeQuadraticMultiplier == 0 || feeMin == feeMax) return uint24(FixedPointMathLib.max(feeMin, fee));
