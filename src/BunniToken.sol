@@ -203,7 +203,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         poolManager().unlock(abi.encode(referrerAddress, reward0, reward1));
 
         // emit event
-        emit ClaimReferralRewards(reward0, reward1);
+        emit ClaimReferralRewards(referrer, reward0, reward1);
     }
 
     /// @inheritdoc IBunniToken

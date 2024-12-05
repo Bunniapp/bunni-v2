@@ -245,6 +245,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 poolManager.take(currency, recipient, balance);
             }
         }
+
+        emit ClaimProtocolFees(currencyList, recipient);
     }
 
     /// -----------------------------------------------------------------------

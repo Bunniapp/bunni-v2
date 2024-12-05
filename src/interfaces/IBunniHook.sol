@@ -56,6 +56,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     );
     event SetZone(IZone zone);
     event SetModifiers(uint32 indexed hookFeeModifier, uint32 indexed referrerRewardModifier);
+    event ClaimProtocolFees(Currency[] currencyList, address indexed recipient);
 
     /// -----------------------------------------------------------------------
     /// Structs and enums
