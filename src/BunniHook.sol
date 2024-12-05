@@ -620,7 +620,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         uint24 maxAmAmmFee = uint24(bytes3(firstWord << 96));
 
         // payload is valid if swapFee0For1 and swapFee1For0 are at most maxAmAmmFee
-        (uint24 swapFee0For1, uint24 swapFee1For0,) = decodeAmAmmPayload(payload);
+        (uint24 swapFee0For1, uint24 swapFee1For0) = decodeAmAmmPayload(payload);
         return swapFee0For1 <= maxAmAmmFee && swapFee1For0 <= maxAmAmmFee;
     }
 

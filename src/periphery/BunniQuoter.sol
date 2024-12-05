@@ -189,7 +189,6 @@ contract BunniQuoter is IBunniQuoter {
 
         // get am-AMM state
         uint24 amAmmSwapFee;
-        bool amAmmEnableSurgeFee;
         address amAmmManager;
         if (hookParams.amAmmEnabled) {
             bytes7 payload;
@@ -197,7 +196,7 @@ contract BunniQuoter is IBunniQuoter {
             (amAmmManager, payload) = (topBid.manager, topBid.payload);
             uint24 swapFee0For1;
             uint24 swapFee1For0;
-            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(payload);
+            (swapFee0For1, swapFee1For0) = decodeAmAmmPayload(payload);
             amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
         }
 
@@ -225,13 +224,7 @@ contract BunniQuoter is IBunniQuoter {
                 hookParams.surgeFeeHalfLife
             );
         swapFee = useAmAmmFee
-            ? (
-                amAmmEnableSurgeFee
-                    ? uint24(
-                        FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife))
-                    )
-                    : amAmmSwapFee
-            )
+            ? uint24(FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife)))
             : hookFeesBaseSwapFee;
         if (exactIn) {
             // compute the swap fee and the hook fee (i.e. protocol fee)

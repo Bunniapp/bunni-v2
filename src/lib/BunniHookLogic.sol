@@ -320,14 +320,13 @@ library BunniHookLogic {
 
         // update am-AMM state
         uint24 amAmmSwapFee;
-        bool amAmmEnableSurgeFee;
         if (hookParams.amAmmEnabled) {
             bytes7 payload;
             IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBidWrite(id);
             (amAmmManager, payload) = (topBid.manager, topBid.payload);
             uint24 swapFee0For1;
             uint24 swapFee1For0;
-            (swapFee0For1, swapFee1For0, amAmmEnableSurgeFee) = decodeAmAmmPayload(payload);
+            (swapFee0For1, swapFee1For0) = decodeAmAmmPayload(payload);
             amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;
         }
 
@@ -358,13 +357,7 @@ library BunniHookLogic {
                 hookParams.surgeFeeHalfLife
             );
         swapFee = useAmAmmFee
-            ? (
-                amAmmEnableSurgeFee
-                    ? uint24(
-                        FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife))
-                    )
-                    : amAmmSwapFee
-            )
+            ? uint24(FixedPointMathLib.max(amAmmSwapFee, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife)))
             : hookFeesBaseSwapFee;
         uint256 hookFeesAmount;
         uint256 hookHandleSwapInputAmount;
