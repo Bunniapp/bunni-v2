@@ -47,7 +47,7 @@ struct HubStorage {
 /// @member feeMax The maximum swap fee (may be exceeded if surge fee is active), 6 decimals
 /// @member feeQuadraticMultiplier The quadratic multiplier for the dynamic swap fee formula, 6 decimals
 /// @member feeTwapSecondsAgo The time window for the TWAP used by the dynamic swap fee formula
-/// @member surgeFee The max surge swap fee, 6 decimals
+/// @member maxAmAmmFee The maximum swap fee that can be set by the am-AMM manager. Must <= MAX_AMAMM_FEE.
 /// @member surgeFeeHalfLife The half-life of the surge fee in seconds. The surge fee decays exponentially, and the half-life is the time it takes for the surge fee to decay to half its value.
 /// @member surgeFeeAutostartThreshold Time after a swap when the surge fee exponential decay autostarts, in seconds. The autostart avoids the pool being stuck on a high fee.
 /// @member vaultSurgeThreshold0 The threshold for the vault0 share price change to trigger the surge fee. Only used if both vaults are set.
@@ -62,14 +62,13 @@ struct HubStorage {
 /// @member rebalanceOrderTTL The time-to-live for a rebalance order, in seconds. At most MAX_REBALANCE_ORDER_TTL.
 /// @member amAmmEnabled Whether the am-AMM is enabled for this pool
 /// @member oracleMinInterval The minimum interval between TWAP oracle updates, in seconds
-/// @member maxAmAmmFee The maximum swap fee that can be set by the am-AMM manager. Must <= MAX_AMAMM_FEE.
 /// @member minRentMultiplier The multiplier applied to the BunniToken total supply to compute the minimum rent. 18 decimals. Must be > 0 unless amAmmEnabled == false.
 struct DecodedHookParams {
     uint24 feeMin;
     uint24 feeMax;
     uint24 feeQuadraticMultiplier;
     uint24 feeTwapSecondsAgo;
-    uint24 surgeFee;
+    uint24 maxAmAmmFee;
     uint16 surgeFeeHalfLife;
     uint16 surgeFeeAutostartThreshold;
     uint16 vaultSurgeThreshold0;
@@ -80,7 +79,6 @@ struct DecodedHookParams {
     uint16 rebalanceOrderTTL;
     bool amAmmEnabled;
     uint32 oracleMinInterval;
-    uint24 maxAmAmmFee;
     uint48 minRentMultiplier;
 }
 

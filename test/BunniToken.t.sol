@@ -44,7 +44,6 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     uint24 internal constant FEE_MAX = 0.1e6;
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
     uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
-    uint24 internal constant SURGE_FEE = 0.1e6;
     uint16 internal constant SURGE_HALFLIFE = 1 minutes;
     uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
     uint16 internal constant VAULT_SURGE_THRESHOLD_0 = 1e4; // 0.01% change in share price
@@ -128,7 +127,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             FEE_MAX,
             FEE_QUADRATIC_MULTIPLIER,
             FEE_TWAP_SECONDS_AGO,
-            SURGE_FEE,
+            POOL_MAX_AMAMM_FEE,
             SURGE_HALFLIFE,
             SURGE_AUTOSTART_TIME,
             VAULT_SURGE_THRESHOLD_0,
@@ -139,7 +138,6 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             REBALANCE_ORDER_TTL,
             true, // amAmmEnabled
             ORACLE_MIN_INTERVAL,
-            POOL_MAX_AMAMM_FEE,
             MIN_RENT_MULTIPLIER
         );
         (bunniToken, key) = hub.deployBunniToken(

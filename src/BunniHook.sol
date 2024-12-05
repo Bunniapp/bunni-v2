@@ -331,7 +331,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         unchecked {
             return (p.feeMin <= p.feeMax) && (p.feeMax < SWAP_FEE_BASE)
                 && (p.feeQuadraticMultiplier == 0 || p.feeMin == p.feeMax || p.feeTwapSecondsAgo != 0)
-                && (p.surgeFee < SWAP_FEE_BASE)
                 && (uint256(p.surgeFeeHalfLife) * uint256(p.vaultSurgeThreshold0) * uint256(p.vaultSurgeThreshold1) != 0)
                 && (p.surgeFeeHalfLife < MAX_SURGE_HALFLIFE && p.surgeFeeAutostartThreshold < MAX_SURGE_AUTOSTART_TIME)
                 && (
@@ -613,15 +612,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     function _payloadIsValid(PoolId id, bytes7 payload) internal view virtual override returns (bool) {
         // use feeMax from hookParams
         bytes memory hookParams = hub.hookParams(id);
-        bytes32 secondWord;
+        bytes32 firstWord;
         /// @solidity memory-safe-assembly
         assembly {
-            secondWord := mload(add(hookParams, 64))
+            firstWord := mload(add(hookParams, 32))
         }
-        uint24 maxAmAmmFee = uint24(bytes3(secondWord << 32));
+        uint24 maxAmAmmFee = uint24(bytes3(firstWord << 96));
 
         // payload is valid if swapFee0For1 and swapFee1For0 are at most maxAmAmmFee
-        (uint24 swapFee0For1, uint24 swapFee1For0,) = decodeAmAmmPayload(payload);
+        (uint24 swapFee0For1, uint24 swapFee1For0) = decodeAmAmmPayload(payload);
         return swapFee0For1 <= maxAmAmmFee && swapFee1For0 <= maxAmAmmFee;
     }
 
