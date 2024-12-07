@@ -55,6 +55,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
         uint256 totalLiquidity
     );
     event SetZone(IZone zone);
+    event SetHookFeeRecipient(address hookFeeRecipient);
     event SetModifiers(uint32 indexed hookFeeModifier, uint32 indexed referrerRewardModifier);
     event ClaimProtocolFees(Currency[] currencyList, address indexed recipient);
 
@@ -166,8 +167,19 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @return Whether liquidity can be withdrawn from the given pool.
     function canWithdraw(PoolId id) external view returns (bool);
 
+    /// @notice Returns the hook protocol fee recipient
+    function getHookFeeRecipient() external view returns (address);
+
     /// @notice Returns the modifiers for computing hook fee and referral reward
     function getModifiers() external view returns (uint32 hookFeeModifier_, uint32 referralRewardModifier_);
+
+    /// @notice Returns the claimable hook fees for the given currencies
+    /// @param currencyList The list of currencies to claim fees for
+    /// @return feeAmounts The list of claimable fees for each currency
+    function getClaimableHookFees(Currency[] calldata currencyList)
+        external
+        view
+        returns (uint256[] memory feeAmounts);
 
     /// -----------------------------------------------------------------------
     /// External functions
@@ -182,6 +194,10 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
         external
         returns (uint32 cardinalityNextOld, uint32 cardinalityNextNew);
 
+    /// @notice Claim protocol fees for the given currency list.
+    /// @param currencyList The list of currencies to claim fees for
+    function claimProtocolFees(Currency[] calldata currencyList) external;
+
     /// -----------------------------------------------------------------------
     /// BunniHub functions
     /// -----------------------------------------------------------------------
@@ -195,14 +211,13 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// Owner functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Claim protocol fees for the given currency list. Only callable by the owner.
-    /// @param currencyList The list of currencies to claim fees for
-    /// @param recipient The recipient of the fees
-    function claimProtocolFees(Currency[] calldata currencyList, address recipient) external;
-
     /// @notice Set the FloodZone contract address. Only callable by the owner.
     /// @param zone The new FloodZone contract address
     function setZone(IZone zone) external;
+
+    /// @notice Set the hook protocol fee recipient. Only callable by the owner.
+    /// @param newProtocolFeeRecipient The new protocol fee recipient address
+    function setHookFeeRecipient(address newProtocolFeeRecipient) external;
 
     /// @notice Set the hook fee & referral reward params. Only callable by the owner.
     /// @param newHookFeeModifier The new hook fee modifier. 6 decimals.

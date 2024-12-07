@@ -86,7 +86,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     uint24 internal constant FEE_MAX = 0.1e6;
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
     uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
-    address internal constant HOOK_FEES_RECIPIENT = address(0xfee);
+    address internal constant HOOK_FEE_RECIPIENT = address(0xfee);
     uint24 internal constant TWAP_SECONDS_AGO = 1 days;
     uint16 internal constant SURGE_HALFLIFE = 1 minutes;
     uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
@@ -195,7 +195,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
                 abi.encode(
-                    poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
+                    poolManager,
+                    hub,
+                    floodPlain,
+                    weth,
+                    zone,
+                    address(this),
+                    HOOK_FEE_RECIPIENT,
+                    HOOK_FEE_MODIFIER,
+                    REFERRAL_REWARD_MODIFIER
                 )
             );
             for (uint256 offset; offset < 100000; offset++) {
@@ -208,7 +216,15 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
+            poolManager,
+            hub,
+            floodPlain,
+            weth,
+            zone,
+            address(this),
+            HOOK_FEE_RECIPIENT,
+            HOOK_FEE_MODIFIER,
+            REFERRAL_REWARD_MODIFIER
         );
         vm.label(address(bunniHook), "BunniHook");
 
@@ -1048,17 +1064,30 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertGt(fee0, 0, "protocol fee0 not accrued");
         assertGt(fee1, 0, "protocol fee1 not accrued");
 
-        // collect fees
+        // check claimable fees
         Currency[] memory currencies = new Currency[](2);
         currencies[0] = key.currency0;
         currencies[1] = key.currency1;
+        uint256[] memory claimableAmounts = bunniHook.getClaimableHookFees(currencies);
+        assertEq(claimableAmounts[0], fee0, "claimable fee0 amount incorrect");
+        assertEq(claimableAmounts[1], fee1, "claimable fee1 amount incorrect");
+
+        // collect fees
         snapStart(string.concat("collect protocol fees", snapLabel));
-        bunniHook.claimProtocolFees(currencies, HOOK_FEES_RECIPIENT);
+        bunniHook.claimProtocolFees(currencies);
         snapEnd();
 
         // check balances
-        assertEq(key.currency0.balanceOf(HOOK_FEES_RECIPIENT), fee0, "protocol fee0 not collected");
-        assertEq(key.currency1.balanceOf(HOOK_FEES_RECIPIENT), fee1, "protocol fee1 not collected");
+        assertEq(
+            key.currency0.isNative() ? weth.balanceOf(HOOK_FEE_RECIPIENT) : key.currency0.balanceOf(HOOK_FEE_RECIPIENT),
+            fee0,
+            "protocol fee0 not collected"
+        );
+        assertEq(
+            key.currency1.isNative() ? weth.balanceOf(HOOK_FEE_RECIPIENT) : key.currency1.balanceOf(HOOK_FEE_RECIPIENT),
+            fee1,
+            "protocol fee1 not collected"
+        );
     }
 
     function test_multicall() external {
