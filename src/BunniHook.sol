@@ -253,7 +253,15 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             uint256 balance = poolManager.balanceOf(address(this), currency.toId()) - _totalFees[currency];
             if (balance != 0) {
                 poolManager.burn(address(this), currency.toId(), balance);
-                poolManager.take(currency, recipient, balance);
+                if (currency.isNative()) {
+                    // convert ETH to WETH and send to recipient
+                    poolManager.take(currency, address(this), balance);
+                    weth.deposit{value: balance}();
+                    weth.transfer(recipient, balance);
+                } else {
+                    // take tokens directly to recipient
+                    poolManager.take(currency, recipient, balance);
+                }
             }
         }
 

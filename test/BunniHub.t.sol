@@ -1078,8 +1078,16 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         snapEnd();
 
         // check balances
-        assertEq(key.currency0.balanceOf(HOOK_FEE_RECIPIENT), fee0, "protocol fee0 not collected");
-        assertEq(key.currency1.balanceOf(HOOK_FEE_RECIPIENT), fee1, "protocol fee1 not collected");
+        assertEq(
+            key.currency0.isNative() ? weth.balanceOf(HOOK_FEE_RECIPIENT) : key.currency0.balanceOf(HOOK_FEE_RECIPIENT),
+            fee0,
+            "protocol fee0 not collected"
+        );
+        assertEq(
+            key.currency1.isNative() ? weth.balanceOf(HOOK_FEE_RECIPIENT) : key.currency1.balanceOf(HOOK_FEE_RECIPIENT),
+            fee1,
+            "protocol fee1 not collected"
+        );
     }
 
     function test_multicall() external {
