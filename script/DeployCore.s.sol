@@ -28,6 +28,7 @@ contract DeployCoreScript is CREATE3Script {
         address weth = vm.envAddress(string.concat("WETH_", block.chainid.toString()));
         address permit2 = vm.envAddress("PERMIT2");
         address owner = vm.envAddress(string.concat("OWNER_", block.chainid.toString()));
+        address hookFeeRecipient = vm.envAddress(string.concat("HOOK_FEE_RECIPIENT_", block.chainid.toString()));
         uint32 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint32();
         uint32 referralRewardModifier = vm.envUint("REFERRAL_REWARD_MODIFIER").toUint32();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
@@ -76,7 +77,15 @@ contract DeployCoreScript is CREATE3Script {
                     bytes.concat(
                         type(BunniHook).creationCode,
                         abi.encode(
-                            poolManager, hub, floodPlain, weth, zone, owner, hookFeeModifier, referralRewardModifier
+                            poolManager,
+                            hub,
+                            floodPlain,
+                            weth,
+                            zone,
+                            owner,
+                            hookFeeRecipient,
+                            hookFeeModifier,
+                            referralRewardModifier
                         )
                     )
                 )

@@ -60,6 +60,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     uint256 internal constant HOOK_FLAGS = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         + Hooks.BEFORE_SWAP_FLAG + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
     uint256 internal constant MAX_REL_ERROR = 1e4;
+    address internal constant HOOK_FEE_RECIPIENT = address(0xfee);
 
     IBunniHub internal hub;
     BunniHook internal bunniHook = BunniHook(payable(address(uint160(HOOK_FLAGS))));
@@ -95,7 +96,15 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
                 abi.encode(
-                    poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
+                    poolManager,
+                    hub,
+                    floodPlain,
+                    weth,
+                    zone,
+                    address(this),
+                    HOOK_FEE_RECIPIENT,
+                    HOOK_FEE_MODIFIER,
+                    REFERRAL_REWARD_MODIFIER
                 )
             );
             for (uint256 offset; offset < 100000; offset++) {
@@ -108,7 +117,15 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER
+            poolManager,
+            hub,
+            floodPlain,
+            weth,
+            zone,
+            address(this),
+            HOOK_FEE_RECIPIENT,
+            HOOK_FEE_MODIFIER,
+            REFERRAL_REWARD_MODIFIER
         );
         vm.label(address(bunniHook), "BunniHook");
 

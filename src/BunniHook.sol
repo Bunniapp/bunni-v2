@@ -76,6 +76,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// mappings to BunniHookLogic easier & cheaper.
     HookStorage internal s;
 
+    /// @dev The address that receives the hook protocol fees
+    address internal hookFeeRecipient;
+
     /// @notice Used for computing the hook fee amount. Fee taken is `amount * swapFee / 1e6 * hookFeesModifier / 1e6`.
     uint32 internal hookFeeModifier;
 
@@ -96,6 +99,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         WETH weth_,
         IZone floodZone_,
         address owner_,
+        address hookFeeRecipient_,
         uint32 hookFeeModifier_,
         uint32 referralRewardModifier_
     ) BaseHook(poolManager_) {
@@ -112,6 +116,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 && address(weth_) != address(0) && owner_ != address(0)
         );
 
+        hookFeeRecipient = hookFeeRecipient_;
         hookFeeModifier = hookFeeModifier_;
         referralRewardModifier = referralRewardModifier_;
         floodZone = floodZone_;
@@ -157,6 +162,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         cardinalityNextOld = state.cardinalityNext;
         cardinalityNextNew = s.observations[id].grow(cardinalityNextOld, cardinalityNext);
         state.cardinalityNext = cardinalityNextNew;
+    }
+
+    /// @inheritdoc IBunniHook
+    function claimProtocolFees(Currency[] calldata currencyList) external override nonReentrant {
+        poolManager.unlock(abi.encode(HookUnlockCallbackType.CLAIM_FEES, abi.encode(currencyList)));
     }
 
     receive() external payable {}
@@ -233,7 +243,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// @dev Claims protocol fees earned and sends it to the recipient.
     function _claimFees(bytes memory callbackData) internal {
         // decode data
-        (Currency[] memory currencyList, address recipient) = abi.decode(callbackData, (Currency[], address));
+        Currency[] memory currencyList = abi.decode(callbackData, (Currency[]));
+        address recipient = hookFeeRecipient;
 
         // claim protocol fees
         for (uint256 i; i < currencyList.length; i++) {
@@ -265,14 +276,14 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHook
-    function claimProtocolFees(Currency[] calldata currencyList, address recipient) external override onlyOwner {
-        poolManager.unlock(abi.encode(HookUnlockCallbackType.CLAIM_FEES, abi.encode(currencyList, recipient)));
-    }
-
-    /// @inheritdoc IBunniHook
     function setZone(IZone zone) external onlyOwner {
         floodZone = zone;
         emit SetZone(zone);
+    }
+
+    function setHookFeeRecipient(address newHookFeeRecipient) external onlyOwner {
+        hookFeeRecipient = newHookFeeRecipient;
+        emit SetHookFeeRecipient(newHookFeeRecipient);
     }
 
     /// @inheritdoc IBunniHook
@@ -387,8 +398,27 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     }
 
     /// @inheritdoc IBunniHook
+    function getHookFeeRecipient() external view returns (address) {
+        return hookFeeRecipient;
+    }
+
+    /// @inheritdoc IBunniHook
     function getModifiers() external view returns (uint32 hookFeeModifier_, uint32 referralRewardModifier_) {
         return (hookFeeModifier, referralRewardModifier);
+    }
+
+    /// @inheritdoc IBunniHook
+    function getClaimableHookFees(Currency[] calldata currencyList)
+        external
+        view
+        returns (uint256[] memory feeAmounts)
+    {
+        feeAmounts = new uint256[](currencyList.length);
+        for (uint256 i; i < currencyList.length; i++) {
+            // can claim balance - am-AMM accrued fees
+            Currency currency = currencyList[i];
+            feeAmounts[i] = poolManager.balanceOf(address(this), currency.toId()) - _totalFees[currency];
+        }
     }
 
     /// -----------------------------------------------------------------------
