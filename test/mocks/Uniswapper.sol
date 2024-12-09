@@ -56,10 +56,10 @@ contract Uniswapper is IUnlockCallback {
     function _settleCurrency(address user, Currency currency, int256 amount) internal {
         if (amount < 0) {
             poolManager.sync(currency);
-            if (!currency.isNative()) {
+            if (!currency.isAddressZero()) {
                 Currency.unwrap(currency).safeTransferFrom(user, address(poolManager), uint256(-amount));
             }
-            poolManager.settle{value: currency.isNative() ? uint256(-amount) : 0}();
+            poolManager.settle{value: currency.isAddressZero() ? uint256(-amount) : 0}();
         } else if (amount > 0) {
             poolManager.take(currency, user, uint256(amount));
         }

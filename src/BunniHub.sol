@@ -14,6 +14,7 @@ import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientSta
 import {WETH} from "solady/tokens/WETH.sol";
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {LibTransient} from "solady/utils/LibTransient.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
@@ -40,6 +41,7 @@ import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 /// back into the LP position.
 contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     using SafeCastLib for *;
+    using LibTransient for *;
     using SSTORE2 for address;
     using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
@@ -47,6 +49,16 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     using CurrencyLibrary for Currency;
     using AdditionalCurrencyLibrary for Currency;
     using TransientStateLibrary for IPoolManager;
+
+    /// -----------------------------------------------------------------------
+    /// Constants
+    /// -----------------------------------------------------------------------
+
+    uint256 private constant INIT_DATA_TSLOT = uint256(keccak256("INIT_DATA_TSLOT")) - 1;
+
+    /// -----------------------------------------------------------------------
+    /// Immutable args
+    /// -----------------------------------------------------------------------
 
     WETH internal immutable weth;
     IPoolManager internal immutable poolManager;
@@ -321,6 +333,11 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         return s.referrerAddress[referrer];
     }
 
+    /// @inheritdoc IBunniHub
+    function poolInitData() external view returns (bytes memory) {
+        return INIT_DATA_TSLOT.tBytes().get();
+    }
+
     /// -----------------------------------------------------------------------
     /// Uniswap callback
     /// -----------------------------------------------------------------------
@@ -374,7 +391,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             poolManager.sync(key.currency0);
 
             // transfer tokens to poolManager
-            if (key.currency0.isNative()) {
+            if (key.currency0.isAddressZero()) {
                 if (msgValue < rawAmount0) revert BunniHub__MsgValueInsufficient();
                 paid0 = poolManager.settle{value: rawAmount0}();
             } else {
@@ -389,7 +406,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             poolManager.sync(key.currency1);
 
             // transfer tokens to poolManager
-            if (key.currency1.isNative()) {
+            if (key.currency1.isAddressZero()) {
                 if (msgValue < rawAmount1) revert BunniHub__MsgValueInsufficient();
                 paid1 = poolManager.settle{value: rawAmount1}();
             } else {
@@ -451,7 +468,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
 
             // deposit tokens into vault
             IERC20 token;
-            if (currency.isNative()) {
+            if (currency.isAddressZero()) {
                 // wrap ETH
                 weth.deposit{value: absAmount}();
                 token = IERC20(address(weth));
@@ -474,7 +491,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
             poolManager.sync(currency);
 
             uint256 settleMsgValue;
-            if (currency.isNative()) {
+            if (currency.isAddressZero()) {
                 // withdraw WETH from vault to address(this)
                 reserveChange = -vault.withdraw(absAmount, address(this), address(this)).toInt256();
 

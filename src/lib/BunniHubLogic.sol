@@ -21,6 +21,7 @@ import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManage
 
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {LibTransient} from "solady/utils/LibTransient.sol";
 
 import {WETH} from "solady/tokens/WETH.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
@@ -47,6 +48,7 @@ import {IBunniToken} from "../interfaces/IBunniToken.sol";
 import {AdditionalCurrencyLibrary} from "./AdditionalCurrencyLib.sol";
 
 library BunniHubLogic {
+    using LibTransient for *;
     using SSTORE2 for bytes;
     using SSTORE2 for address;
     using SafeCastLib for int256;
@@ -68,6 +70,8 @@ library BunniHubLogic {
         IBunniToken bunniTokenImplementation;
     }
 
+    uint256 private constant INIT_DATA_TSLOT = uint256(keccak256("INIT_DATA_TSLOT")) - 1;
+
     /// -----------------------------------------------------------------------
     /// Deposit
     /// -----------------------------------------------------------------------
@@ -84,7 +88,7 @@ library BunniHubLogic {
         /// Validation
         /// -----------------------------------------------------------------------
 
-        if (msg.value != 0 && !params.poolKey.currency0.isNative() && !params.poolKey.currency1.isNative()) {
+        if (msg.value != 0 && !params.poolKey.currency0.isAddressZero() && !params.poolKey.currency1.isAddressZero()) {
             revert BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken();
         }
 
@@ -212,13 +216,13 @@ library BunniHubLogic {
         }
 
         // refund excess ETH
-        if (params.poolKey.currency0.isNative()) {
+        if (params.poolKey.currency0.isAddressZero()) {
             if (address(this).balance != 0) {
                 params.refundRecipient.safeTransferETH(
                     FixedPointMathLib.min(address(this).balance, msg.value - amount0Spent)
                 );
             }
-        } else if (params.poolKey.currency1.isNative()) {
+        } else if (params.poolKey.currency1.isAddressZero()) {
             if (address(this).balance != 0) {
                 params.refundRecipient.safeTransferETH(
                     FixedPointMathLib.min(address(this).balance, msg.value - amount1Spent)
@@ -676,8 +680,13 @@ library BunniHubLogic {
         /// External calls
         /// -----------------------------------------------------------------------
 
+        // use transient storage to store params.twapSecondsAgo and params.hookParams so that the hook can read them
+        // no need to clear it since we always set it to the correct value before a new pool is initialized
+        bytes memory initData = abi.encode(params.twapSecondsAgo, params.hookParams);
+        INIT_DATA_TSLOT.tBytes().set(initData);
+
         // initialize Uniswap v4 pool
-        env.poolManager.initialize(key, params.sqrtPriceX96, abi.encode(params.twapSecondsAgo, params.hookParams));
+        env.poolManager.initialize(key, params.sqrtPriceX96);
 
         emit IBunniHub.NewBunni(token, poolId);
 
@@ -772,7 +781,7 @@ library BunniHubLogic {
         amountSpent = amount;
 
         IERC20 token;
-        if (currency.isNative()) {
+        if (currency.isAddressZero()) {
             // wrap ETH
             // no need to pull tokens from user since WETH is already in the contract
             env.weth.deposit{value: amount}();
@@ -813,7 +822,7 @@ library BunniHubLogic {
         internal
         returns (uint256 reserveChange)
     {
-        if (currency.isNative()) {
+        if (currency.isAddressZero()) {
             // withdraw WETH from vault to address(this)
             reserveChange = vault.withdraw(amount, address(this), address(this));
 
@@ -832,7 +841,7 @@ library BunniHubLogic {
         // if vault is set, make sure the vault asset matches the currency
         // if the currency is ETH, the vault asset must be WETH
         if (address(vault) != address(0)) {
-            bool isNative = currency.isNative();
+            bool isNative = currency.isAddressZero();
             address vaultAsset = address(vault.asset());
             if ((isNative && vaultAsset != address(weth)) || (!isNative && vaultAsset != Currency.unwrap(currency))) {
                 revert BunniHub__VaultAssetMismatch();

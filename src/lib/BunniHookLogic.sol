@@ -94,7 +94,6 @@ library BunniHookLogic {
         PoolKey calldata key,
         uint160 sqrtPriceX96,
         int24 tick,
-        bytes calldata hookData,
         IBunniHub hub
     ) external {
         if (caller != address(hub)) revert BunniHook__Unauthorized(); // prevents non-BunniHub contracts from initializing a pool using this hook
@@ -107,6 +106,9 @@ library BunniHookLogic {
             lastSwapTimestamp: uint32(block.timestamp),
             lastSurgeTimestamp: 0
         });
+
+        // read hook data from hub
+        bytes memory hookData = hub.poolInitData();
 
         // initialize first observation to be dated in the past
         // so that we can immediately start querying the oracle
@@ -734,8 +736,8 @@ library BunniHookLogic {
         uint256 outputAmount
     ) internal {
         // create Flood order
-        ERC20 inputERC20Token = inputToken.isNative() ? env.weth : ERC20(Currency.unwrap(inputToken));
-        ERC20 outputERC20Token = outputToken.isNative() ? env.weth : ERC20(Currency.unwrap(outputToken));
+        ERC20 inputERC20Token = inputToken.isAddressZero() ? env.weth : ERC20(Currency.unwrap(inputToken));
+        ERC20 outputERC20Token = outputToken.isAddressZero() ? env.weth : ERC20(Currency.unwrap(outputToken));
         IFloodPlain.Item[] memory offer = new IFloodPlain.Item[](1);
         offer[0] = IFloodPlain.Item({token: address(inputERC20Token), amount: inputAmount});
         IFloodPlain.Item memory consideration =
