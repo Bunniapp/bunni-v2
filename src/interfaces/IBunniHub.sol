@@ -307,4 +307,8 @@ interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
 
     /// @notice The address that corresponds to a given referrer ID.
     function getReferrerAddress(uint24 referrer) external view returns (address);
+
+    /// @notice The init data of a Bunni pool. Stored in transient storage and used
+    /// during the IHooks.afterInitialize() call.
+    function poolInitData() external view returns (bytes memory);
 }

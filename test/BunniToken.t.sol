@@ -81,7 +81,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         weth = new WETH();
         permit2 = _deployPermit2();
-        poolManager = new PoolManager(1e7);
+        poolManager = new PoolManager(address(this));
         floodPlain = _deployFlood(address(permit2));
 
         // initialize bunni hub
@@ -130,7 +130,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         vm.label(address(bunniHook), "BunniHook");
 
         // deploy currencies
-        currency0 = CurrencyLibrary.NATIVE;
+        currency0 = CurrencyLibrary.ADDRESS_ZERO;
         token1 = new ERC20Mock();
         currency1 = Currency.wrap(address(token1));
 
@@ -728,7 +728,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         // mint claim tokens
         poolManager.mint(address(this), token.toId(), amount);
         poolManager.sync(token);
-        if (token.isNative()) {
+        if (token.isAddressZero()) {
             poolManager.settle{value: amount}();
         } else {
             token.transfer(address(poolManager), amount);
@@ -765,9 +765,9 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     ) internal returns (uint256 shares) {
         // mint tokens
         uint256 value;
-        if (key_.currency0.isNative()) {
+        if (key_.currency0.isAddressZero()) {
             value = depositAmount0;
-        } else if (key_.currency1.isNative()) {
+        } else if (key_.currency1.isAddressZero()) {
             value = depositAmount1;
         }
         _mint(key_.currency0, depositor, depositAmount0);
@@ -795,7 +795,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     }
 
     function _mint(Currency currency, address to, uint256 amount) internal {
-        if (currency.isNative()) {
+        if (currency.isAddressZero()) {
             vm.deal(to, to.balance + amount);
         } else if (Currency.unwrap(currency) == address(weth)) {
             vm.deal(address(this), address(this).balance + amount);

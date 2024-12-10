@@ -225,12 +225,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // sync poolManager balance and transfer the output tokens to poolManager
         poolManager.sync(currency);
-        if (!currency.isNative()) {
+        if (!currency.isAddressZero()) {
             Currency.unwrap(currency).safeTransfer(address(poolManager), amount);
         }
 
         // settle the transferred tokens and mint claim tokens
-        uint256 paid = poolManager.settle{value: currency.isNative() ? amount : 0}();
+        uint256 paid = poolManager.settle{value: currency.isAddressZero() ? amount : 0}();
         poolManager.mint(address(this), currency.toId(), paid);
 
         // unlock BunniHub
@@ -253,7 +253,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             uint256 balance = poolManager.balanceOf(address(this), currency.toId()) - _totalFees[currency];
             if (balance != 0) {
                 poolManager.burn(address(this), currency.toId(), balance);
-                if (currency.isNative()) {
+                if (currency.isAddressZero()) {
                     // convert ETH to WETH and send to recipient
                     poolManager.take(currency, address(this), balance);
                     weth.deposit{value: balance}();
@@ -434,14 +434,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBaseHook
-    function afterInitialize(
-        address caller,
-        PoolKey calldata key,
-        uint160 sqrtPriceX96,
-        int24 tick,
-        bytes calldata hookData
-    ) external override(BaseHook, IBaseHook) poolManagerOnly returns (bytes4) {
-        BunniHookLogic.afterInitialize(s, caller, key, sqrtPriceX96, tick, hookData, hub);
+    function afterInitialize(address caller, PoolKey calldata key, uint160 sqrtPriceX96, int24 tick)
+        external
+        override(BaseHook, IBaseHook)
+        poolManagerOnly
+        returns (bytes4)
+    {
+        BunniHookLogic.afterInitialize(s, caller, key, sqrtPriceX96, tick, hub);
         return BunniHook.afterInitialize.selector;
     }
 
@@ -512,7 +511,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // store the order output balance before the order execution in transient storage
         // this is used to compute the order output amount
-        uint256 outputBalanceBefore = hookArgs.postHookArgs.currency.isNative()
+        uint256 outputBalanceBefore = hookArgs.postHookArgs.currency.isAddressZero()
             ? weth.balanceOf(address(this))
             : hookArgs.postHookArgs.currency.balanceOfSelf();
         assembly ("memory-safe") {
@@ -536,7 +535,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         // wrap native ETH input to WETH
         // we're implicitly trusting the WETH contract won't charge a fee which is OK in practice
-        if (args.currency.isNative()) {
+        if (args.currency.isAddressZero()) {
             weth.deposit{value: args.amount}();
         }
     }
@@ -581,7 +580,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         assembly ("memory-safe") {
             outputBalanceBefore := tload(REBALANCE_OUTPUT_BALANCE_SLOT)
         }
-        if (args.currency.isNative()) {
+        if (args.currency.isAddressZero()) {
             // unwrap WETH output to native ETH
             orderOutputAmount = weth.balanceOf(address(this));
             weth.withdraw(orderOutputAmount);
@@ -622,7 +621,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return 1 seconds;
     }
 
-    function MIN_RENT(PoolId id) internal view returns (uint128) {
+    function MIN_RENT(PoolId id) internal view virtual override returns (uint128) {
         // minimum rent should be propotional to the pool's BunniToken total supply
         bytes memory hookParams = hub.hookParams(id);
         bytes32 secondWord;
@@ -630,7 +629,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         assembly {
             secondWord := mload(add(hookParams, 64))
         }
-        uint48 minRentMultiplier = uint48(bytes6(secondWord << 56));
+        uint48 minRentMultiplier = uint48(bytes6(secondWord << 32));
         uint256 minRent = hub.bunniTokenOfPool(id).totalSupply().mulWadUp(minRentMultiplier);
 
         // if the min rent value is somehow more than uint128.max, cap it to uint128.max

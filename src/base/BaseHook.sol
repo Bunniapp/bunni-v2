@@ -21,11 +21,7 @@ abstract contract BaseHook is IBaseHook {
         _;
     }
 
-    function afterInitialize(address, PoolKey calldata, uint160, int24, bytes calldata)
-        external
-        virtual
-        override
-        returns (bytes4);
+    function afterInitialize(address, PoolKey calldata, uint160, int24) external virtual override returns (bytes4);
 
     function beforeSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
         external

@@ -69,6 +69,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint256;
 
+    /// @dev ERC-7751 error for wrapping bubbled up reverts
+    error WrappedError(address target, bytes4 selector, bytes reason, bytes details);
+
     enum HookUnlockCallbackType {
         BURN_AND_TAKE,
         SETTLE_AND_MINT,
@@ -141,7 +144,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         if (address(token0) >= address(token1)) {
             (token0, token1) = (token1, token0);
         }
-        poolManager = new PoolManager(1e7);
+        poolManager = new PoolManager(address(this));
 
         // deploy vaults
         vault0 = new ERC4626Mock(token0);
@@ -422,8 +425,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_happyPath(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e16, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e16, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -440,8 +443,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // bid in am-AMM auction
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        uint128 rentDeposit = 1e6;
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
+        uint128 rentDeposit = minRent * 2 days;
+        bunniHook.bid(
+            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
+        );
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
@@ -471,8 +477,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_fail_didNotQueue(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e16, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e16, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -489,8 +495,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // bid in am-AMM auction
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        uint128 rentDeposit = 1e6;
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
+        uint128 rentDeposit = minRent * 2 days;
+        bunniHook.bid(
+            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
+        );
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
@@ -524,8 +533,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_fail_notReady(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e16, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e16, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -542,8 +551,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // bid in am-AMM auction
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        uint128 rentDeposit = 1e6;
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
+        uint128 rentDeposit = minRent * 2 days;
+        bunniHook.bid(
+            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
+        );
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
@@ -570,8 +582,8 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function test_queueWithdraw_fail_gracePeriodExpired(uint256 depositAmount0, uint256 depositAmount1) public {
-        depositAmount0 = bound(depositAmount0, 1e9, type(uint64).max);
-        depositAmount1 = bound(depositAmount1, 1e9, type(uint64).max);
+        depositAmount0 = bound(depositAmount0, 1e16, type(uint64).max);
+        depositAmount1 = bound(depositAmount1, 1e16, type(uint64).max);
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
 
         // make deposit
@@ -588,8 +600,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         // bid in am-AMM auction
         PoolId id = key.toId();
         bunniToken.approve(address(bunniHook), type(uint256).max);
-        uint128 rentDeposit = 1e6;
-        bunniHook.bid(id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, rentDeposit);
+        uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
+        uint128 rentDeposit = minRent * 2 days;
+        bunniHook.bid(
+            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
+        );
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
@@ -650,7 +665,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         uint256 inputAmount = PRECISION / 10;
 
         _mint(key.currency0, address(this), inputAmount);
-        uint256 value = key.currency0.isNative() ? inputAmount : 0;
+        uint256 value = key.currency0.isAddressZero() ? inputAmount : 0;
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -679,7 +694,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         uint256 numSwaps = 10;
         uint256 inputAmount = PRECISION / 1000;
-        uint256 value = key.currency0.isNative() ? inputAmount : 0;
+        uint256 value = key.currency0.isAddressZero() ? inputAmount : 0;
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -716,7 +731,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = 0.15e18;
-        uint256 value = key.currency0.isNative() ? inputAmount : 0;
+        uint256 value = key.currency0.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency0, address(this), inputAmount);
 
@@ -754,7 +769,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION * 2;
-        uint256 value = key.currency0.isNative() ? inputAmount : 0;
+        uint256 value = key.currency0.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency0, address(this), inputAmount);
 
@@ -792,7 +807,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = 5.4e17;
-        uint256 value = key.currency0.isNative() ? inputAmount : 0;
+        uint256 value = key.currency0.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency0, address(this), inputAmount);
 
@@ -833,7 +848,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION / 10;
-        uint256 value = key.currency1.isNative() ? inputAmount : 0;
+        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -865,7 +880,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         uint256 numSwaps = 10;
         uint256 inputAmount = PRECISION / 1000;
-        uint256 value = key.currency1.isNative() ? inputAmount : 0;
+        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
@@ -902,7 +917,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION * 2;
-        uint256 value = key.currency1.isNative() ? inputAmount : 0;
+        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -938,7 +953,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION * 2;
-        uint256 value = key.currency1.isNative() ? inputAmount : 0;
+        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -976,7 +991,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = 2.5e17;
-        uint256 value = key.currency1.isNative() ? inputAmount : 0;
+        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -1032,7 +1047,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         for (uint256 i; i < numSwaps; i++) {
             // zero to one swap
             _mint(key.currency0, address(this), inputAmount);
-            uint256 value = key.currency0.isNative() ? inputAmount : 0;
+            uint256 value = key.currency0.isAddressZero() ? inputAmount : 0;
             if (i == numSwaps - 1) {
                 _swap(
                     key,
@@ -1046,7 +1061,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
             // one to zero swap
             _mint(key.currency1, address(this), inputAmount);
-            value = key.currency1.isNative() ? inputAmount : 0;
+            value = key.currency1.isAddressZero() ? inputAmount : 0;
             if (i == numSwaps - 1) {
                 _swap(
                     key,
@@ -1079,19 +1094,23 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
         // check balances
         assertEq(
-            key.currency0.isNative() ? weth.balanceOf(HOOK_FEE_RECIPIENT) : key.currency0.balanceOf(HOOK_FEE_RECIPIENT),
+            key.currency0.isAddressZero()
+                ? weth.balanceOf(HOOK_FEE_RECIPIENT)
+                : key.currency0.balanceOf(HOOK_FEE_RECIPIENT),
             fee0,
             "protocol fee0 not collected"
         );
         assertEq(
-            key.currency1.isNative() ? weth.balanceOf(HOOK_FEE_RECIPIENT) : key.currency1.balanceOf(HOOK_FEE_RECIPIENT),
+            key.currency1.isAddressZero()
+                ? weth.balanceOf(HOOK_FEE_RECIPIENT)
+                : key.currency1.balanceOf(HOOK_FEE_RECIPIENT),
             fee1,
             "protocol fee1 not collected"
         );
     }
 
     function test_multicall() external {
-        Currency currency0 = CurrencyLibrary.NATIVE;
+        Currency currency0 = CurrencyLibrary.ADDRESS_ZERO;
         Currency currency1 = Currency.wrap(address(token0));
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1);
 
@@ -1162,7 +1181,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
 
     function test_deployMultiplePoolsInSameSubspace() external {
         for (uint256 i; i < 10; i++) {
-            Currency currency0 = CurrencyLibrary.NATIVE;
+            Currency currency0 = CurrencyLibrary.ADDRESS_ZERO;
             Currency currency1 = Currency.wrap(address(token0));
             (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, bytes32(i));
             assertEq(key.fee, i, "nonce not increasing");
@@ -1292,7 +1311,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         ldf_.setMinTick(-100);
 
         // deploy pool and init liquidity
-        Currency currency0 = CurrencyLibrary.NATIVE;
+        Currency currency0 = CurrencyLibrary.ADDRESS_ZERO;
         Currency currency1 = Currency.wrap(address(token0));
         (, PoolKey memory key) =
             _deployPoolAndInitLiquidity(currency0, currency1, ERC4626(address(0)), ERC4626(address(0)), ldf_);
@@ -1312,7 +1331,13 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
             sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(100)
         });
         vm.expectRevert(
-            abi.encodeWithSelector(Hooks.Wrap__FailedHookCall.selector, bunniHook, stdError.arithmeticError)
+            abi.encodeWithSelector(
+                WrappedError.selector,
+                address(bunniHook),
+                IHooks.beforeSwap.selector,
+                stdError.arithmeticError,
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
         );
         swapper.swap(key, params, type(uint256).max, 0);
     }
@@ -2175,11 +2200,16 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         (IBunniToken bt1, PoolKey memory poolKey1) = _deployPoolAndInitLiquidity();
 
         // Step 2: Send bids and rent tokens (BT1) to BunniHook
-        uint128 bidAmount = 1e18;
+        uint128 minRent = uint128(bt1.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
+        uint128 bidAmount = minRent * 10 days;
         deal(address(bt1), address(this), bidAmount);
         bt1.approve(address(bunniHook), bidAmount);
         bunniHook.bid(
-            poolKey1.toId(), address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), 1, bidAmount
+            poolKey1.toId(),
+            address(this),
+            bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)),
+            minRent * 2,
+            bidAmount
         );
 
         // Record the initial BT1 balance of BunniHook
@@ -2480,9 +2510,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     ) internal returns (uint256 shares, uint256 amount0, uint256 amount1) {
         // mint tokens
         uint256 value;
-        if (key_.currency0.isNative()) {
+        if (key_.currency0.isAddressZero()) {
             value = depositAmount0;
-        } else if (key_.currency1.isNative()) {
+        } else if (key_.currency1.isAddressZero()) {
             value = depositAmount1;
         }
         _mint(key_.currency0, depositor, depositAmount0);
@@ -2525,9 +2555,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     ) internal returns (uint256 shares, uint256 amount0, uint256 amount1) {
         // mint tokens
         uint256 value;
-        if (key_.currency0.isNative()) {
+        if (key_.currency0.isAddressZero()) {
             value = depositAmount0.divWadUp(WAD - vaultFee0);
-        } else if (key_.currency1.isNative()) {
+        } else if (key_.currency1.isAddressZero()) {
             value = depositAmount1.divWadUp(WAD - vaultFee1);
         }
         _mint(key_.currency0, depositor, depositAmount0.divWadUp(WAD - vaultFee0));
@@ -2570,7 +2600,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     }
 
     function _mint(Currency currency, address to, uint256 amount) internal {
-        if (currency.isNative()) {
+        if (currency.isAddressZero()) {
             vm.deal(to, to.balance + amount);
         } else if (Currency.unwrap(currency) == address(weth)) {
             vm.deal(address(this), address(this).balance + amount);
@@ -2951,7 +2981,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         fn(
             depositAmount0,
             depositAmount1,
-            CurrencyLibrary.NATIVE,
+            CurrencyLibrary.ADDRESS_ZERO,
             Currency.wrap(address(token1)),
             ERC4626(address(0)),
             ERC4626(address(0)),
@@ -2962,7 +2992,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         fn(
             depositAmount0,
             depositAmount1,
-            CurrencyLibrary.NATIVE,
+            CurrencyLibrary.ADDRESS_ZERO,
             Currency.wrap(address(token1)),
             ERC4626(address(0)),
             vault1,
@@ -2973,7 +3003,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         fn(
             depositAmount0,
             depositAmount1,
-            CurrencyLibrary.NATIVE,
+            CurrencyLibrary.ADDRESS_ZERO,
             Currency.wrap(address(token1)),
             vaultWeth,
             ERC4626(address(0)),
@@ -2984,7 +3014,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         fn(
             depositAmount0,
             depositAmount1,
-            CurrencyLibrary.NATIVE,
+            CurrencyLibrary.ADDRESS_ZERO,
             Currency.wrap(address(token1)),
             vaultWeth,
             vault1,
@@ -3017,7 +3047,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         fn(
             depositAmount0,
             depositAmount1,
-            CurrencyLibrary.NATIVE,
+            CurrencyLibrary.ADDRESS_ZERO,
             Currency.wrap(address(token1)),
             vaultWethWithFee,
             ERC4626(address(0)),
@@ -3028,7 +3058,7 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         fn(
             depositAmount0,
             depositAmount1,
-            CurrencyLibrary.NATIVE,
+            CurrencyLibrary.ADDRESS_ZERO,
             Currency.wrap(address(token1)),
             vaultWethWithFee,
             vault1WithFee,
