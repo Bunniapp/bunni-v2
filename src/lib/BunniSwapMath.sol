@@ -45,8 +45,8 @@ library BunniSwapMath {
     /// @return updatedTick The updated tick after the swap
     /// @return inputAmount The input amount of the swap
     /// @return outputAmount The output amount of the swap
-    function computeSwap(BunniComputeSwapInput memory input)
-        internal
+    function computeSwap(BunniComputeSwapInput calldata input)
+        external
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {

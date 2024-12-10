@@ -28,8 +28,8 @@ import {Ownable} from "./base/Ownable.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {BunniHubLogic} from "./lib/BunniHubLogic.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
-import {Permit2Enabled} from "./base/Permit2Enabled.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
+import {ReentrancyGuard} from "./base/ReentrancyGuard.sol";
 import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 
@@ -37,9 +37,8 @@ import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 /// @author zefram.eth
 /// @notice The main contract LPs interact with. Each BunniKey corresponds to a BunniToken,
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
-/// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
-/// back into the LP position.
-contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
+/// Use deposit()/withdraw() to mint/burn LP tokens.
+contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     using SafeCastLib for *;
     using LibTransient for *;
     using SSTORE2 for address;
@@ -61,6 +60,7 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
     /// -----------------------------------------------------------------------
 
     WETH internal immutable weth;
+    IPermit2 internal immutable permit2;
     IPoolManager internal immutable poolManager;
     IBunniToken internal immutable bunniTokenImplementation;
 
@@ -90,13 +90,14 @@ contract BunniHub is IBunniHub, Permit2Enabled, Ownable {
         IPermit2 permit2_,
         IBunniToken bunniTokenImplementation_,
         address initialOwner
-    ) Permit2Enabled(permit2_) {
+    ) {
         require(
-            address(poolManager_) != address(0) && address(weth_) != address(0)
+            address(permit2_) != address(0) && address(poolManager_) != address(0) && address(weth_) != address(0)
                 && address(bunniTokenImplementation_) != address(0) && initialOwner != address(0)
         );
-        poolManager = poolManager_;
         weth = weth_;
+        permit2 = permit2_;
+        poolManager = poolManager_;
         bunniTokenImplementation = bunniTokenImplementation_;
         _initializeOwner(initialOwner);
     }

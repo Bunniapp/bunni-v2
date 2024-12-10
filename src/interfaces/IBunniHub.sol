@@ -22,7 +22,6 @@ import {IOwnable} from "./IOwnable.sol";
 import {IBunniHook} from "./IBunniHook.sol";
 import {IBunniToken} from "./IBunniToken.sol";
 import {PoolState} from "../types/PoolState.sol";
-import {IPermit2Enabled} from "./IPermit2Enabled.sol";
 import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 
 /// @title BunniHub
@@ -31,7 +30,7 @@ import {ILiquidityDensityFunction} from "./ILiquidityDensityFunction.sol";
 /// which is the ERC20 LP token for the Uniswap V3 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens, and use compound() to compound the swap fees
 /// back into the LP position.
-interface IBunniHub is IUnlockCallback, IPermit2Enabled, IOwnable {
+interface IBunniHub is IUnlockCallback, IOwnable {
     /// @notice Emitted when liquidity is increased via deposit
     /// @param sender The msg.sender address
     /// @param recipient The address of the account that received the share tokens
