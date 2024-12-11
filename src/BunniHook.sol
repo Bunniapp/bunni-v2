@@ -332,42 +332,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         override
         returns (int56[] memory tickCumulatives)
     {
-        PoolId id = key.toId();
-        ObservationState memory state = s.states[id];
-        Slot0 memory slot0 = s.slot0s[id];
-
-        return s.observations[id].observe(
-            state.intermediateObservation,
-            uint32(block.timestamp),
-            secondsAgos,
-            slot0.tick,
-            state.index,
-            state.cardinality
-        );
+        return BunniHookLogic.observe(s, key, secondsAgos);
     }
 
     /// @inheritdoc IBunniHook
     function isValidParams(bytes calldata hookParams) external pure override returns (bool) {
-        DecodedHookParams memory p = BunniHookLogic.decodeHookParams(hookParams);
-        unchecked {
-            return (p.feeMin <= p.feeMax) && (p.feeMax < SWAP_FEE_BASE)
-                && (p.feeQuadraticMultiplier == 0 || p.feeMin == p.feeMax || p.feeTwapSecondsAgo != 0)
-                && (uint256(p.surgeFeeHalfLife) * uint256(p.vaultSurgeThreshold0) * uint256(p.vaultSurgeThreshold1) != 0)
-                && (p.surgeFeeHalfLife < MAX_SURGE_HALFLIFE && p.surgeFeeAutostartThreshold < MAX_SURGE_AUTOSTART_TIME)
-                && (
-                    (
-                        p.rebalanceThreshold == 0 && p.rebalanceMaxSlippage == 0 && p.rebalanceTwapSecondsAgo == 0
-                            && p.rebalanceOrderTTL == 0
-                    )
-                        || (
-                            p.rebalanceThreshold != 0 && p.rebalanceMaxSlippage != 0
-                                && p.rebalanceMaxSlippage < REBALANCE_MAX_SLIPPAGE_BASE && p.rebalanceTwapSecondsAgo != 0
-                                && p.rebalanceTwapSecondsAgo < MAX_REBALANCE_TWAP_SECONDS_AGO && p.rebalanceOrderTTL != 0
-                                && p.rebalanceOrderTTL < MAX_REBALANCE_ORDER_TTL
-                        )
-                ) && (p.oracleMinInterval != 0)
-                && (!p.amAmmEnabled || (p.maxAmAmmFee != 0 && p.maxAmAmmFee <= MAX_AMAMM_FEE && p.minRentMultiplier != 0));
-        }
+        return BunniHookLogic.isValidParams(hookParams);
     }
 
     /// @inheritdoc IBunniHook
