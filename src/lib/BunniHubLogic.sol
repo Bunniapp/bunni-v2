@@ -70,7 +70,8 @@ library BunniHubLogic {
         IBunniToken bunniTokenImplementation;
     }
 
-    uint256 private constant INIT_DATA_TSLOT = uint256(keccak256("INIT_DATA_TSLOT")) - 1;
+    /// @dev Equal to uint256(keccak256("INIT_DATA_TSLOT")) - 1
+    uint256 private constant INIT_DATA_TSLOT = 0x96137a5f1e53cddba547a91858bea8e9bc3edf76a9ee921098105bd17c89344f;
 
     /// -----------------------------------------------------------------------
     /// Deposit
