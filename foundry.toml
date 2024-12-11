@@ -3,12 +3,11 @@ evm_version = "cancun"
 ffi = true
 fs_permissions = [{access = "read-write", path = ".forge-snapshots/"}, {access = "read", path = "./out"}]
 optimizer = true
-optimizer_runs = 20000
+optimizer_runs = 15000
 remappings = [
   "@uniswap/v4-core/=lib/v4-core/",
   "solmate/src/=lib/solmate/src/",
   "solmate/utils/=lib/solmate/src/utils/",
-  "forge-std/src/=lib/forge-std/src/",
 ]
 solc_version = "0.8.25"
 verbosity = 1

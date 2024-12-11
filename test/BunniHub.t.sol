@@ -3,8 +3,6 @@ pragma solidity ^0.8.15;
 
 import "forge-std/Test.sol";
 
-import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
-
 import {IFloodPlain} from "flood-contracts/src/interfaces/IFloodPlain.sol";
 import {IOnChainOrders} from "flood-contracts/src/interfaces/IOnChainOrders.sol";
 
@@ -63,7 +61,7 @@ import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
-contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
+contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     using SafeCastLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
@@ -364,9 +362,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         IBunniHub hub_ = hub;
         (uint256 beforeBalance0, uint256 beforeBalance1) =
             (key.currency0.balanceOf(address(this)), key.currency1.balanceOf(address(this)));
-        snapStart(snapLabel);
+        vm.startSnapshotGas(snapLabel);
         (uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
-        snapEnd();
+        vm.stopSnapshotGas();
 
         // check return values
         // withdraw amount less than original due to rounding
@@ -1088,9 +1086,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         assertEq(claimableAmounts[1], fee1, "claimable fee1 amount incorrect");
 
         // collect fees
-        snapStart(string.concat("collect protocol fees", snapLabel));
+        vm.startSnapshotGas(string.concat("collect protocol fees", snapLabel));
         bunniHook.claimProtocolFees(currencies);
-        snapEnd();
+        vm.stopSnapshotGas();
 
         // check balances
         assertEq(
@@ -2535,11 +2533,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
         if (bytes(snapLabel).length > 0) {
-            snapStart(snapLabel);
+            vm.startSnapshotGas(snapLabel);
         }
         (shares, amount0, amount1) = hub_.deposit{value: value}(depositParams);
         if (bytes(snapLabel).length > 0) {
-            snapEnd();
+            vm.stopSnapshotGas();
         }
         vm.stopPrank();
     }
@@ -2580,11 +2578,11 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
         if (bytes(snapLabel).length > 0) {
-            snapStart(snapLabel);
+            vm.startSnapshotGas(snapLabel);
         }
         (shares, amount0, amount1) = hub_.deposit{value: value}(depositParams);
         if (bytes(snapLabel).length > 0) {
-            snapEnd();
+            vm.stopSnapshotGas();
         }
         vm.stopPrank();
     }
@@ -3074,9 +3072,9 @@ contract BunniHubTest is Test, GasSnapshot, Permit2Deployer, FloodDeployer {
     {
         Uniswapper swapper_ = swapper;
         if (bytes(snapLabel).length > 0) {
-            snapStart(snapLabel);
+            vm.startSnapshotGas(snapLabel);
             swapper_.swap{value: value}(key, params, type(uint256).max, 0);
-            snapEnd();
+            vm.stopSnapshotGas();
         } else {
             swapper_.swap{value: value}(key, params, type(uint256).max, 0);
         }
