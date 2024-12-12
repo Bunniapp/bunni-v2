@@ -362,9 +362,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         IBunniHub hub_ = hub;
         (uint256 beforeBalance0, uint256 beforeBalance1) =
             (key.currency0.balanceOf(address(this)), key.currency1.balanceOf(address(this)));
-        vm.startSnapshotGas(snapLabel);
         (uint256 withdrawAmount0, uint256 withdrawAmount1) = hub_.withdraw(withdrawParams);
-        vm.stopSnapshotGas();
+        vm.snapshotGasLastCall(snapLabel);
 
         // check return values
         // withdraw amount less than original due to rounding
@@ -1086,9 +1085,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         assertEq(claimableAmounts[1], fee1, "claimable fee1 amount incorrect");
 
         // collect fees
-        vm.startSnapshotGas(string.concat("collect protocol fees", snapLabel));
         bunniHook.claimProtocolFees(currencies);
-        vm.stopSnapshotGas();
+        vm.snapshotGasLastCall(string.concat("collect protocol fees", snapLabel));
 
         // check balances
         assertEq(
@@ -2532,12 +2530,9 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
-        if (bytes(snapLabel).length > 0) {
-            vm.startSnapshotGas(snapLabel);
-        }
         (shares, amount0, amount1) = hub_.deposit{value: value}(depositParams);
         if (bytes(snapLabel).length > 0) {
-            vm.stopSnapshotGas();
+            vm.snapshotGasLastCall(snapLabel);
         }
         vm.stopPrank();
     }
@@ -2577,12 +2572,9 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
-        if (bytes(snapLabel).length > 0) {
-            vm.startSnapshotGas(snapLabel);
-        }
         (shares, amount0, amount1) = hub_.deposit{value: value}(depositParams);
         if (bytes(snapLabel).length > 0) {
-            vm.stopSnapshotGas();
+            vm.snapshotGasLastCall(snapLabel);
         }
         vm.stopPrank();
     }
@@ -3072,9 +3064,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     {
         Uniswapper swapper_ = swapper;
         if (bytes(snapLabel).length > 0) {
-            vm.startSnapshotGas(snapLabel);
             swapper_.swap{value: value}(key, params, type(uint256).max, 0);
-            vm.stopSnapshotGas();
+            vm.snapshotGasLastCall(snapLabel);
         } else {
             swapper_.swap{value: value}(key, params, type(uint256).max, 0);
         }
