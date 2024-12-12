@@ -136,7 +136,7 @@ contract BunniQuoter is IBunniQuoter {
             balance1: balance1,
             idleBalance: bunniState.idleBalance
         });
-        shouldSurge == shouldSurge && bunniState.ldfType != LDFType.STATIC;
+        shouldSurge = shouldSurge && bunniState.ldfType != LDFType.STATIC;
         totalLiquidity = totalLiquidity_;
 
         // check surge based on vault share prices

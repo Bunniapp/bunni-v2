@@ -245,7 +245,7 @@ library BunniHookLogic {
             balance1: balance1,
             idleBalance: bunniState.idleBalance
         });
-        shouldSurge == shouldSurge && bunniState.ldfType != LDFType.STATIC; // only surge from LDF if LDF type is not static
+        shouldSurge = shouldSurge && bunniState.ldfType != LDFType.STATIC; // only surge from LDF if LDF type is not static
         if (bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL) s.ldfStates[id] = newLdfState;
 
         if (shouldSurge) {
