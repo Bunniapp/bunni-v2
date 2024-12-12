@@ -611,18 +611,14 @@ library BunniHookLogic {
                 bunniState.reserve1 == 0 ? 0 : reserveBalance1.divWadUp(bunniState.reserve1).toUint120();
 
             // compare with share prices at last swap to see if we need to apply the surge fee
-            if (
-                prevSharePrices.initialized
-                    && (
-                        dist(sharePrice0, prevSharePrices.sharePrice0)
-                            > prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
-                            || dist(sharePrice1, prevSharePrices.sharePrice1)
-                                > prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
-                    )
-            ) {
-                // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
-                shouldSurge = true;
-            }
+            // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
+            shouldSurge = prevSharePrices.initialized
+                && (
+                    dist(sharePrice0, prevSharePrices.sharePrice0)
+                        > prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
+                        || dist(sharePrice1, prevSharePrices.sharePrice1)
+                            > prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
+                );
 
             // update share prices at last swap
             if (
