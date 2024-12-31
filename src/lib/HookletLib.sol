@@ -11,6 +11,7 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import "../base/Constants.sol";
 import {IHooklet} from "../interfaces/IHooklet.sol";
 import {IBunniHub} from "../interfaces/IBunniHub.sol";
+import {IBunniToken} from "../interfaces/IBunniToken.sol";
 
 /// @dev Adapted from Uniswap v4's Hooks.sol
 library HookletLib {
@@ -18,7 +19,9 @@ library HookletLib {
     using HookletLib for IHooklet;
     using FixedPointMathLib for *;
 
-    uint160 internal constant ALL_FLAGS_MASK = 0x3FF;
+    uint160 internal constant ALL_FLAGS_MASK = 0xFFF;
+    uint160 internal constant BEFORE_TRANSFER_FLAG = 1 << 11;
+    uint160 internal constant AFTER_TRANSFER_FLAG = 1 << 10;
     uint160 internal constant BEFORE_INITIALIZE_FLAG = 1 << 9;
     uint160 internal constant AFTER_INITIALIZE_FLAG = 1 << 8;
     uint160 internal constant BEFORE_DEPOSIT_FLAG = 1 << 7;
@@ -95,6 +98,38 @@ library HookletLib {
         if (sender != address(self)) {
             _;
         }
+    }
+
+    /// @dev The hasPermission check is done outside of this function in order to avoid unnecessarily constructing `key`
+    function hookletBeforeTransfer(
+        IHooklet self,
+        address sender,
+        PoolKey memory key,
+        IBunniToken bunniToken,
+        address from,
+        address to,
+        uint256 amount
+    ) internal noSelfCall(self, sender) {
+        self.callHooklet(
+            IHooklet.beforeTransfer.selector,
+            abi.encodeCall(IHooklet.beforeTransfer, (sender, key, bunniToken, from, to, amount))
+        );
+    }
+
+    /// @dev The hasPermission check is done outside of this function in order to avoid unnecessarily constructing `key`
+    function hookletAfterTransfer(
+        IHooklet self,
+        address sender,
+        PoolKey memory key,
+        IBunniToken bunniToken,
+        address from,
+        address to,
+        uint256 amount
+    ) internal noSelfCall(self, sender) {
+        self.callHooklet(
+            IHooklet.afterTransfer.selector,
+            abi.encodeCall(IHooklet.afterTransfer, (sender, key, bunniToken, from, to, amount))
+        );
     }
 
     function hookletBeforeInitialize(IHooklet self, address sender, IBunniHub.DeployBunniTokenParams calldata params)

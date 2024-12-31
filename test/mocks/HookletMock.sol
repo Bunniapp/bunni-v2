@@ -10,6 +10,28 @@ contract HookletMock is IHooklet {
     bool public priceOverridden;
     uint160 public sqrtPriceX96;
 
+    function beforeTransfer(
+        address, /* sender */
+        PoolKey calldata, /* key */
+        IBunniToken, /* bunniToken */
+        address, /* from */
+        address, /* to */
+        uint256 /* amount */
+    ) external returns (bytes4 selector) {
+        return IHooklet.beforeTransfer.selector;
+    }
+
+    function afterTransfer(
+        address, /* sender */
+        PoolKey calldata, /* key */
+        IBunniToken, /* bunniToken */
+        address, /* from */
+        address, /* to */
+        uint256 /* amount */
+    ) external returns (bytes4 selector) {
+        return IHooklet.afterTransfer.selector;
+    }
+
     function beforeInitialize(address, /* sender */ IBunniHub.DeployBunniTokenParams calldata /* params */ )
         external
         pure
