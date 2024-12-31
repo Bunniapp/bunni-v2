@@ -71,6 +71,40 @@ interface IHooklet {
         uint160 sqrtPriceX96;
     }
 
+    /// @notice Called before a BunniToken transfer operation.
+    /// @param sender The address that initiated the transfer.
+    /// @param key The Uniswap v4 pool's key.
+    /// @param bunniToken The BunniToken being transferred.
+    /// @param from The address that is sending the tokens.
+    /// @param to The address that is receiving the tokens.
+    /// @param amount The amount of tokens being transferred.
+    /// @return selector IHooklet.beforeTransfer.selector if the call was successful.
+    function beforeTransfer(
+        address sender,
+        PoolKey calldata key,
+        IBunniToken bunniToken,
+        address from,
+        address to,
+        uint256 amount
+    ) external returns (bytes4 selector);
+
+    /// @notice Called after a BunniToken transfer operation.
+    /// @param sender The address that initiated the transfer.
+    /// @param key The Uniswap v4 pool's key.
+    /// @param bunniToken The BunniToken being transferred.
+    /// @param from The address that is sending the tokens.
+    /// @param to The address that is receiving the tokens.
+    /// @param amount The amount of tokens being transferred.
+    /// @return selector IHooklet.afterTransfer.selector if the call was successful.
+    function afterTransfer(
+        address sender,
+        PoolKey calldata key,
+        IBunniToken bunniToken,
+        address from,
+        address to,
+        uint256 amount
+    ) external returns (bytes4 selector);
+
     /// @notice Called before a pool is initialized.
     /// @param sender The address of the account that initiated the initialization.
     /// @param params The initialization's input parameters.

@@ -3,11 +3,13 @@
 pragma solidity >=0.6.0;
 
 import "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {IERC20} from "./IERC20.sol";
 import {IOwnable} from "./IOwnable.sol";
+import {IHooklet} from "./IHooklet.sol";
 import {IBunniHub} from "./IBunniHub.sol";
 import {IERC20Referrer} from "./IERC20Referrer.sol";
 import {IERC20Lockable} from "./IERC20Lockable.sol";
@@ -27,6 +29,10 @@ interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlo
     function token1() external view returns (Currency);
 
     function poolManager() external view returns (IPoolManager);
+
+    function poolKey() external view returns (PoolKey memory);
+
+    function hooklet() external view returns (IHooklet);
 
     function mint(address to, uint256 amount) external;
 

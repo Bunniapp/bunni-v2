@@ -643,7 +643,16 @@ library BunniHubLogic {
         token = IBunniToken(
             address(env.bunniTokenImplementation).clone3({
                 data: abi.encodePacked(
-                    address(this), params.currency0, params.currency1, params.name, params.symbol, env.poolManager
+                    address(this),
+                    params.currency0,
+                    params.currency1,
+                    params.name,
+                    params.symbol,
+                    env.poolManager,
+                    nonce_,
+                    params.tickSpacing,
+                    params.hooks,
+                    params.hooklet
                 ),
                 salt: keccak256(abi.encodePacked(msgSender, params.salt)) // hash sender into salt to prevent griefing via frontrunning
             })

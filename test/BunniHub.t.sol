@@ -1251,9 +1251,24 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             })
         );
         assertEq(bunniToken.owner(), owner, "owner not set");
+        assertEq(bunniToken.metadataURI(), metadataURI, "metadataURI not set");
+        assertEq(address(bunniToken.hub()), address(hub), "hub not set");
+        assertEq(Currency.unwrap(bunniToken.token0()), Currency.unwrap(currency0), "token0 not set");
+        assertEq(Currency.unwrap(bunniToken.token1()), Currency.unwrap(currency1), "token1 not set");
         assertEq(bunniToken.name(), string(abi.encodePacked(name_)), "name not set");
         assertEq(bunniToken.symbol(), string(abi.encodePacked(symbol_)), "symbol not set");
-        assertEq(bunniToken.metadataURI(), metadataURI, "metadataURI not set");
+        assertEq(address(bunniToken.poolManager()), address(poolManager), "poolManager not set");
+        PoolKey memory bunniTokenKey = bunniToken.poolKey();
+        assertEq(
+            Currency.unwrap(bunniTokenKey.currency0), Currency.unwrap(key.currency0), "bunniToken key.currency0 not set"
+        );
+        assertEq(
+            Currency.unwrap(bunniTokenKey.currency1), Currency.unwrap(key.currency1), "bunniToken key.currency1 not set"
+        );
+        assertEq(bunniTokenKey.fee, key.fee, "bunniToken key.fee not set");
+        assertEq(bunniTokenKey.tickSpacing, key.tickSpacing, "bunniToken key.tickSpacing not set");
+        assertEq(address(bunniTokenKey.hooks), address(bunniHook), "bunniToken key.hooks not set");
+        assertEq(address(bunniToken.hooklet()), address(hooklet_), "bunniToken hooklet not set");
         assertEq(Currency.unwrap(key.currency0), Currency.unwrap(currency0), "currency0 not set");
         assertEq(Currency.unwrap(key.currency1), Currency.unwrap(currency1), "currency1 not set");
         assertEq(key.tickSpacing, TICK_SPACING, "tickSpacing not set");
@@ -2058,16 +2073,28 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         // - before/afterDeposit
         (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
         (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, hooklet);
+        address depositor = address(0x6969);
+
+        // transfer bunniToken
+        // this should trigger:
+        // - before/afterTransfer
+        address recipient = address(0x8008);
+        vm.startPrank(depositor);
+        bunniToken.transfer(recipient, bunniToken.balanceOf(depositor));
+        vm.stopPrank();
+        vm.startPrank(recipient);
+        bunniToken.transfer(depositor, bunniToken.balanceOf(recipient));
+        vm.stopPrank();
 
         // withdraw liquidity
         // this should trigger:
         // - before/afterWithdraw
-        vm.startPrank(address(0x6969));
+        vm.startPrank(depositor);
         hub.withdraw(
             IBunniHub.WithdrawParams({
                 poolKey: key,
-                recipient: address(0x6969),
-                shares: bunniToken.balanceOf(address(0x6969)),
+                recipient: depositor,
+                shares: bunniToken.balanceOf(depositor),
                 amount0Min: 0,
                 amount1Min: 0,
                 deadline: block.timestamp,

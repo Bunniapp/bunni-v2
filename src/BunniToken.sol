@@ -7,6 +7,8 @@ import {Clone} from "clones-with-immutable-args/Clone.sol";
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
 import "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
@@ -18,6 +20,8 @@ import "./base/Constants.sol";
 import {ERC20} from "./base/ERC20.sol";
 import {Ownable} from "./base/Ownable.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
+import {HookletLib} from "./lib/HookletLib.sol";
+import {IHooklet} from "./interfaces/IHooklet.sol";
 import {IBunniHub} from "./interfaces/IBunniHub.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {ERC20Referrer} from "./base/ERC20Referrer.sol";
@@ -31,6 +35,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     /// -----------------------------------------------------------------------
 
     using FixedPointMathLib for *;
+    using HookletLib for IHooklet;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
 
@@ -61,6 +66,18 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     /// -----------------------------------------------------------------------
     /// Immutable params
     /// -----------------------------------------------------------------------
+    /// Packed data layout:
+    /// [0:20] address hub
+    /// [20:40] address token0
+    /// [40:60] address token1
+    /// [60:92] bytes32 name
+    /// [92:124] bytes32 symbol
+    /// [124:144] address poolManager
+    /// [144:147] uint24 fee
+    /// [147:150] int24 tickSpacing
+    /// [150:170] address hooks
+    /// [170:190] address hooklet
+    /// -----------------------------------------------------------------------
 
     function hub() public pure override returns (IBunniHub) {
         return IBunniHub(_getArgAddress(0));
@@ -84,6 +101,20 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
 
     function poolManager() public pure override returns (IPoolManager) {
         return IPoolManager(_getArgAddress(124));
+    }
+
+    function poolKey() public pure override returns (PoolKey memory) {
+        return PoolKey({
+            currency0: Currency.wrap(_getArgAddress(20)),
+            currency1: Currency.wrap(_getArgAddress(40)),
+            fee: _getArgUint24(144),
+            tickSpacing: int24(_getArgUint24(147)),
+            hooks: IHooks(_getArgAddress(150))
+        });
+    }
+
+    function hooklet() public pure override returns (IHooklet) {
+        return IHooklet(_getArgAddress(170));
     }
 
     /// -----------------------------------------------------------------------
@@ -255,7 +286,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     /// @dev Should accrue rewards for the referrers of `from` and `to` in both token0 and token1
     /// If we're minting tokens to an account to referrer == 0 with a non-zero referrer, we need to accrue rewards
     /// to the new referrer before minting to avoid double counting the account's balance for the new referrer.
-    function _beforeTokenTransfer(address from, address to, uint256, uint24 newReferrer) internal override {
+    function _beforeTokenTransfer(address from, address to, uint256 amount, uint24 newReferrer) internal override {
         uint256 rewardPerToken0 = referrerRewardPerToken0;
         uint256 rewardPerToken1 = referrerRewardPerToken1;
 
@@ -330,6 +361,22 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
             );
             referrerRewardPerTokenPaid1[newReferrer] = rewardPerToken1;
         }
+
+        // call hooklet
+        // occurs after the referral reward accrual to prevent the hooklet from
+        // messing up the accounting
+        IHooklet hooklet_ = hooklet();
+        if (hooklet_.hasPermission(HookletLib.BEFORE_TRANSFER_FLAG)) {
+            hooklet_.hookletBeforeTransfer(msg.sender, poolKey(), this, from, to, amount);
+        }
+    }
+
+    function _afterTokenTransfer(address from, address to, uint256 amount) internal override {
+        // call hooklet
+        IHooklet hooklet_ = hooklet();
+        if (hooklet_.hasPermission(HookletLib.AFTER_TRANSFER_FLAG)) {
+            hooklet_.hookletAfterTransfer(msg.sender, poolKey(), this, from, to, amount);
+        }
     }
 
     /// -----------------------------------------------------------------------
@@ -354,5 +401,16 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     ) internal pure returns (uint256) {
         return referrerScore.fullMulDiv(rewardPerToken - rewardPerTokenPaid, REFERRAL_REWARD_PER_TOKEN_PRECISION)
             + rewardUnclaimed;
+    }
+
+    /// @notice Reads an immutable arg with type uint24
+    /// @param argOffset The offset of the arg in the packed data
+    /// @return arg The arg value
+    function _getArgUint24(uint256 argOffset) internal pure returns (uint24 arg) {
+        uint256 offset = _getImmutableArgsOffset();
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            arg := shr(0xe8, calldataload(add(offset, argOffset)))
+        }
     }
 }
