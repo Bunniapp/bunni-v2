@@ -213,16 +213,32 @@ library BunniHookLogic {
             _updateOracle(s, id, slot0.tick, hookParams.oracleMinInterval);
 
         // get TWAP values
-        int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0
-            ? _getTwap(s, id, slot0.tick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality)
-            : int24(0);
-        int24 feeMeanTick = (
-            !feeOverridden && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
-        )
-            ? _getTwap(
+        int24 arithmeticMeanTick;
+        int24 feeMeanTick;
+        bool useLDFTwap = bunniState.twapSecondsAgo != 0;
+        bool useFeeTwap = !feeOverridden && hookParams.feeTwapSecondsAgo != 0;
+        if (useLDFTwap && useFeeTwap) {
+            (int56 tickCumulatives0, int56 tickCumulatives1, int56 tickCumulatives2) = s.observations[id].observeTriple(
+                updatedIntermediate,
+                uint32(block.timestamp),
+                0,
+                bunniState.twapSecondsAgo,
+                hookParams.feeTwapSecondsAgo,
+                slot0.tick,
+                updatedIndex,
+                updatedCardinality
+            );
+            arithmeticMeanTick = int24((tickCumulatives0 - tickCumulatives1) / int56(uint56(bunniState.twapSecondsAgo)));
+            feeMeanTick = int24((tickCumulatives0 - tickCumulatives2) / int56(uint56(hookParams.feeTwapSecondsAgo)));
+        } else if (useLDFTwap) {
+            arithmeticMeanTick = _getTwap(
+                s, id, slot0.tick, bunniState.twapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
+            );
+        } else if (useFeeTwap) {
+            feeMeanTick = _getTwap(
                 s, id, slot0.tick, hookParams.feeTwapSecondsAgo, updatedIntermediate, updatedIndex, updatedCardinality
-            )
-            : int24(0);
+            );
+        }
 
         // query the LDF to get total liquidity and token densities
         bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? s.ldfStates[id] : bytes32(0);
@@ -611,18 +627,14 @@ library BunniHookLogic {
                 bunniState.reserve1 == 0 ? 0 : reserveBalance1.divWadUp(bunniState.reserve1).toUint120();
 
             // compare with share prices at last swap to see if we need to apply the surge fee
-            if (
-                prevSharePrices.initialized
-                    && (
-                        dist(sharePrice0, prevSharePrices.sharePrice0)
-                            > prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
-                            || dist(sharePrice1, prevSharePrices.sharePrice1)
-                                > prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
-                    )
-            ) {
-                // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
-                shouldSurge = true;
-            }
+            // surge fee is applied if the share price has increased by more than 1 / vaultSurgeThreshold
+            shouldSurge = prevSharePrices.initialized
+                && (
+                    dist(sharePrice0, prevSharePrices.sharePrice0)
+                        > prevSharePrices.sharePrice0 / hookParams.vaultSurgeThreshold0
+                        || dist(sharePrice1, prevSharePrices.sharePrice1)
+                            > prevSharePrices.sharePrice1 / hookParams.vaultSurgeThreshold1
+                );
 
             // update share prices at last swap
             if (
