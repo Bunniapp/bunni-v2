@@ -339,6 +339,26 @@ library Oracle {
         }
     }
 
+    function observeTriple(
+        Oracle.Observation[MAX_CARDINALITY] storage self,
+        Oracle.Observation memory intermediate,
+        uint32 time,
+        uint32 secondsAgo0,
+        uint32 secondsAgo1,
+        uint32 secondsAgo2,
+        int24 tick,
+        uint32 index,
+        uint32 cardinality
+    ) internal view returns (int56 tickCumulative0, int56 tickCumulative1, int56 tickCumulative2) {
+        unchecked {
+            if (cardinality == 0) revert OracleCardinalityCannotBeZero();
+
+            tickCumulative0 = observeSingle(self, intermediate, time, secondsAgo0, tick, index, cardinality);
+            tickCumulative1 = observeSingle(self, intermediate, time, secondsAgo1, tick, index, cardinality);
+            tickCumulative2 = observeSingle(self, intermediate, time, secondsAgo2, tick, index, cardinality);
+        }
+    }
+
     /// @notice Returns the accumulator values as of each time seconds ago from the given time in the array of `secondsAgos`
     /// @dev Reverts if `secondsAgos` > oldest observation
     /// @param self The stored oracle array

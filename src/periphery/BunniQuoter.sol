@@ -111,9 +111,9 @@ contract BunniQuoter is IBunniQuoter {
 
         // get TWAP values
         int24 arithmeticMeanTick = bunniState.twapSecondsAgo != 0 ? queryTwap(key, bunniState.twapSecondsAgo) : int24(0);
-        int24 feeMeanTick = (
-            !feeOverridden && hookParams.feeMin != hookParams.feeMax && hookParams.feeQuadraticMultiplier != 0
-        ) ? queryTwap(key, hookParams.feeTwapSecondsAgo) : int24(0);
+        int24 feeMeanTick = (!feeOverridden && hookParams.feeTwapSecondsAgo != 0)
+            ? queryTwap(key, hookParams.feeTwapSecondsAgo)
+            : int24(0);
 
         // query the LDF to get total liquidity and token densities
         bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? hook.ldfStates(id) : bytes32(0);
