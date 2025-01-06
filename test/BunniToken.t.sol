@@ -66,7 +66,6 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     BunniHook internal bunniHook = BunniHook(payable(address(uint160(HOOK_FLAGS))));
     IPoolManager internal poolManager;
     WETH internal weth;
-    IPermit2 internal permit2;
     IFloodPlain internal floodPlain;
     BunniZone internal zone;
     IBunniToken internal bunniToken;
@@ -80,12 +79,12 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         vm.warp(1e9); // init block timestamp to reasonable value
 
         weth = new WETH();
-        permit2 = _deployPermit2();
+        _deployPermit2(vm);
         poolManager = new PoolManager(address(this));
-        floodPlain = _deployFlood(address(permit2));
+        floodPlain = _deployFlood(address(PERMIT2));
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, permit2, new BunniToken(), address(this));
+        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this));
 
         // deploy zone
         zone = new BunniZone(address(this));
@@ -788,8 +787,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             referrer: referrer
         });
         vm.startPrank(depositor);
-        token1.approve(address(permit2), type(uint256).max);
-        permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
+        token1.approve(address(PERMIT2), type(uint256).max);
+        PERMIT2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
         (shares,,) = hub.deposit{value: value}(depositParams);
         vm.stopPrank();
     }

@@ -119,7 +119,6 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     ILiquidityDensityFunction internal ldf;
     Uniswapper internal swapper;
     WETH internal weth;
-    IPermit2 internal permit2;
     IFloodPlain internal floodPlain;
     BunniLens internal lens;
     BunniZone internal zone;
@@ -130,11 +129,11 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         vm.warp(1e9); // init block timestamp to reasonable value
 
         weth = new WETH();
-        permit2 = _deployPermit2();
+        _deployPermit2(vm);
         MulticallerEtcher.multicallerWithSender();
         MulticallerEtcher.multicallerWithSigner();
 
-        floodPlain = _deployFlood(address(permit2));
+        floodPlain = _deployFlood(address(PERMIT2));
 
         // initialize uniswap
         token0 = new ERC20Mock();
@@ -185,7 +184,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         swapper = new Uniswapper(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, permit2, new BunniToken(), address(this));
+        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this));
 
         // deploy zone
         zone = new BunniZone(address(this));
@@ -239,20 +238,20 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         ldf = new GeometricDistribution();
 
         // approve tokens
-        token0.approve(address(permit2), type(uint256).max);
+        token0.approve(address(PERMIT2), type(uint256).max);
         token0.approve(address(swapper), type(uint256).max);
         token0.approve(address(floodPlain), type(uint256).max);
-        token1.approve(address(permit2), type(uint256).max);
+        token1.approve(address(PERMIT2), type(uint256).max);
         token1.approve(address(swapper), type(uint256).max);
         token1.approve(address(floodPlain), type(uint256).max);
-        weth.approve(address(permit2), type(uint256).max);
+        weth.approve(address(PERMIT2), type(uint256).max);
         weth.approve(address(swapper), type(uint256).max);
         weth.approve(address(floodPlain), type(uint256).max);
 
         // permit2 approve tokens to hub
-        permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
 
         // whitelist address(this) as fulfiller
         zone.setIsWhitelisted(address(this), true);
@@ -2246,10 +2245,10 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         // approve tokens
         vm.startPrank(address(0x6969));
-        bt1.approve(address(permit2), type(uint256).max);
-        attackerToken.approve(address(permit2), type(uint256).max);
-        permit2.approve(address(bt1), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(attackerToken), address(hub), type(uint160).max, type(uint48).max);
+        bt1.approve(address(PERMIT2), type(uint256).max);
+        attackerToken.approve(address(PERMIT2), type(uint256).max);
+        PERMIT2.approve(address(bt1), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(attackerToken), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
 
         (Currency currency0, Currency currency1) = address(bt1) < address(attackerToken)
@@ -2873,12 +2872,12 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         uint256 depositAmount0 = PRECISION;
         uint256 depositAmount1 = PRECISION;
         vm.startPrank(address(0x6969));
-        token0.approve(address(permit2), type(uint256).max);
-        token1.approve(address(permit2), type(uint256).max);
-        weth.approve(address(permit2), type(uint256).max);
-        permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
+        token0.approve(address(PERMIT2), type(uint256).max);
+        token1.approve(address(PERMIT2), type(uint256).max);
+        weth.approve(address(PERMIT2), type(uint256).max);
+        PERMIT2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
         uint256 vaultFee0 = address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
             || address(vault0_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
@@ -2932,12 +2931,12 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         // make initial deposit to avoid accounting for MIN_INITIAL_SHARES
         vm.startPrank(address(0x6969));
-        token0.approve(address(permit2), type(uint256).max);
-        token1.approve(address(permit2), type(uint256).max);
-        weth.approve(address(permit2), type(uint256).max);
-        permit2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
-        permit2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
+        token0.approve(address(PERMIT2), type(uint256).max);
+        token1.approve(address(PERMIT2), type(uint256).max);
+        weth.approve(address(PERMIT2), type(uint256).max);
+        PERMIT2.approve(address(token0), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
+        PERMIT2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
         uint256 vaultFee0 = address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
             || address(vault0_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
@@ -3108,7 +3107,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         returns (bytes32 orderHash, bytes32 permit2Hash)
     {
         (orderHash, permit2Hash) = OrderHashMemory.hashAsWitness(order, address(floodPlain));
-        permit2Hash = keccak256(abi.encodePacked("\x19\x01", IEIP712(permit2).DOMAIN_SEPARATOR(), permit2Hash));
+        permit2Hash = keccak256(abi.encodePacked("\x19\x01", IEIP712(PERMIT2).DOMAIN_SEPARATOR(), permit2Hash));
     }
 
     /// @notice Precompute a contract address deployed via CREATE2

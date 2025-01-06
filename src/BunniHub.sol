@@ -30,7 +30,6 @@ import {BunniHubLogic} from "./lib/BunniHubLogic.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
 import {ReentrancyGuard} from "./base/ReentrancyGuard.sol";
-import {AdditionalCurrencyLibrary} from "./lib/AdditionalCurrencyLib.sol";
 import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 
 /// @title BunniHub
@@ -46,7 +45,6 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     using PoolIdLibrary for PoolKey;
     using SafeTransferLib for address;
     using CurrencyLibrary for Currency;
-    using AdditionalCurrencyLibrary for Currency;
     using TransientStateLibrary for IPoolManager;
 
     /// -----------------------------------------------------------------------
@@ -396,7 +394,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
                 if (msgValue < rawAmount0) revert BunniHub__MsgValueInsufficient();
                 paid0 = poolManager.settle{value: rawAmount0}();
             } else {
-                key.currency0.safeTransferFromPermit2(permit2, msgSender, address(poolManager), rawAmount0);
+                Currency.unwrap(key.currency0).safeTransferFrom2(msgSender, address(poolManager), rawAmount0);
                 paid0 = poolManager.settle();
             }
 
@@ -411,7 +409,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
                 if (msgValue < rawAmount1) revert BunniHub__MsgValueInsufficient();
                 paid1 = poolManager.settle{value: rawAmount1}();
             } else {
-                key.currency1.safeTransferFromPermit2(permit2, msgSender, address(poolManager), rawAmount1);
+                Currency.unwrap(key.currency1).safeTransferFrom2(msgSender, address(poolManager), rawAmount1);
                 paid1 = poolManager.settle();
             }
 

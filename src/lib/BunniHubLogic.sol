@@ -45,7 +45,6 @@ import {IHooklet} from "../interfaces/IHooklet.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
-import {AdditionalCurrencyLibrary} from "./AdditionalCurrencyLib.sol";
 
 library BunniHubLogic {
     using LibTransient for *;
@@ -61,7 +60,6 @@ library BunniHubLogic {
     using FixedPointMathLib for uint128;
     using FixedPointMathLib for uint256;
     using ClonesWithImmutableArgs for address;
-    using AdditionalCurrencyLibrary for Currency;
 
     struct Env {
         WETH weth;
