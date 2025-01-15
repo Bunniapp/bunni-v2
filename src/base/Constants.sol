@@ -26,6 +26,3 @@ uint16 constant MAX_SURGE_AUTOSTART_TIME = 1 hours;
 uint16 constant MAX_REBALANCE_MAX_SLIPPAGE = 0.25e5; // max value for rebalanceMaxSlippage is 25%
 uint16 constant MAX_REBALANCE_TWAP_SECONDS_AGO = 3 hours;
 uint16 constant MAX_REBALANCE_ORDER_TTL = 1 hours;
-
-/// @dev The max referrer value.
-uint24 constant MAX_REFERRER = 0x7fffff;

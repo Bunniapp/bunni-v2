@@ -309,7 +309,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             refundRecipient: address(this),
             vaultFee0: 0,
             vaultFee1: 0,
-            referrer: 0
+            referrer: address(0)
         });
         vm.expectRevert(BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken.selector);
         hub.deposit{value: 1 ether}(depositParams);
@@ -1130,7 +1130,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
                 refundRecipient: address(this),
                 vaultFee0: 0,
                 vaultFee1: 0,
-                referrer: 0
+                referrer: address(0)
             })
         );
         data[1] = abi.encodeWithSelector(
@@ -1146,7 +1146,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
                 refundRecipient: address(this),
                 vaultFee0: 0,
                 vaultFee1: 0,
-                referrer: 0
+                referrer: address(0)
             })
         );
 
@@ -1847,7 +1847,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             refundRecipient: address(this),
             vaultFee0: 0,
             vaultFee1: 0,
-            referrer: 0
+            referrer: address(0)
         });
         (bool success, uint256 shares, uint256 amount0, uint256 amount1) =
             quoter.quoteDeposit(address(this), depositParams);
@@ -2204,7 +2204,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             refundRecipient: address(this),
             vaultFee0: 0,
             vaultFee1: 0,
-            referrer: 0
+            referrer: address(0)
         });
         _mint(key.currency0, address(this), depositParams.amount0Desired);
         _mint(key.currency1, address(this), depositParams.amount1Desired);
@@ -2416,7 +2416,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
                 refundRecipient: address(this),
                 vaultFee0: 0,
                 vaultFee1: 0,
-                referrer: 0
+                referrer: address(0)
             })
         );
     }
@@ -2552,7 +2552,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             refundRecipient: depositor,
             vaultFee0: 0,
             vaultFee1: 0,
-            referrer: 0
+            referrer: address(0)
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);
@@ -2594,7 +2594,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             refundRecipient: depositor,
             vaultFee0: vaultFee0,
             vaultFee1: vaultFee1,
-            referrer: 0
+            referrer: address(0)
         });
         IBunniHub hub_ = hub;
         vm.startPrank(depositor);

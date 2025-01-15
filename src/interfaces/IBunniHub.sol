@@ -70,10 +70,9 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @param bunniToken The BunniToken associated with the call
     /// @param poolId The Uniswap V4 pool's ID
     event NewBunni(IBunniToken indexed bunniToken, PoolId indexed poolId);
-    /// @notice Emitted when a new referrer is set
-    /// @param referrer The referrer ID
-    /// @param referrerAddress The referrer address
-    event SetReferrerAddress(uint24 indexed referrer, address indexed referrerAddress);
+    /// @notice Emitted when the recipient of referral rewards of the default referrer address(0) is set
+    /// @param newReferralRewardRecipient The new recipient of referral rewards of the default referrer address(0)
+    event SetReferralRewardRecipient(address indexed newReferralRewardRecipient);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
@@ -97,7 +96,7 @@ interface IBunniHub is IUnlockCallback, IOwnable {
         uint256 vaultFee0;
         uint256 vaultFee1;
         uint256 deadline;
-        uint24 referrer;
+        address referrer;
     }
 
     /// @notice Increases the amount of liquidity in a position, with tokens paid by the `msg.sender`
@@ -267,10 +266,9 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @param newIdleBalance The new idle balance of the pool
     function hookSetIdleBalance(PoolKey calldata key, IdleBalance newIdleBalance) external;
 
-    /// @notice Sets the address that corresponds to a referrer ID. Only callable by the owner or the current referrer address.
-    /// @param referrer The referrer ID
-    /// @param referrerAddress The address of the referrer
-    function setReferrerAddress(uint24 referrer, address referrerAddress) external;
+    /// @notice Sets the address of the recipient of referral rewards belonging to the default referrer address(0). Only callable by the owner.
+    /// @param newReferralRewardRecipient The new address of the recipient of referral rewards
+    function setReferralRewardRecipient(address newReferralRewardRecipient) external;
 
     /// @notice Called by key.hooks to lock BunniHub before a rebalance order's execution.
     /// @param key The PoolKey of the Uniswap v4 pool
@@ -304,8 +302,8 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @notice The idle balance of a Bunni pool.
     function idleBalance(PoolId poolId) external view returns (IdleBalance);
 
-    /// @notice The address that corresponds to a given referrer ID.
-    function getReferrerAddress(uint24 referrer) external view returns (address);
+    /// @notice The address of the recipient of referral rewards belonging to the default referrer address(0).
+    function getReferralRewardRecipient() external view returns (address);
 
     /// @notice The init data of a Bunni pool. Stored in transient storage and used
     /// during the IHooks.afterInitialize() call.
