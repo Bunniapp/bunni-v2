@@ -18,7 +18,7 @@ import {IERC20Lockable} from "./IERC20Lockable.sol";
 /// @author zefram.eth
 /// @notice ERC20 token that represents a user's LP position
 interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlockCallback {
-    event ClaimReferralRewards(uint24 indexed referrer, uint256 reward0, uint256 reward1);
+    event ClaimReferralRewards(address indexed referrer, uint256 reward0, uint256 reward1);
 
     event SetMetadataURI(string newURI);
 
@@ -36,7 +36,7 @@ interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlo
 
     function mint(address to, uint256 amount) external;
 
-    function mint(address to, uint256 amount, uint24 referrer) external;
+    function mint(address to, uint256 amount, address referrer) external;
 
     function burn(address from, uint256 amount) external;
 
@@ -57,17 +57,16 @@ interface IBunniToken is IERC20, IERC20Referrer, IERC20Lockable, IOwnable, IUnlo
     function distributeReferralRewards(bool isToken0, uint256 amount) external;
 
     /// @notice Claims referral rewards for a given referrer ID. Can be called by anyone.
-    /// Reverts if the referrer ID has not been registered in the hub.
-    /// @param referrer The referrer ID to claim rewards for
+    /// @param referrer The referrer to claim rewards for
     /// @return reward0 The amount of token0 rewards claimed
     /// @return reward1 The amount of token1 rewards claimed
-    function claimReferralRewards(uint24 referrer) external returns (uint256 reward0, uint256 reward1);
+    function claimReferralRewards(address referrer) external returns (uint256 reward0, uint256 reward1);
 
     /// @notice Returns the amount of referral rewards claimable by a given referrer ID.
-    /// @param referrer The referrer ID to check rewards for
+    /// @param referrer The referrer to check rewards for
     /// @return reward0 The amount of token0 rewards claimable
     /// @return reward1 The amount of token1 rewards claimable
-    function getClaimableReferralRewards(uint24 referrer) external view returns (uint256 reward0, uint256 reward1);
+    function getClaimableReferralRewards(address referrer) external view returns (uint256 reward0, uint256 reward1);
 
     /// @notice Increments the EIP-2612 permit nonce of the caller to invalidate permit signatures.
     function incrementNonce() external;

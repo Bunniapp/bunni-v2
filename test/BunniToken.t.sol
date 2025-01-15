@@ -188,13 +188,9 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         poolManager.setOperator(address(bunniToken), true);
     }
 
-    function test_distribute_singleDistro_singleReferrer(bool isToken0, uint256 amount, uint24 referrer) public {
+    function test_distribute_singleDistro_singleReferrer(bool isToken0, uint256 amount, address referrer) public {
+        vm.assume(referrer != address(0));
         amount = bound(amount, 1e5, 1e36);
-        referrer = uint24(bound(referrer, 1, MAX_REFERRER));
-
-        // register referrer
-        address referrerAddress = makeAddr("referrer");
-        hub.setReferrerAddress(referrer, referrerAddress);
 
         // mint bunni token using referrer
         uint256 shares = _makeDeposit(key, 1 ether, 1 ether, address(this), referrer);
@@ -223,22 +219,18 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer);
         assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
         assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
-        assertEq(token.balanceOf(referrerAddress), isToken0 ? claimableAmount0 : claimableAmount1, "balance incorrect");
+        assertEq(token.balanceOf(referrer), isToken0 ? claimableAmount0 : claimableAmount1, "balance incorrect");
     }
 
     function test_distribute_doubleDistro_singleReferrer(
         bool isToken0,
         uint256 amountFirst,
         uint256 amountSecond,
-        uint24 referrer
+        address referrer
     ) public {
+        vm.assume(referrer != address(0));
         amountFirst = bound(amountFirst, 1e5, 1e36);
         amountSecond = bound(amountSecond, 1e5, 1e36);
-        referrer = uint24(bound(referrer, 1, MAX_REFERRER));
-
-        // register referrer
-        address referrerAddress = makeAddr("referrer");
-        hub.setReferrerAddress(referrer, referrerAddress);
 
         // mint bunni token using referrer
         uint256 shares = _makeDeposit(key, 1 ether, 1 ether, address(this), referrer);
@@ -269,7 +261,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer);
         assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
         assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
-        assertEq(token.balanceOf(referrerAddress), isToken0 ? claimableAmount0 : claimableAmount1, "balance incorrect");
+        assertEq(token.balanceOf(referrer), isToken0 ? claimableAmount0 : claimableAmount1, "balance incorrect");
     }
 
     function test_distribute_singleDistro_multipleReferrers(bool isToken0, uint256 amount) public {
@@ -279,15 +271,13 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         address[] memory referrerAddresses = new address[](numReferrers);
         for (uint256 i; i < numReferrers; i++) {
             // register referrer
-            uint24 referrer = uint24(i + 1);
-            referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(referrer).toString()));
-            hub.setReferrerAddress(referrer, referrerAddresses[i]);
+            referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(i + 1).toString()));
 
             // mint bunni token using referrer
             uint256 shares = _makeDeposit(
-                key, uint256(referrer) * 1 ether, uint256(referrer) * 1 ether, referrerAddresses[i], referrer
+                key, uint256(i + 1) * 1 ether, uint256(i + 1) * 1 ether, referrerAddresses[i], referrerAddresses[i]
             );
-            assertEq(bunniToken.scoreOf(referrer), shares, "score incorrect");
+            assertEq(bunniToken.scoreOf(referrerAddresses[i]), shares, "score incorrect");
         }
 
         // distribute `amount` tokens to referrers
@@ -297,11 +287,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         uint256 totalScore = bunniToken.totalSupply();
         for (uint256 i; i < numReferrers; i++) {
-            uint24 referrer = uint24(i + 1);
-
             // check claimable amounts
-            uint256 referrerScore = bunniToken.scoreOf(referrer);
-            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(referrer);
+            uint256 referrerScore = bunniToken.scoreOf(referrerAddresses[i]);
+            (uint256 claimableAmount0, uint256 claimableAmount1) =
+                bunniToken.getClaimableReferralRewards(referrerAddresses[i]);
             (uint256 expectedClaimableAmount0, uint256 expectedClaimableAmount1) = isToken0
                 ? (amount * referrerScore / totalScore, uint256(0))
                 : (uint256(0), amount * referrerScore / totalScore);
@@ -318,7 +307,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
             // claim rewards
             uint256 beforeBalance = token.balanceOf(referrerAddresses[i]);
-            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrerAddresses[i]);
             assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
             assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
             assertEq(
@@ -339,15 +328,13 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         address[] memory referrerAddresses = new address[](numReferrers);
         for (uint256 i; i < numReferrers; i++) {
             // register referrer
-            uint24 referrer = uint24(i + 1);
-            referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(referrer).toString()));
-            hub.setReferrerAddress(referrer, referrerAddresses[i]);
+            referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(i + 1).toString()));
 
             // mint bunni token using referrer
             uint256 shares = _makeDeposit(
-                key, uint256(referrer) * 1 ether, uint256(referrer) * 1 ether, referrerAddresses[i], referrer
+                key, uint256(i + 1) * 1 ether, uint256(i + 1) * 1 ether, referrerAddresses[i], referrerAddresses[i]
             );
-            assertEq(bunniToken.scoreOf(referrer), shares, "score incorrect");
+            assertEq(bunniToken.scoreOf(referrerAddresses[i]), shares, "score incorrect");
         }
 
         // distribute `amountFirst` tokens and then `amountSecond` tokens to referrers
@@ -359,11 +346,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         uint256 totalScore = bunniToken.totalSupply();
         for (uint256 i; i < numReferrers; i++) {
-            uint24 referrer = uint24(i + 1);
-
             // check claimable amounts
-            uint256 referrerScore = bunniToken.scoreOf(referrer);
-            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(referrer);
+            uint256 referrerScore = bunniToken.scoreOf(referrerAddresses[i]);
+            (uint256 claimableAmount0, uint256 claimableAmount1) =
+                bunniToken.getClaimableReferralRewards(referrerAddresses[i]);
             (uint256 expectedClaimableAmount0, uint256 expectedClaimableAmount1) = isToken0
                 ? (amountTotal * referrerScore / totalScore, uint256(0))
                 : (uint256(0), amountTotal * referrerScore / totalScore);
@@ -380,7 +366,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
             // claim rewards
             uint256 beforeBalance = token.balanceOf(referrerAddresses[i]);
-            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrerAddresses[i]);
             assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
             assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
             assertEq(
@@ -399,15 +385,13 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         address[] memory referrerAddresses = new address[](numReferrers);
         for (uint256 i; i < numReferrers; i++) {
             // register referrer
-            uint24 referrer = uint24(i + 1);
-            referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(referrer).toString()));
-            hub.setReferrerAddress(referrer, referrerAddresses[i]);
+            referrerAddresses[i] = makeAddr(string.concat("referrer-", uint256(i + 1).toString()));
 
             // mint bunni token using referrer
             uint256 shares = _makeDeposit(
-                key, uint256(referrer) * 1 ether, uint256(referrer) * 1 ether, referrerAddresses[i], referrer
+                key, uint256(i + 1) * 1 ether, uint256(i + 1) * 1 ether, referrerAddresses[i], referrerAddresses[i]
             );
-            assertEq(bunniToken.scoreOf(referrer), shares, "score incorrect");
+            assertEq(bunniToken.scoreOf(referrerAddresses[i]), shares, "score incorrect");
         }
 
         // distribute `amount0` currency0 and `amount1` currency1 to referrers
@@ -418,11 +402,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         uint256 totalScore = bunniToken.totalSupply();
         for (uint256 i; i < numReferrers; i++) {
-            uint24 referrer = uint24(i + 1);
-
             // check claimable amounts
-            uint256 referrerScore = bunniToken.scoreOf(referrer);
-            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(referrer);
+            uint256 referrerScore = bunniToken.scoreOf(referrerAddresses[i]);
+            (uint256 claimableAmount0, uint256 claimableAmount1) =
+                bunniToken.getClaimableReferralRewards(referrerAddresses[i]);
             (uint256 expectedClaimableAmount0, uint256 expectedClaimableAmount1) =
                 (amount0 * referrerScore / totalScore, amount1 * referrerScore / totalScore);
             if (dist(claimableAmount0, expectedClaimableAmount0) > 1) {
@@ -439,7 +422,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             // claim rewards
             uint256 beforeBalance0 = currency0.balanceOf(referrerAddresses[i]);
             uint256 beforeBalance1 = currency1.balanceOf(referrerAddresses[i]);
-            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrerAddresses[i]);
             assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
             assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
             assertEq(currency0.balanceOf(referrerAddresses[i]) - beforeBalance0, claimableAmount0, "balance0 incorrect");
@@ -452,16 +435,14 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         // register referrer
         address referrer1Address = makeAddr("referrer1");
-        hub.setReferrerAddress(1, referrer1Address);
         address referrer2Address = makeAddr("referrer2");
-        hub.setReferrerAddress(2, referrer2Address);
 
         // mint bunni token using referrers
-        uint256 shares1 = _makeDeposit(key, 1 ether, 1 ether, referrer1Address, 1);
-        assertEq(bunniToken.scoreOf(1), shares1, "score incorrect");
+        uint256 shares1 = _makeDeposit(key, 1 ether, 1 ether, referrer1Address, referrer1Address);
+        assertEq(bunniToken.scoreOf(referrer1Address), shares1, "score incorrect");
 
-        uint256 shares2 = _makeDeposit(key, 1 ether, 1 ether, referrer2Address, 2);
-        assertEq(bunniToken.scoreOf(2), shares2, "score incorrect");
+        uint256 shares2 = _makeDeposit(key, 1 ether, 1 ether, referrer2Address, referrer2Address);
+        assertEq(bunniToken.scoreOf(referrer2Address), shares2, "score incorrect");
 
         // distribute `amount` tokens to referrers
         Currency token = isToken0 ? currency0 : currency1;
@@ -478,7 +459,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         // since it was after the distribution
         uint256 bunniTotalSupply = bunniToken.totalSupply();
         {
-            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(1);
+            (uint256 claimableAmount0, uint256 claimableAmount1) =
+                bunniToken.getClaimableReferralRewards(referrer1Address);
             if (isToken0) {
                 if (dist(claimableAmount0, amount * shares1 / bunniTotalSupply) > 1) {
                     assertApproxEqRel(
@@ -503,7 +485,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
             // claim rewards
             uint256 beforeBalance = token.balanceOf(referrer1Address);
-            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(1);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer1Address);
             assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
             assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
             assertEq(
@@ -514,7 +496,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         }
 
         {
-            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(2);
+            (uint256 claimableAmount0, uint256 claimableAmount1) =
+                bunniToken.getClaimableReferralRewards(referrer2Address);
             if (isToken0) {
                 if (dist(claimableAmount0, amount * shares2 / bunniTotalSupply) > 1) {
                     assertApproxEqRel(
@@ -539,7 +522,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
             // claim rewards
             uint256 beforeBalance = token.balanceOf(referrer2Address);
-            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(2);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer2Address);
             assertEq(claimedAmount0, claimableAmount0, "claimedAmount0 incorrect");
             assertEq(claimedAmount1, claimableAmount1, "claimedAmount1 incorrect");
             assertEq(
@@ -562,17 +545,15 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
         // register referrers
         address referrer1Address = makeAddr("referrer1");
-        hub.setReferrerAddress(1, referrer1Address);
         address referrer2Address = makeAddr("referrer2");
-        hub.setReferrerAddress(2, referrer2Address);
 
         // mint bunni token to referrer 1
-        uint256 shares1 = _makeDeposit(key, 1 ether, 1 ether, referrer1Address, 1);
-        assertEq(bunniToken.scoreOf(1), shares1, "score incorrect");
+        uint256 shares1 = _makeDeposit(key, 1 ether, 1 ether, referrer1Address, referrer1Address);
+        assertEq(bunniToken.scoreOf(referrer1Address), shares1, "score incorrect");
 
         // mint bunni token to referrer 2
-        uint256 shares2 = _makeDeposit(key, 2 ether, 2 ether, referrer2Address, 2);
-        assertEq(bunniToken.scoreOf(2), shares2, "score incorrect");
+        uint256 shares2 = _makeDeposit(key, 2 ether, 2 ether, referrer2Address, referrer2Address);
+        assertEq(bunniToken.scoreOf(referrer2Address), shares2, "score incorrect");
 
         // distribute `amountFirst` tokens
         Currency token = isToken0 ? currency0 : currency1;
@@ -599,7 +580,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         // check claimable amounts
         uint256 bunniTotalSupply = bunniToken.totalSupply();
         {
-            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(1);
+            (uint256 claimableAmount0, uint256 claimableAmount1) =
+                bunniToken.getClaimableReferralRewards(referrer1Address);
             uint256 expectedClaimableAmount =
                 amountFirst * shares1 / bunniTotalSupply + amountSecond * (shares1 + shares2) / bunniTotalSupply;
             if (isToken0) {
@@ -620,7 +602,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
             // claim rewards
             uint256 beforeBalance = token.balanceOf(referrer1Address);
-            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(1);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer1Address);
             assertEq(claimedAmount0, claimableAmount0, "referrer1 claimedAmount0 incorrect");
             assertEq(claimedAmount1, claimableAmount1, "referrer1 claimedAmount1 incorrect");
             assertEq(
@@ -631,7 +613,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         }
 
         {
-            (uint256 claimableAmount0, uint256 claimableAmount1) = bunniToken.getClaimableReferralRewards(2);
+            (uint256 claimableAmount0, uint256 claimableAmount1) =
+                bunniToken.getClaimableReferralRewards(referrer2Address);
             uint256 expectedClaimableAmount =
                 amountFirst * shares2 / bunniTotalSupply + amountThird * (shares1 + shares2) / bunniTotalSupply;
             if (isToken0) {
@@ -652,7 +635,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
 
             // claim rewards
             uint256 beforeBalance = token.balanceOf(referrer2Address);
-            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(2);
+            (uint256 claimedAmount0, uint256 claimedAmount1) = bunniToken.claimReferralRewards(referrer2Address);
             assertEq(claimedAmount0, claimableAmount0, "referrer2 claimedAmount0 incorrect");
             assertEq(claimedAmount1, claimableAmount1, "referrer2 claimedAmount1 incorrect");
             assertEq(
@@ -667,14 +650,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         bool isToken0 = true;
         uint256 amountToDistribute = 1 ether;
         // register depositors and referrers
-        uint24 referrer1 = 0;
-        uint24 referrer2 = 1;
         address depositor1 = makeAddr("depositor1");
-        address referrer1Address = makeAddr("referrer1");
-        hub.setReferrerAddress(referrer1, referrer1Address);
+        address referrer1 = makeAddr("referrer1");
         address depositor2 = makeAddr("depositor2");
-        address referrer2Address = makeAddr("referrer2");
-        hub.setReferrerAddress(referrer2, referrer2Address);
+        address referrer2 = makeAddr("referrer2");
         //
         // 1. `Depositor1` deposits 1 ether. referrer1 gets score
         console.log("Depositor1 deposits token using referrer1");
@@ -760,7 +739,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         uint256 depositAmount0,
         uint256 depositAmount1,
         address depositor,
-        uint24 referrer
+        address referrer
     ) internal returns (uint256 shares) {
         // mint tokens
         uint256 value;

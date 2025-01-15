@@ -49,19 +49,19 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     uint256 public referrerRewardPerToken0;
 
     /// @notice The referrer reward per token0 paid
-    mapping(uint24 => uint256) public referrerRewardPerTokenPaid0;
+    mapping(address referrer => uint256) public referrerRewardPerTokenPaid0;
 
     /// @notice The referrer reward in token0 unclaimed
-    mapping(uint24 => uint256) public referrerRewardUnclaimed0;
+    mapping(address referrer => uint256) public referrerRewardUnclaimed0;
 
     /// @notice The referrer reward per token1 stored
     uint256 public referrerRewardPerToken1;
 
     /// @notice The referrer reward per token1 paid
-    mapping(uint24 => uint256) public referrerRewardPerTokenPaid1;
+    mapping(address referrer => uint256) public referrerRewardPerTokenPaid1;
 
     /// @notice The referrer reward in token1 unclaimed
-    mapping(uint24 => uint256) public referrerRewardUnclaimed1;
+    mapping(address referrer => uint256) public referrerRewardUnclaimed1;
 
     /// -----------------------------------------------------------------------
     /// Immutable params
@@ -138,7 +138,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         _mint(to, amount);
     }
 
-    function mint(address to, uint256 amount, uint24 referrer) external override {
+    function mint(address to, uint256 amount, address referrer) external override {
         if (msg.sender != address(hub())) revert BunniToken__NotBunniHub();
 
         _mint(to, amount, referrer);
@@ -191,15 +191,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     }
 
     /// @inheritdoc IBunniToken
-    function claimReferralRewards(uint24 referrer) external override returns (uint256 reward0, uint256 reward1) {
-        /// -----------------------------------------------------------------------
-        /// Validation
-        /// -----------------------------------------------------------------------
-
-        // ensure the referrer has been registered in the hub
-        address referrerAddress = hub().getReferrerAddress(referrer);
-        if (referrerAddress == address(0)) revert BunniToken__ReferrerAddressIsZero();
-
+    function claimReferralRewards(address referrer) external override returns (uint256 reward0, uint256 reward1) {
         /// -----------------------------------------------------------------------
         /// Storage loads
         /// -----------------------------------------------------------------------
@@ -231,14 +223,15 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         /// -----------------------------------------------------------------------
 
         // call PoolManager to convert claim tokens into underlying tokens
-        poolManager().unlock(abi.encode(referrerAddress, reward0, reward1));
+        address recipient = referrer == address(0) ? hub().getReferralRewardRecipient() : referrer;
+        poolManager().unlock(abi.encode(recipient, reward0, reward1));
 
         // emit event
         emit ClaimReferralRewards(referrer, reward0, reward1);
     }
 
     /// @inheritdoc IBunniToken
-    function getClaimableReferralRewards(uint24 referrer)
+    function getClaimableReferralRewards(address referrer)
         external
         view
         override
@@ -265,18 +258,18 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         if (msg.sender != address(manager)) revert BunniToken__NotPoolManager();
 
         // decode input
-        (address referrerAddress, uint256 reward0, uint256 reward1) = abi.decode(data, (address, uint256, uint256));
+        (address recipient, uint256 reward0, uint256 reward1) = abi.decode(data, (address, uint256, uint256));
 
         // burn claim tokens and take underlying tokens for referrer
         if (reward0 != 0) {
             Currency token = token0();
             manager.burn(address(this), token.toId(), reward0);
-            manager.take(token, referrerAddress, reward0);
+            manager.take(token, recipient, reward0);
         }
         if (reward1 != 0) {
             Currency token = token1();
             manager.burn(address(this), token.toId(), reward1);
-            manager.take(token, referrerAddress, reward1);
+            manager.take(token, recipient, reward1);
         }
 
         // fallback
@@ -286,11 +279,11 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
     /// @dev Should accrue rewards for the referrers of `from` and `to` in both token0 and token1
     /// If we're minting tokens to an account to referrer == 0 with a non-zero referrer, we need to accrue rewards
     /// to the new referrer before minting to avoid double counting the account's balance for the new referrer.
-    function _beforeTokenTransfer(address from, address to, uint256 amount, uint24 newReferrer) internal override {
+    function _beforeTokenTransfer(address from, address to, uint256 amount, address newReferrer) internal override {
         uint256 rewardPerToken0 = referrerRewardPerToken0;
         uint256 rewardPerToken1 = referrerRewardPerToken1;
 
-        uint24 fromReferrer = from == address(0) ? 0 : referrerOf(from);
+        address fromReferrer = from == address(0) ? address(0) : referrerOf(from);
         uint256 fromReferrerScore = scoreOf(fromReferrer);
 
         // accrue token0 rewards
@@ -311,7 +304,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         );
         referrerRewardPerTokenPaid1[fromReferrer] = rewardPerToken1;
 
-        uint24 toReferrer = to == address(0) ? 0 : referrerOf(to);
+        address toReferrer = to == address(0) ? address(0) : referrerOf(to);
 
         // no need to accrue rewards again if from and to have the same referrer
         if (fromReferrer != toReferrer) {
@@ -340,7 +333,7 @@ contract BunniToken is IBunniToken, ERC20Referrer, Clone, Ownable {
         // referrer is immutable after set so the only time this can happen is when `toReferrer == 0`
         // and `newReferrer != 0`
         // also should not accrue rewards if `newReferrer == fromReferrer` since we already accrued rewards for `fromReferrer`
-        if (toReferrer == 0 && newReferrer != 0 && newReferrer != fromReferrer) {
+        if (toReferrer == address(0) && newReferrer != address(0) && newReferrer != fromReferrer) {
             uint256 newReferrerScore = scoreOf(newReferrer);
 
             // accrue token0 rewards to new referrer

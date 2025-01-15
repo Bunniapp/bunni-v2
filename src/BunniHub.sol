@@ -274,11 +274,9 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHub
-    function setReferrerAddress(uint24 referrer, address referrerAddress) external {
-        if (msg.sender != owner() && msg.sender != s.referrerAddress[referrer]) revert BunniHub__Unauthorized();
-        if (referrer > MAX_REFERRER) revert BunniHub__InvalidReferrer();
-        s.referrerAddress[referrer] = referrerAddress;
-        emit SetReferrerAddress(referrer, referrerAddress);
+    function setReferralRewardRecipient(address newReferralRewardRecipient) external onlyOwner {
+        s.referralRewardRecipient = newReferralRewardRecipient;
+        emit SetReferralRewardRecipient(newReferralRewardRecipient);
     }
 
     /// -----------------------------------------------------------------------
@@ -328,13 +326,13 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IBunniHub
-    function getReferrerAddress(uint24 referrer) external view override returns (address) {
-        return s.referrerAddress[referrer];
+    function poolInitData() external view returns (bytes memory) {
+        return INIT_DATA_TSLOT.tBytes().get();
     }
 
     /// @inheritdoc IBunniHub
-    function poolInitData() external view returns (bytes memory) {
-        return INIT_DATA_TSLOT.tBytes().get();
+    function getReferralRewardRecipient() external view returns (address) {
+        return s.referralRewardRecipient;
     }
 
     /// -----------------------------------------------------------------------
