@@ -78,6 +78,13 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         _;
     }
 
+    modifier notPaused(uint256 position) {
+        (uint8 pauseFlags, bool unpauseFuse) = (s.pauseFlags, s.unpauseFuse);
+        // pause function if bit is set in `pauseFlags` and `unpauseFuse` is false
+        if (pauseFlags & (1 << position) != 0 && !unpauseFuse) revert BunniHub__Paused();
+        _;
+    }
+
     /// -----------------------------------------------------------
     /// Constructor
     /// -----------------------------------------------------------
@@ -112,6 +119,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         override
         nonReentrant
         checkDeadline(params.deadline)
+        notPaused(0)
         returns (uint256 shares, uint256 amount0, uint256 amount1)
     {
         return BunniHubLogic.deposit(
@@ -127,7 +135,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IBunniHub
-    function queueWithdraw(QueueWithdrawParams calldata params) external virtual override nonReentrant {
+    function queueWithdraw(QueueWithdrawParams calldata params) external virtual override nonReentrant notPaused(1) {
         BunniHubLogic.queueWithdraw(s, params);
     }
 
@@ -138,6 +146,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         override
         nonReentrant
         checkDeadline(params.deadline)
+        notPaused(2)
         returns (uint256 amount0, uint256 amount1)
     {
         return BunniHubLogic.withdraw(
@@ -157,6 +166,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         external
         override
         nonReentrant
+        notPaused(3)
         returns (IBunniToken token, PoolKey memory key)
     {
         return BunniHubLogic.deployBunniToken(
@@ -176,6 +186,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         external
         override
         nonReentrant
+        notPaused(4)
     {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
 
@@ -248,20 +259,20 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IBunniHub
-    function hookSetIdleBalance(PoolKey calldata key, IdleBalance newIdleBalance) external {
+    function hookSetIdleBalance(PoolKey calldata key, IdleBalance newIdleBalance) external notPaused(5) {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
         s.idleBalance[key.toId()] = newIdleBalance;
     }
 
     /// @inheritdoc IBunniHub
-    function lockForRebalance(PoolKey calldata key) external {
+    function lockForRebalance(PoolKey calldata key) external notPaused(6) {
         if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
         _nonReentrantBefore();
     }
 
     /// @inheritdoc IBunniHub
-    function unlockForRebalance(PoolKey calldata key) external {
+    function unlockForRebalance(PoolKey calldata key) external notPaused(7) {
         if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
         _nonReentrantAfter();
@@ -277,6 +288,18 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     function setReferralRewardRecipient(address newReferralRewardRecipient) external onlyOwner {
         s.referralRewardRecipient = newReferralRewardRecipient;
         emit SetReferralRewardRecipient(newReferralRewardRecipient);
+    }
+
+    /// @inheritdoc IBunniHub
+    function setPauseFlags(uint8 pauseFlags) external onlyOwner {
+        s.pauseFlags = pauseFlags;
+        emit SetPauseFlags(pauseFlags);
+    }
+
+    /// @inheritdoc IBunniHub
+    function burnPauseFuse() external onlyOwner {
+        s.unpauseFuse = true; // all functions are permanently unpaused
+        emit BurnPauseFuse();
     }
 
     /// -----------------------------------------------------------------------
@@ -333,6 +356,11 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     /// @inheritdoc IBunniHub
     function getReferralRewardRecipient() external view returns (address) {
         return s.referralRewardRecipient;
+    }
+
+    /// @inheritdoc IBunniHub
+    function getPauseStatus() external view returns (uint8 pauseFlags, bool unpauseFuse) {
+        return (s.pauseFlags, s.unpauseFuse);
     }
 
     /// -----------------------------------------------------------------------

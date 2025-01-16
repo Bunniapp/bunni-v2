@@ -73,6 +73,11 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @notice Emitted when the recipient of referral rewards of the default referrer address(0) is set
     /// @param newReferralRewardRecipient The new recipient of referral rewards of the default referrer address(0)
     event SetReferralRewardRecipient(address indexed newReferralRewardRecipient);
+    /// @notice Emitted when the pause flags are set
+    /// @param pauseFlags The new pause flags, each bit corresponds to a function in BunniHub and is set to 1 if the function is paused
+    event SetPauseFlags(uint8 indexed pauseFlags);
+    /// @notice Emitted when the pause fuse is burned
+    event BurnPauseFuse();
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
@@ -270,6 +275,14 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @param newReferralRewardRecipient The new address of the recipient of referral rewards
     function setReferralRewardRecipient(address newReferralRewardRecipient) external;
 
+    /// @notice Sets the pause flags. Only callable by the owner.
+    /// @param pauseFlags The new pause flags, each bit corresponds to a function in BunniHub and is set to 1 if the function is paused
+    function setPauseFlags(uint8 pauseFlags) external;
+
+    /// @notice Burns the pause fuse. Only callable by the owner.
+    /// All functions are permanently unpaused after this function is called.
+    function burnPauseFuse() external;
+
     /// @notice Called by key.hooks to lock BunniHub before a rebalance order's execution.
     /// @param key The PoolKey of the Uniswap v4 pool
     function lockForRebalance(PoolKey calldata key) external;
@@ -304,6 +317,11 @@ interface IBunniHub is IUnlockCallback, IOwnable {
 
     /// @notice The address of the recipient of referral rewards belonging to the default referrer address(0).
     function getReferralRewardRecipient() external view returns (address);
+
+    /// @notice The pause flags and pause fuse status.
+    /// @return pauseFlags The pause flags, each bit corresponds to a function in BunniHub and is set to 1 if the function is paused
+    /// @return unpauseFuse The pause fuse status. If true, all functions are permanently unpaused
+    function getPauseStatus() external view returns (uint8 pauseFlags, bool unpauseFuse);
 
     /// @notice The init data of a Bunni pool. Stored in transient storage and used
     /// during the IHooks.afterInitialize() call.

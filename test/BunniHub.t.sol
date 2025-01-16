@@ -2512,6 +2512,220 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         assertFalse(isToken0After, "idle balance should still be in token1");
     }
 
+    function test_pauseFlags(uint8 pauseFlags) public {
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        hub.setPauseFlags(pauseFlags);
+
+        if (pauseFlags & (1 << 0) != 0) {
+            // deposit() is paused
+            _mint(key.currency0, address(this), 1e18);
+            _mint(key.currency1, address(this), 1e18);
+            IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
+                poolKey: key,
+                amount0Desired: 1e18,
+                amount1Desired: 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp,
+                recipient: address(this),
+                refundRecipient: address(this),
+                vaultFee0: 0,
+                vaultFee1: 0,
+                referrer: address(0)
+            });
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.deposit(depositParams);
+        }
+
+        if (pauseFlags & (1 << 1) != 0) {
+            // queueWithdraw() is paused
+            IBunniHub.QueueWithdrawParams memory queueWithdrawParams =
+                IBunniHub.QueueWithdrawParams({poolKey: key, shares: 1e18});
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.queueWithdraw(queueWithdrawParams);
+        }
+
+        if (pauseFlags & (1 << 2) != 0) {
+            // withdraw() is paused
+            IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+                poolKey: key,
+                recipient: address(this),
+                shares: 1e18,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp,
+                useQueuedWithdrawal: false
+            });
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.withdraw(withdrawParams);
+        }
+
+        if (pauseFlags & (1 << 3) != 0) {
+            // deployBunniToken() is paused
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.deployBunniToken(
+                IBunniHub.DeployBunniTokenParams({
+                    currency0: key.currency0,
+                    currency1: key.currency1,
+                    tickSpacing: TICK_SPACING,
+                    twapSecondsAgo: 7 days,
+                    liquidityDensityFunction: ldf,
+                    hooklet: IHooklet(address(0)),
+                    ldfType: LDFType.DYNAMIC_AND_STATEFUL,
+                    ldfParams: bytes32(0),
+                    hooks: bunniHook,
+                    hookParams: bytes(""),
+                    vault0: ERC4626(address(0)),
+                    vault1: ERC4626(address(0)),
+                    minRawTokenRatio0: 0.08e6,
+                    targetRawTokenRatio0: 0.1e6,
+                    maxRawTokenRatio0: 0.12e6,
+                    minRawTokenRatio1: 0.08e6,
+                    targetRawTokenRatio1: 0.1e6,
+                    maxRawTokenRatio1: 0.12e6,
+                    sqrtPriceX96: uint160(Q96),
+                    name: "BunniToken",
+                    symbol: "BUNNI-LP",
+                    owner: address(this),
+                    metadataURI: "metadataURI",
+                    salt: bytes32(0)
+                })
+            );
+        }
+
+        if (pauseFlags & (1 << 4) != 0) {
+            // hookHandleSwap() is paused
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.hookHandleSwap(key, true, 0, 0);
+        }
+
+        if (pauseFlags & (1 << 5) != 0) {
+            // hookSetIdleBalance() is paused
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.hookSetIdleBalance(key, IdleBalanceLibrary.ZERO);
+        }
+
+        if (pauseFlags & (1 << 6) != 0) {
+            // lockForRebalance() is paused
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.lockForRebalance(key);
+        }
+
+        if (pauseFlags & (1 << 7) != 0) {
+            // unlockForRebalance() is paused
+            vm.expectRevert(BunniHub__Paused.selector);
+            hub.unlockForRebalance(key);
+        }
+    }
+
+    function test_unpauseFuse() external {
+        hub.setPauseFlags(type(uint8).max);
+        hub.burnPauseFuse();
+
+        // deploy pool
+        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        // deposit() is not paused
+        _mint(key.currency0, address(this), 1e18);
+        _mint(key.currency1, address(this), 1e18);
+        IBunniHub.DepositParams memory depositParams = IBunniHub.DepositParams({
+            poolKey: key,
+            amount0Desired: 1e18,
+            amount1Desired: 1e18,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            recipient: address(this),
+            refundRecipient: address(this),
+            vaultFee0: 0,
+            vaultFee1: 0,
+            referrer: address(0)
+        });
+        hub.deposit(depositParams);
+
+        // queueWithdraw() is not paused
+        IBunniHub.QueueWithdrawParams memory queueWithdrawParams =
+            IBunniHub.QueueWithdrawParams({poolKey: key, shares: 1});
+        bunniToken.approve(address(hub), type(uint256).max);
+        hub.queueWithdraw(queueWithdrawParams);
+
+        // withdraw() is not paused
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(this),
+            shares: 1,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: false
+        });
+        hub.withdraw(withdrawParams);
+
+        // deployBunniToken() is not paused
+        hub.deployBunniToken(
+            IBunniHub.DeployBunniTokenParams({
+                currency0: key.currency0,
+                currency1: key.currency1,
+                tickSpacing: TICK_SPACING,
+                twapSecondsAgo: 7 days,
+                liquidityDensityFunction: ldf,
+                hooklet: IHooklet(address(0)),
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
+                ldfParams: bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
+                hooks: bunniHook,
+                hookParams: abi.encodePacked(
+                    FEE_MIN,
+                    FEE_MAX,
+                    FEE_QUADRATIC_MULTIPLIER,
+                    FEE_TWAP_SECONDS_AGO,
+                    POOL_MAX_AMAMM_FEE,
+                    SURGE_HALFLIFE,
+                    SURGE_AUTOSTART_TIME,
+                    VAULT_SURGE_THRESHOLD_0,
+                    VAULT_SURGE_THRESHOLD_1,
+                    REBALANCE_THRESHOLD,
+                    REBALANCE_MAX_SLIPPAGE,
+                    REBALANCE_TWAP_SECONDS_AGO,
+                    REBALANCE_ORDER_TTL,
+                    true, // amAmmEnabled
+                    ORACLE_MIN_INTERVAL,
+                    MIN_RENT_MULTIPLIER
+                ),
+                vault0: ERC4626(address(0)),
+                vault1: ERC4626(address(0)),
+                minRawTokenRatio0: 0.08e6,
+                targetRawTokenRatio0: 0.1e6,
+                maxRawTokenRatio0: 0.12e6,
+                minRawTokenRatio1: 0.08e6,
+                targetRawTokenRatio1: 0.1e6,
+                maxRawTokenRatio1: 0.12e6,
+                sqrtPriceX96: uint160(Q96),
+                name: "BunniToken",
+                symbol: "BUNNI-LP",
+                owner: address(this),
+                metadataURI: "metadataURI",
+                salt: bytes32(uint256(1234))
+            })
+        );
+
+        vm.startPrank(address(bunniHook));
+
+        // hookHandleSwap() is not paused
+        hub.hookHandleSwap(key, true, 0, 0);
+
+        // hookSetIdleBalance() is not paused
+        hub.hookSetIdleBalance(key, IdleBalanceLibrary.ZERO);
+
+        // lockForRebalance() is not paused
+        hub.lockForRebalance(key);
+
+        // unlockForRebalance() is not paused
+        hub.unlockForRebalance(key);
+
+        vm.stopPrank();
+    }
+
     /// -----------------------------------------------------------------------
     /// Internal utils
     /// -----------------------------------------------------------------------
