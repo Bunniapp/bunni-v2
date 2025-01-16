@@ -2619,7 +2619,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         }
     }
 
-    function test_pauseFuse() external {
+    function test_unpauseFuse() external {
         hub.setPauseFlags(type(uint8).max);
         hub.burnPauseFuse();
 

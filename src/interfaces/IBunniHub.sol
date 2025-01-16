@@ -320,8 +320,8 @@ interface IBunniHub is IUnlockCallback, IOwnable {
 
     /// @notice The pause flags and pause fuse status.
     /// @return pauseFlags The pause flags, each bit corresponds to a function in BunniHub and is set to 1 if the function is paused
-    /// @return pauseFuse The pause fuse status. If true, all functions are permanently unpaused
-    function getPauseStatus() external view returns (uint8 pauseFlags, bool pauseFuse);
+    /// @return unpauseFuse The pause fuse status. If true, all functions are permanently unpaused
+    function getPauseStatus() external view returns (uint8 pauseFlags, bool unpauseFuse);
 
     /// @notice The init data of a Bunni pool. Stored in transient storage and used
     /// during the IHooks.afterInitialize() call.

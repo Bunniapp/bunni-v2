@@ -79,9 +79,9 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     modifier notPaused(uint256 position) {
-        (uint8 pauseFlags, bool pauseFuse) = (s.pauseFlags, s.pauseFuse);
-        // pause function if bit is set in `pauseFlags` and `pauseFuse` is false
-        if (pauseFlags & (1 << position) != 0 && !pauseFuse) revert BunniHub__Paused();
+        (uint8 pauseFlags, bool unpauseFuse) = (s.pauseFlags, s.unpauseFuse);
+        // pause function if bit is set in `pauseFlags` and `unpauseFuse` is false
+        if (pauseFlags & (1 << position) != 0 && !unpauseFuse) revert BunniHub__Paused();
         _;
     }
 
@@ -298,7 +298,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
 
     /// @inheritdoc IBunniHub
     function burnPauseFuse() external onlyOwner {
-        s.pauseFuse = true; // all functions are permanently unpaused
+        s.unpauseFuse = true; // all functions are permanently unpaused
         emit BurnPauseFuse();
     }
 
@@ -359,8 +359,8 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IBunniHub
-    function getPauseStatus() external view returns (uint8 pauseFlags, bool pauseFuse) {
-        return (s.pauseFlags, s.pauseFuse);
+    function getPauseStatus() external view returns (uint8 pauseFlags, bool unpauseFuse) {
+        return (s.pauseFlags, s.unpauseFuse);
     }
 
     /// -----------------------------------------------------------------------

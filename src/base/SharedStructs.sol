@@ -32,7 +32,7 @@ struct QueuedWithdrawal {
 /// @member queuedWithdrawals The queued withdrawals for a given pool & user
 /// @member referralRewardRecipient The address of the recipient of referral rewards belonging to the default referrer address(0)
 /// @member pauseFlags Bit flags for pausing external functions
-/// @member pauseFuse Can be permanently set to true to unpause all external functions
+/// @member unpauseFuse Can be permanently set to true to unpause all external functions
 struct HubStorage {
     mapping(PoolId poolId => RawPoolState) poolState;
     mapping(PoolId poolId => uint256) reserve0;
@@ -43,7 +43,7 @@ struct HubStorage {
     mapping(PoolId poolId => mapping(address => QueuedWithdrawal)) queuedWithdrawals;
     address referralRewardRecipient;
     uint8 pauseFlags;
-    bool pauseFuse;
+    bool unpauseFuse;
 }
 
 /// @notice The decoded hook params for a given pool
