@@ -3,6 +3,7 @@
 pragma solidity >=0.6.0;
 pragma abicoder v2;
 
+error BunniHub__Paused();
 error BunniHub__ZeroInput();
 error BunniHub__PastDeadline();
 error BunniHub__Unauthorized();
