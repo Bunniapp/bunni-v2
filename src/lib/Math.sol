@@ -72,3 +72,7 @@ function subReLU(uint256 x, uint256 y) pure returns (uint256) {
         return x > y ? x - y : 0;
     }
 }
+
+function divQ96RoundUp(uint256 value) pure returns (uint256) {
+    return (value + ((1 << 96) - 1)) >> 96;
+}

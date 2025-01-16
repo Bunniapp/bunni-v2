@@ -312,8 +312,11 @@ library LibGeometricDistribution {
 
             uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
             uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
-            uint256 numerator = cumulativeAmount0DensityX96.mulDivUp(sqrtRatioMinTick, Q96 - sqrtRatioNegTickSpacing)
-                .fullMulDivUp(denominator, alphaX96 - Q96) >> 96; // numerator in cumulativeAmount0 divided by Q96
+            uint256 numerator = divQ96RoundUp(
+                cumulativeAmount0DensityX96.mulDivUp(sqrtRatioMinTick, Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(
+                    denominator, alphaX96 - Q96
+                )
+            ); // numerator in cumulativeAmount0 divided by Q96
             uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtPriceAtTick();
             if (Q96 < baseX96 && sqrtRatioNegTickSpacingMulLength < numerator) return (false, 0);
             uint256 tmpX96 = Q96 >= baseX96
