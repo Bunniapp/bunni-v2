@@ -12,7 +12,9 @@ contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MAX_ALPHA = 12e8;
 
     function _setUpLDF() internal override {
-        ldf = ILiquidityDensityFunction(address(new CarpetedGeometricDistribution()));
+        ldf = ILiquidityDensityFunction(
+            address(new CarpetedGeometricDistribution(address(this), address(this), address(this)))
+        );
     }
 
     function test_liquidityDensity_sumUpToOne(

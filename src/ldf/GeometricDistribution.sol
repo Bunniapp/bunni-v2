@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "./ShiftMode.sol";
+import {Guarded} from "../base/Guarded.sol";
 import {LibGeometricDistribution} from "./LibGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
@@ -12,8 +13,10 @@ import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction
 /// @notice Geometric distribution over a range of rounded ticks. Core building block for many
 /// other LDFs. Can shift based on the TWAP tick. Can shift in only one direction or both directions.
 /// Should not be used in production when TWAP is enabled, since the price can go out of the range.
-contract GeometricDistribution is ILiquidityDensityFunction {
+contract GeometricDistribution is ILiquidityDensityFunction, Guarded {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
+
+    constructor(address hub_, address hook_, address quoter_) Guarded(hub_, hook_, quoter_) {}
 
     /// @inheritdoc ILiquidityDensityFunction
     function query(
@@ -25,8 +28,9 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        pure
+        view
         override
+        guarded
         returns (
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
@@ -61,8 +65,9 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        pure
+        view
         override
+        guarded
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
@@ -93,7 +98,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
             LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
@@ -115,7 +120,7 @@ contract GeometricDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
             LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);

@@ -17,7 +17,7 @@ contract BuyTheDipGeometricDistributionTest is Test {
     int24 internal constant MIN_TICK_SPACING = 1;
 
     function setUp() public {
-        ldf = new BuyTheDipGeometricDistribution();
+        ldf = new BuyTheDipGeometricDistribution(address(this), address(this), address(this));
     }
 
     function test_morphToAltAlphaAndBack() external view {

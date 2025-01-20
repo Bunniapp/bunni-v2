@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "./ShiftMode.sol";
+import {Guarded} from "../base/Guarded.sol";
 import {LibCarpetedDoubleGeometricDistribution} from "./LibCarpetedDoubleGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
@@ -11,8 +12,10 @@ import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction
 /// @author zefram.eth
 /// @notice Double geometric distribution with a "carpet" of uniform liquidity outside of the main range.
 /// Should be used in production when TWAP is enabled, since we always have some liquidity in all ticks.
-contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
+contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction, Guarded {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
+
+    constructor(address hub_, address hook_, address quoter_) Guarded(hub_, hook_, quoter_) {}
 
     /// @inheritdoc ILiquidityDensityFunction
     function query(
@@ -24,8 +27,9 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        pure
+        view
         override
+        guarded
         returns (
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
@@ -60,8 +64,9 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        pure
+        view
         override
+        guarded
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
@@ -85,7 +90,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
             LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
@@ -107,7 +112,7 @@ contract CarpetedDoubleGeometricDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         LibCarpetedDoubleGeometricDistribution.Params memory params =
             LibCarpetedDoubleGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastMinTick) = _decodeState(ldfState);
