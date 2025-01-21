@@ -12,7 +12,9 @@ contract DoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e2;
 
     function _setUpLDF() internal override {
-        ldf = ILiquidityDensityFunction(address(new DoubleGeometricDistribution()));
+        ldf = ILiquidityDensityFunction(
+            address(new DoubleGeometricDistribution(address(this), address(this), address(this)))
+        );
     }
 
     function test_liquidityDensity_sumUpToOne(

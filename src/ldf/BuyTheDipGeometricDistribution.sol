@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.19;
 
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import {Guarded} from "../base/Guarded.sol";
 import {LibBuyTheDipGeometricDistribution} from "./LibBuyTheDipGeometricDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
@@ -10,8 +11,10 @@ import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction
 /// @author zefram.eth
 /// @notice Geometric distribution that switches to a different alpha value when the TWAP
 /// tick reaches a certain threshold. Does not shift. Does not have carpet liquidity.
-contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
+contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction, Guarded {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
+
+    constructor(address hub_, address hook_, address quoter_) Guarded(hub_, hook_, quoter_) {}
 
     /// @inheritdoc ILiquidityDensityFunction
     function query(
@@ -23,8 +26,9 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        pure
+        view
         override
+        guarded
         returns (
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
@@ -77,8 +81,9 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         bytes32 /* ldfState */
     )
         external
-        pure
+        view
         override
+        guarded
         returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
     {
         (
@@ -115,7 +120,7 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 /* ldfState */
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (
             int24 minTick,
             int24 length,
@@ -148,7 +153,7 @@ contract BuyTheDipGeometricDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 /* ldfState */
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (
             int24 minTick,
             int24 length,

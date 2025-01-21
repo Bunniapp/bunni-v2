@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-License-Identifier: MIT
 pragma solidity >=0.5.0;
 
 import "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";

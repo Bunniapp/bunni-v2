@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
 import {PoolId, PoolKey, Currency} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";

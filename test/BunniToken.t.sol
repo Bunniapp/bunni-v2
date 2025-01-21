@@ -134,7 +134,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         currency1 = Currency.wrap(address(token1));
 
         // deploy LDF
-        ldf = new GeometricDistribution();
+        ldf = new GeometricDistribution(address(hub), address(bunniHook), address(this));
 
         // deploy BunniToken
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-30), int16(6), ALPHA));

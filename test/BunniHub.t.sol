@@ -235,7 +235,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         lens = new BunniLens(hub);
 
         // initialize LDF
-        ldf = new GeometricDistribution();
+        ldf = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
 
         // approve tokens
         token0.approve(address(PERMIT2), type(uint256).max);
@@ -1369,7 +1369,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
-        GeometricDistribution ldf_ = new GeometricDistribution();
+        GeometricDistribution ldf_ = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         {
             PoolKey memory key_;
@@ -1468,7 +1468,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
-        GeometricDistribution ldf_ = new GeometricDistribution();
+        GeometricDistribution ldf_ = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         {
             PoolKey memory key_;
@@ -1572,7 +1572,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
-        GeometricDistribution ldf_ = new GeometricDistribution();
+        GeometricDistribution ldf_ = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         {
             PoolKey memory key_;
@@ -1722,7 +1722,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
-        GeometricDistribution ldf_ = new GeometricDistribution();
+        GeometricDistribution ldf_ = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         {
             PoolKey memory key_;
@@ -1801,7 +1801,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
-        GeometricDistribution ldf_ = new GeometricDistribution();
+        GeometricDistribution ldf_ = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         {
             PoolKey memory key_;

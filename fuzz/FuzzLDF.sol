@@ -385,7 +385,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
         uint32 weight1
     ) public {
         ldf = ILiquidityDensityFunction(
-            address(new DoubleGeometricDistribution())
+            address(new DoubleGeometricDistribution(address(this), address(this), address(this)))
         );
         liquidity = clampBetween(liquidity, 1e18, 1e36);
         tickSpacing = int24(
@@ -533,7 +533,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
         uint32 weight1
     ) external virtual {
         ldf = ILiquidityDensityFunction(
-            address(new DoubleGeometricDistribution())
+            address(new DoubleGeometricDistribution(address(this), address(this), address(this)))
         );
         liquidity = clampBetween(liquidity, 1e18, 1e36);
         tickSpacing = int24(
@@ -678,7 +678,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     ) external virtual {
         liquidity = clampBetween(liquidity, 1e18, 1e36);
         ldf = ILiquidityDensityFunction(
-            address(new CarpetedGeometricDistribution())
+            address(new CarpetedGeometricDistribution(address(this), address(this), address(this)))
         );
         alpha = clampBetween(alpha, MIN_ALPHA, MAX_ALPHA);
         require(alpha != 1e8); // 1e8 is a special case that causes overflow
@@ -779,7 +779,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     ) external virtual {
         liquidity = clampBetween(liquidity, 1e18, 1e36);
         ldf = ILiquidityDensityFunction(
-            address(new CarpetedGeometricDistribution())
+            address(new CarpetedGeometricDistribution(address(this), address(this), address(this)))
         );
         alpha = clampBetween(alpha, MIN_ALPHA, MAX_ALPHA);
         require(alpha != 1e8); // 1e8 is a special case that causes overflow
@@ -885,7 +885,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     ) external virtual {
         liquidity = clampBetween(liquidity, 1e18, 1e36);
         ldf = ILiquidityDensityFunction(
-            address(new CarpetedDoubleGeometricDistribution())
+            address(new CarpetedDoubleGeometricDistribution(address(this), address(this), address(this)))
         );
         tickSpacing = int24(
             clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING)
@@ -1014,7 +1014,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
     ) external virtual {
         liquidity = clampBetween(liquidity, 1e18, 1e36);
         ldf = ILiquidityDensityFunction(
-            address(new CarpetedDoubleGeometricDistribution())
+            address(new CarpetedDoubleGeometricDistribution(address(this), address(this), address(this)))
         );
         tickSpacing = int24(
             clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING)

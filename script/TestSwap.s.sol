@@ -17,7 +17,10 @@ contract TestSwapScript is CREATE3Script {
 
     function run() external {
         BunniQuoter quoter = new BunniQuoter(IBunniHub(0x9fcB8DbbB93F908f0ff2f9B425594A0511dd71c4));
-        vm.etch(0xA2Afc28157E54FfF80cd45Be1677d7A51837FDc3, type(CarpetedDoubleGeometricDistribution).runtimeCode);
+        address hub = getCreate3Contract("BunniHub");
+        address hook = vm.envAddress("BUNNI_HOOK");
+        CarpetedDoubleGeometricDistribution ldf = new CarpetedDoubleGeometricDistribution(hub, hook, address(quoter));
+        vm.etch(0xA2Afc28157E54FfF80cd45Be1677d7A51837FDc3, address(ldf).code);
 
         address sender = 0xC25560E513de24d927Fd1779fDCE848e3d1a9907;
         PoolKey memory key = PoolKey({

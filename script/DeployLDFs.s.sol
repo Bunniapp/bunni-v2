@@ -26,12 +26,17 @@ contract DeployLDFsScript is CREATE3Script {
     {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
+        address hub = getCreate3Contract("BunniHub");
+        address hook = vm.envAddress("BUNNI_HOOK");
+        address quoter = getCreate3Contract("BunniQuoter");
+
         vm.startBroadcast(deployerPrivateKey);
 
         geometric = GeometricDistribution(
             payable(
                 create3.deploy(
-                    getCreate3ContractSalt("GeometricDistribution"), type(GeometricDistribution).creationCode
+                    getCreate3ContractSalt("GeometricDistribution"),
+                    bytes.concat(type(GeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
         );
@@ -40,7 +45,7 @@ contract DeployLDFsScript is CREATE3Script {
             payable(
                 create3.deploy(
                     getCreate3ContractSalt("DoubleGeometricDistribution"),
-                    type(DoubleGeometricDistribution).creationCode
+                    bytes.concat(type(DoubleGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
         );
@@ -49,7 +54,7 @@ contract DeployLDFsScript is CREATE3Script {
             payable(
                 create3.deploy(
                     getCreate3ContractSalt("CarpetedGeometricDistribution"),
-                    type(CarpetedGeometricDistribution).creationCode
+                    bytes.concat(type(CarpetedGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
         );
@@ -58,7 +63,7 @@ contract DeployLDFsScript is CREATE3Script {
             payable(
                 create3.deploy(
                     getCreate3ContractSalt("CarpetedDoubleGeometricDistribution"),
-                    type(CarpetedDoubleGeometricDistribution).creationCode
+                    bytes.concat(type(CarpetedDoubleGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
         );
@@ -73,7 +78,7 @@ contract DeployLDFsScript is CREATE3Script {
             payable(
                 create3.deploy(
                     getCreate3ContractSalt("BuyTheDipGeometricDistribution"),
-                    type(BuyTheDipGeometricDistribution).creationCode
+                    bytes.concat(type(BuyTheDipGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
         );
