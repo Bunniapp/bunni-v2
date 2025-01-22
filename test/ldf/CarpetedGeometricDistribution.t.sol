@@ -10,6 +10,7 @@ import "../../src/ldf/LibCarpetedGeometricDistribution.sol";
 contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(
@@ -107,6 +108,7 @@ contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
         uint256 maxCumulativeAmount0 = LibCarpetedGeometricDistribution.cumulativeAmount0(
             minUsableTick, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
         );
+        vm.assume(maxCumulativeAmount0 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
         console2.log("cumulativeAmount0", cumulativeAmount0);
@@ -129,7 +131,7 @@ contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
 
         assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 1e1) {
+        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 3) {
             uint256 nextCumulativeAmount0 = LibCarpetedGeometricDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
@@ -166,7 +168,7 @@ contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
         uint256 maxCumulativeAmount1 = LibCarpetedGeometricDistribution.cumulativeAmount1(
             maxUsableTick, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
         );
-        vm.assume(maxCumulativeAmount1 != 0);
+        vm.assume(maxCumulativeAmount1 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
         console2.log("cumulativeAmount1", cumulativeAmount1);

@@ -72,17 +72,19 @@ library LibGeometricDistribution {
             } else {
                 int24 xPlus1 = x + 1; // the rounded tick to the right of the current rounded tick
 
-                uint256 numerator = dist(
-                    alphaInvX96.rpow(uint24(length - xPlus1), Q96),
-                    (-tickSpacing * (length - xPlus1)).getSqrtPriceAtTick()
-                ) * (-tickSpacing * xPlus1).getSqrtPriceAtTick();
-
-                uint256 denominator = dist(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
-                    * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
-
-                cumulativeAmount0DensityX96 = (alphaX96 - Q96).fullMulDivUp(numerator, denominator).mulDivUp(
-                    Q96 - sqrtRatioNegTickSpacing, sqrtRatioMinTick
-                );
+                uint24 lengthMinusX = uint24(length - xPlus1);
+                bool intermediateTermIsPositive = alphaInvX96 > sqrtRatioNegTickSpacing;
+                uint256 numeratorTermLeft = alphaInvX96.rpow(lengthMinusX, Q96);
+                uint256 numeratorTermRight = (-tickSpacing * int24(lengthMinusX)).getSqrtPriceAtTick();
+                cumulativeAmount0DensityX96 = (Q96 - alphaInvX96).mulDivUp(
+                    intermediateTermIsPositive
+                        ? numeratorTermLeft - numeratorTermRight
+                        : numeratorTermRight - numeratorTermLeft,
+                    intermediateTermIsPositive
+                        ? alphaInvX96 - sqrtRatioNegTickSpacing
+                        : sqrtRatioNegTickSpacing - alphaInvX96
+                ).mulDivUp((-tickSpacing * xPlus1).getSqrtPriceAtTick(), Q96 - alphaInvX96.rpow(uint24(length), Q96))
+                    .mulDivUp(Q96 - sqrtRatioNegTickSpacing, sqrtRatioMinTick);
             }
 
             // compute cumulativeAmount1DensityX96 for the rounded tick to the left of the rounded current tick
@@ -175,16 +177,19 @@ library LibGeometricDistribution {
                 // cumulativeAmount0DensityX96 is just 0
                 cumulativeAmount0DensityX96 = 0;
             } else {
-                uint256 numerator = dist(
-                    alphaInvX96.rpow(uint24(length - x), Q96), (-tickSpacing * (length - x)).getSqrtPriceAtTick()
-                ) * (-tickSpacing * x).getSqrtPriceAtTick();
-
-                uint256 denominator = dist(Q96, alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96))
-                    * (Q96 - alphaInvX96.rpow(uint24(length), Q96));
-
-                cumulativeAmount0DensityX96 = (alphaX96 - Q96).fullMulDivUp(numerator, denominator).mulDivUp(
-                    Q96 - sqrtRatioNegTickSpacing, sqrtRatioMinTick
-                );
+                uint24 lengthMinusX = uint24(length - x);
+                bool intermediateTermIsPositive = alphaInvX96 > sqrtRatioNegTickSpacing;
+                uint256 numeratorTermLeft = alphaInvX96.rpow(lengthMinusX, Q96);
+                uint256 numeratorTermRight = (-tickSpacing * int24(lengthMinusX)).getSqrtPriceAtTick();
+                cumulativeAmount0DensityX96 = (Q96 - alphaInvX96).mulDivUp(
+                    intermediateTermIsPositive
+                        ? numeratorTermLeft - numeratorTermRight
+                        : numeratorTermRight - numeratorTermLeft,
+                    intermediateTermIsPositive
+                        ? alphaInvX96 - sqrtRatioNegTickSpacing
+                        : sqrtRatioNegTickSpacing - alphaInvX96
+                ).mulDivUp((-tickSpacing * x).getSqrtPriceAtTick(), Q96 - alphaInvX96.rpow(uint24(length), Q96))
+                    .mulDivUp(Q96 - sqrtRatioNegTickSpacing, sqrtRatioMinTick);
             }
         } else {
             // alpha <= 1
@@ -311,28 +316,25 @@ library LibGeometricDistribution {
             uint256 alphaInvX96 = Q96.mulDiv(Q96, alphaX96);
 
             uint256 alphaInvPowLengthX96 = alphaInvX96.rpow(uint24(length), Q96);
-            uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaInvPowLengthX96);
-            uint256 numerator = divQ96RoundUp(
-                cumulativeAmount0DensityX96.mulDivUp(sqrtRatioMinTick, Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(
-                    denominator, alphaX96 - Q96
-                )
-            ); // numerator in cumulativeAmount0 divided by Q96
-            uint256 sqrtRatioNegTickSpacingMulLength = (-tickSpacing * length).getSqrtPriceAtTick();
-            if (Q96 < baseX96 && sqrtRatioNegTickSpacingMulLength < numerator) return (false, 0);
-            uint256 tmpX96 = Q96 >= baseX96
-                ? sqrtRatioNegTickSpacingMulLength + numerator
-                : sqrtRatioNegTickSpacingMulLength - numerator;
-
-            // numerator * Q96 = |a^(x-l) * Q96 - 1.0001^(w(x-l)/2) * Q96| * 1.0001^(-wx/2) * Q96
-            // let lnQ96(m) = ln(m / Q96) * Q96, ln(m) = lmQ96(m * Q96) / Q96, lnQ96(m*n) = (ln(m / Q96) + ln(n)) * Q96 = lnQ96(m) + lnQ96(n * Q96)
-            // abs is +: n = (a * 1.0001^(-w/2))^x * a^(-l) * Q96 - 1.0001^(-wl/2) * Q96
-            // -> x = (ln((n + 1.0001^(-wl/2) * Q96) / (a^(-l) * Q96))) / ln(a * 1.0001^(-w/2))
-            // -> x = (ln(n + 1.0001^(-wl/2) * Q96) + l * ln(a) - ln(Q96)) / ln(a * 1.0001^(-w/2))
-            // -> x = (lnQ96(n * Q96 + 1.0001^(-wl/2) * Q96 * Q96) + l * lnQ96(a * Q96) - lnQ96(Q96 * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
-            // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + lnQ96(Q96 * Q96) + l * lnQ96(a * Q96) - lnQ96(Q96 * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
-            // -> x = (lnQ96(n + 1.0001^(-wl/2) * Q96) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
-            // similarly for abs is -: x = (lnQ96(1.0001^(-wl/2) * Q96 - n) + l * lnQ96(a * Q96)) / lnQ96(a * 1.0001^(-w/2) * Q96)
-            xWad = (tmpX96.toInt256().lnQ96RoundingUp() + int256(length) * (int256(alphaX96).lnQ96RoundingUp())).sDivWad(
+            bool intermediateTermIsPositive = alphaInvX96 > sqrtRatioNegTickSpacing;
+            uint256 tmp = cumulativeAmount0DensityX96.mulDivUp(sqrtRatioMinTick, Q96 - sqrtRatioNegTickSpacing).mulDivUp(
+                Q96 - alphaInvPowLengthX96, Q96
+            ).mulDivUp(
+                intermediateTermIsPositive
+                    ? alphaInvX96 - sqrtRatioNegTickSpacing
+                    : sqrtRatioNegTickSpacing - alphaInvX96,
+                Q96 - alphaInvX96
+            );
+            uint160 sqrtPriceNegTickSpacingMulLength = (-tickSpacing * length).getSqrtPriceAtTick();
+            if (!intermediateTermIsPositive && sqrtPriceNegTickSpacingMulLength <= tmp) {
+                // this happens when cumulativeAmount0DensityX96 is very close to zero
+                // simply return tickUpper - tickSpacing
+                return (true, minTick - tickSpacing);
+            }
+            tmp = intermediateTermIsPositive
+                ? tmp + sqrtPriceNegTickSpacingMulLength
+                : sqrtPriceNegTickSpacingMulLength - tmp;
+            xWad = (tmp.toInt256().lnQ96RoundingUp() + int256(length) * (int256(alphaX96).lnQ96RoundingUp())).sDivWad(
                 lnBaseX96
             );
         } else {
@@ -411,8 +413,8 @@ library LibGeometricDistribution {
             uint256 numerator1 = alphaX96 - Q96;
             uint256 denominator1 = baseX96 - Q96;
             uint256 denominator2 = Q96 - alphaInvPowLengthX96;
-            uint256 numerator2 = cumulativeAmount1DensityX96.fullMulDiv(sqrtRatioNegMinTick, sqrtRatioTickSpacing - Q96)
-                .fullMulDiv(denominator1, numerator1).fullMulDiv(denominator2, Q96);
+            uint256 numerator2 = cumulativeAmount1DensityX96.mulDiv(sqrtRatioNegMinTick, sqrtRatioTickSpacing - Q96)
+                .mulDiv(denominator1, numerator1).mulDiv(denominator2, Q96);
             if (numerator2 + alphaInvPowLengthX96 == 0) return (false, 0);
             xWad = ((numerator2 + alphaInvPowLengthX96).toInt256().lnQ96() + int256(length) * int256(alphaX96).lnQ96())
                 .sDivWad(lnBaseX96) - int256(WAD);
@@ -641,6 +643,11 @@ library LibGeometricDistribution {
         // ensure alpha is in range
         if (alpha < MIN_ALPHA || alpha > MAX_ALPHA || alpha == ALPHA_BASE) return false;
 
+        // ensure alpha != sqrtRatioTickSpacing which would cause cum0 to always be 0
+        uint256 alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
+        uint160 sqrtRatioTickSpacing = tickSpacing.getSqrtPriceAtTick();
+        if (alphaX96 == sqrtRatioTickSpacing) return false;
+
         // ensure the ticks are within the valid range
         if (shiftMode == uint8(ShiftMode.STATIC)) {
             // static minTick set in params
@@ -650,7 +657,6 @@ library LibGeometricDistribution {
 
         // ensure liquidity density is nowhere equal to zero
         // can check boundaries since function is monotonic
-        uint256 alphaX96 = alpha.mulDiv(Q96, ALPHA_BASE);
         uint256 minLiquidityDensityX96;
         if (alpha > ALPHA_BASE) {
             // monotonically increasing

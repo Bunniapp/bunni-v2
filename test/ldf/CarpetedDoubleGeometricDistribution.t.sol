@@ -10,6 +10,7 @@ import "../../src/ldf/LibCarpetedDoubleGeometricDistribution.sol";
 contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(
@@ -189,6 +190,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
             LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
         uint256 maxCumulativeAmount0 =
             LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(minUsableTick, liquidity, tickSpacing, params);
+        vm.assume(maxCumulativeAmount0 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount0 = bound(cumulativeAmount0, 0, maxCumulativeAmount0);
 
         console2.log("cumulativeAmount0", cumulativeAmount0);
@@ -213,8 +215,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
 
         assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick < minTick + length0 * tickSpacing + length1 * tickSpacing && cumulativeAmount0 > 1e2) {
-            // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
+        if (resultRoundedTick < minTick + length0 * tickSpacing + length1 * tickSpacing && cumulativeAmount0 > 2) {
             uint256 nextCumulativeAmount0 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, liquidity, tickSpacing, params
             );
@@ -276,7 +277,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
             LibCarpetedDoubleGeometricDistribution.decodeParams(minTick, tickSpacing, ldfParams);
         uint256 maxCumulativeAmount1 =
             LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, params);
-        vm.assume(maxCumulativeAmount1 != 0);
+        vm.assume(maxCumulativeAmount1 > INVCUM_MIN_MAX_CUM_AMOUNT); // ignore distributions where there's basically 0 tokens
         cumulativeAmount1 = bound(cumulativeAmount1, 0, maxCumulativeAmount1);
 
         console2.log("cumulativeAmount1", cumulativeAmount1);

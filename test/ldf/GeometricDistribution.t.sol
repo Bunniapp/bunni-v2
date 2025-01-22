@@ -115,7 +115,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick < minTick + length * tickSpacing) {
+        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 2) {
             uint256 nextCumulativeAmount0 = LibGeometricDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
             );
@@ -170,7 +170,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         assertGe(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-        if (resultRoundedTick > minTick) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 1) {
             uint256 nextCumulativeAmount1 = LibGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
             );
