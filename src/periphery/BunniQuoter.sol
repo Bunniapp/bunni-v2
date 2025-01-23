@@ -46,6 +46,7 @@ contract BunniQuoter is IBunniQuoter {
     /// External functions
     /// -----------------------------------------------------------------------
 
+    /// @inheritdoc IBunniQuoter
     function quoteSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params)
         external
         view
@@ -283,6 +284,7 @@ contract BunniQuoter is IBunniQuoter {
         );
     }
 
+    /// @inheritdoc IBunniQuoter
     function quoteDeposit(address sender, IBunniHub.DepositParams calldata params)
         external
         view
@@ -349,6 +351,7 @@ contract BunniQuoter is IBunniQuoter {
         );
     }
 
+    /// @inheritdoc IBunniQuoter
     function quoteWithdraw(address sender, IBunniHub.WithdrawParams calldata params)
         external
         view
@@ -383,6 +386,78 @@ contract BunniQuoter is IBunniQuoter {
         success = state.hooklet.hookletAfterWithdrawView(
             sender, params, IHooklet.WithdrawReturnData({amount0: amount0, amount1: amount1})
         );
+    }
+
+    /// @inheritdoc IBunniQuoter
+    function getExcessLiquidity(PoolKey calldata key)
+        external
+        view
+        returns (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity)
+    {
+        PoolId id = key.toId();
+        IBunniHook hook = IBunniHook(address(key.hooks));
+
+        // load fresh state
+        PoolState memory bunniState = hub.poolState(id);
+
+        (uint160 updatedSqrtPriceX96, int24 updatedTick,,) = hook.slot0s(id);
+
+        int24 arithmeticMeanTick;
+        if (bunniState.twapSecondsAgo != 0) {
+            arithmeticMeanTick = _getTwap(key, bunniState.twapSecondsAgo);
+        }
+        bytes32 newLdfState = hook.ldfStates(id);
+
+        // compute the ratio (excessLiquidity / totalLiquidity)
+        // excessLiquidity is the minimum amount of liquidity that can be supported by the excess tokens
+
+        // get fresh token balances
+        (uint256 balance0, uint256 balance1) = (
+            bunniState.rawBalance0 + getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+
+        // compute total liquidity and densities
+        (totalLiquidity,,,,,) = queryLDF({
+            key: key,
+            sqrtPriceX96: updatedSqrtPriceX96,
+            tick: updatedTick,
+            arithmeticMeanTick: arithmeticMeanTick,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: newLdfState,
+            balance0: balance0,
+            balance1: balance1,
+            idleBalance: bunniState.idleBalance
+        });
+
+        // compute excess liquidity if there's any
+        (uint256 idleBalance, bool willRebalanceToken0) = bunniState.idleBalance.fromIdleBalance();
+        if (willRebalanceToken0) {
+            excessLiquidity0 = idleBalance.divWad(
+                bunniState.liquidityDensityFunction.cumulativeAmount0(
+                    key,
+                    TickMath.minUsableTick(key.tickSpacing),
+                    WAD,
+                    arithmeticMeanTick,
+                    updatedTick,
+                    bunniState.ldfParams,
+                    newLdfState
+                )
+            );
+        } else {
+            excessLiquidity1 = idleBalance.divWad(
+                bunniState.liquidityDensityFunction.cumulativeAmount1(
+                    key,
+                    TickMath.maxUsableTick(key.tickSpacing) - key.tickSpacing,
+                    WAD,
+                    arithmeticMeanTick,
+                    updatedTick,
+                    bunniState.ldfParams,
+                    newLdfState
+                )
+            );
+        }
     }
 
     /// -----------------------------------------------------------------------
@@ -567,5 +642,15 @@ contract BunniQuoter is IBunniQuoter {
                         || dist(sharePrice1, prevSharePrice1) > prevSharePrice1 / hookParams.vaultSurgeThreshold1
                 )
         );
+    }
+
+    function _getTwap(PoolKey memory poolKey, uint24 twapSecondsAgo) internal view returns (int24 arithmeticMeanTick) {
+        IBunniHook hook = IBunniHook(address(poolKey.hooks));
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = twapSecondsAgo;
+        secondsAgos[1] = 0;
+        int56[] memory tickCumulatives = hook.observe(poolKey, secondsAgos);
+        int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
+        return int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 }

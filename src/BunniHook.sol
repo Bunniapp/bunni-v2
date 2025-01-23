@@ -559,17 +559,6 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         }
         orderOutputAmount -= outputBalanceBefore;
 
-        // recompute idle balance
-        (uint256 idleBalance, bool isToken0) = hub.idleBalance(id).fromIdleBalance();
-        if (isToken0 == (hookArgs.preHookArgs.currency == hookArgs.key.currency0)) {
-            // Sanity check: the idle token should be the same as the input token of the rebalance swap
-            // Deduct rebalance swap input amount from idle balance
-            // Deduction should never revert since `inputAmount = idleBalance - inputTokenTarget` in BunniHookLogic::_computeRebalanceParams()
-            // meaning `idleBalance >= inputAmount == hookArgs.preHookArgs.amount`
-            idleBalance -= hookArgs.preHookArgs.amount;
-            hub.hookSetIdleBalance(hookArgs.key, idleBalance.toIdleBalance(isToken0));
-        }
-
         // posthook should wrap output tokens as claim tokens and push it from BunniHook to BunniHub and update pool balances
         poolManager.unlock(
             abi.encode(
@@ -577,6 +566,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
                 abi.encode(args.currency, orderOutputAmount, hookArgs.key, hookArgs.key.currency0 == args.currency)
             )
         );
+
+        // recompute idle balance
+        BunniHookLogic.recomputeIdleBalance(s, hub, hookArgs.key);
     }
 
     /// -----------------------------------------------------------------------

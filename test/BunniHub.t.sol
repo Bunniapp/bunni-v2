@@ -37,7 +37,6 @@ import {MockLDF} from "./mocks/MockLDF.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniZone} from "../src/BunniZone.sol";
 import {BunniHook} from "../src/BunniHook.sol";
-import {BunniLens} from "./utils/BunniLens.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {BunniToken} from "../src/BunniToken.sol";
 import {Uniswapper} from "./mocks/Uniswapper.sol";
@@ -120,7 +119,6 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     Uniswapper internal swapper;
     WETH internal weth;
     IFloodPlain internal floodPlain;
-    BunniLens internal lens;
     BunniZone internal zone;
     uint256 deposit0;
     uint256 deposit1;
@@ -230,9 +228,6 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         // deploy quoter
         quoter = new BunniQuoter(hub);
-
-        // deploy lens
-        lens = new BunniLens(hub);
 
         // initialize LDF
         ldf = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
@@ -1917,15 +1912,6 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         // the rebalance should swap from token1 to token0
         ldf_.setMinTick(-20);
 
-        {
-            // verify excess liquidity before the rebalance
-            (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity) = lens.getExcessLiquidity(key);
-            bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / REBALANCE_THRESHOLD;
-            bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / REBALANCE_THRESHOLD;
-            assertFalse(shouldRebalance0, "shouldRebalance0 is true before rebalance");
-            assertTrue(shouldRebalance1, "shouldRebalance1 is not true before rebalance");
-        }
-
         // make small swap to trigger rebalance
         _mint(key.currency0, address(this), swapAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -2004,7 +1990,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         {
             // verify excess liquidity after the rebalance
-            (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity) = lens.getExcessLiquidity(key);
+            (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity) =
+                quoter.getExcessLiquidity(key);
             bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / REBALANCE_THRESHOLD;
             bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / REBALANCE_THRESHOLD;
             assertFalse(shouldRebalance0, "shouldRebalance0 is still true after rebalance");
@@ -2501,14 +2488,10 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         _mint(key.currency0, address(this), order.consideration.amount);
         floodPlain.fulfillOrder(signedOrder);
 
-        // idle balance should be reduced by order input
+        // idle balance should be reduced
         IdleBalance idleBalanceAfter = hub.idleBalance(key.toId());
         (uint256 balanceAfter, bool isToken0After) = idleBalanceAfter.fromIdleBalance();
-        assertEq(
-            balanceAfter,
-            balanceBefore - order.offer[0].amount,
-            "idle balance should be reduced by rebalance order input"
-        );
+        assertLt(balanceAfter, balanceBefore, "idle balance should be reduced");
         assertFalse(isToken0After, "idle balance should still be in token1");
     }
 

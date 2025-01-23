@@ -268,10 +268,8 @@ library BunniHookLogic {
             // the LDF has been updated, so we need to update the idle balance
             (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
                 (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
-            (uint256 extraBalance0, uint256 extraBalance1) = (
-                balance0 > currentActiveBalance0 ? balance0 - currentActiveBalance0 : 0,
-                balance1 > currentActiveBalance1 ? balance1 - currentActiveBalance1 : 0
-            );
+            (uint256 extraBalance0, uint256 extraBalance1) =
+                (subReLU(balance0, currentActiveBalance0), subReLU(balance1, currentActiveBalance1));
             bool isToken0 = extraBalance0 >= extraBalance1;
             env.hub.hookSetIdleBalance(key, FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(isToken0));
         }
@@ -551,6 +549,46 @@ library BunniHookLogic {
                 })
             );
         }
+    }
+
+    function recomputeIdleBalance(HookStorage storage s, IBunniHub hub, PoolKey calldata key) external {
+        PoolId id = key.toId();
+        PoolState memory bunniState = hub.poolState(id);
+        Slot0 memory slot0 = s.slot0s[id];
+        (uint256 balance0, uint256 balance1) = (
+            bunniState.rawBalance0 + getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+        int24 arithmeticMeanTick = bunniState.twapSecondsAgo == 0
+            ? int24(0)
+            : _getTwap(
+                s,
+                id,
+                slot0.tick,
+                bunniState.twapSecondsAgo,
+                s.states[id].intermediateObservation,
+                s.states[id].index,
+                s.states[id].cardinality
+            );
+        bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? s.ldfStates[id] : bytes32(0);
+        (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+            key: key,
+            sqrtPriceX96: slot0.sqrtPriceX96,
+            tick: slot0.tick,
+            arithmeticMeanTick: arithmeticMeanTick,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: ldfState,
+            balance0: balance0,
+            balance1: balance1,
+            idleBalance: IdleBalanceLibrary.ZERO // set to zero since we're recomputing the idle balance and shouldSurge isn't necessarily true
+        });
+        (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
+            (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
+        (uint256 extraBalance0, uint256 extraBalance1) =
+            (subReLU(balance0, currentActiveBalance0), subReLU(balance1, currentActiveBalance1));
+        bool isToken0 = extraBalance0 >= extraBalance1;
+        hub.hookSetIdleBalance(key, FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(isToken0));
     }
 
     function isValidParams(bytes calldata hookParams) external pure returns (bool) {
