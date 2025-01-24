@@ -11,16 +11,19 @@ import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 
 import "../../src/lib/Math.sol";
 import {ShiftMode} from "../../src/ldf/ShiftMode.sol";
+import {SqrtPriceMath} from "../../src/lib/SqrtPriceMath.sol";
 import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityFunction.sol";
 
 abstract contract LiquidityDensityFunctionTest is Test {
     using TickMath for int24;
     using FixedPointMathLib for uint256;
 
-    uint256 internal constant MAX_ERROR = 1e10;
+    uint256 internal constant MAX_ERROR = 1e7;
+    uint256 internal constant MAX_ERROR_CUM0 = 1e6;
+    uint256 internal constant MAX_ERROR_CUM1 = 2e7;
     int24 internal constant MAX_TICK_SPACING = type(int16).max;
     int24 internal constant MIN_TICK_SPACING = 1000; // >1 to make brute forcing viable
-    uint256 internal constant MIN_ABS_ERROR = FixedPoint96.Q96 / 1e9;
+    uint256 internal constant MIN_ABS_ERROR = 1000;
     bytes32 internal constant LDF_STATE = bytes32(0);
 
     ILiquidityDensityFunction internal ldf;
@@ -74,14 +77,20 @@ abstract contract LiquidityDensityFunctionTest is Test {
         (, uint256 error0) = absDiff(cumulativeAmount0DensityX96, bruteForceAmount0X96);
         if (error0 > MIN_ABS_ERROR) {
             assertApproxEqRel(
-                cumulativeAmount0DensityX96, bruteForceAmount0X96, MAX_ERROR, "cumulativeAmount0DensityX96 incorrect"
+                cumulativeAmount0DensityX96,
+                bruteForceAmount0X96,
+                MAX_ERROR_CUM0,
+                "cumulativeAmount0DensityX96 incorrect"
             );
         }
 
         (, uint256 error1) = absDiff(cumulativeAmount1DensityX96, bruteForceAmount1X96);
         if (error1 > MIN_ABS_ERROR) {
             assertApproxEqRel(
-                cumulativeAmount1DensityX96, bruteForceAmount1X96, MAX_ERROR, "cumulativeAmount1DensityX96 incorrect"
+                cumulativeAmount1DensityX96,
+                bruteForceAmount1X96,
+                MAX_ERROR_CUM1,
+                "cumulativeAmount1DensityX96 incorrect"
             );
         }
     }
@@ -98,7 +107,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
         for (int24 tick = roundedTick; tick <= maxTick; tick += tickSpacing) {
             (uint256 liquidityDensityX96,,,,) = ldf.query(key, tick, 0, spotPriceTick, decodedLDFParams, LDF_STATE);
             uint256 amount0DensityX96 = _amount0DensityX96(tick, tickSpacing);
-            cumulativeAmount0DensityX96 += amount0DensityX96.fullMulDiv(liquidityDensityX96, FixedPoint96.Q96);
+            cumulativeAmount0DensityX96 += amount0DensityX96.fullMulDivUp(liquidityDensityX96, FixedPoint96.Q96);
         }
     }
 
@@ -107,8 +116,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         pure
         returns (uint256 amount0DensityX96)
     {
-        return (FixedPoint96.Q96 - (-tickSpacing).getSqrtPriceAtTick()).fullMulDiv(
-            FixedPoint96.Q96, (roundedTick).getSqrtPriceAtTick()
+        return SqrtPriceMath.getAmount0Delta(
+            roundedTick.getSqrtPriceAtTick(), (roundedTick + tickSpacing).getSqrtPriceAtTick(), Q96, true
         );
     }
 
@@ -124,7 +133,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
         for (int24 tick = minTick; tick <= roundedTick; tick += tickSpacing) {
             (uint256 liquidityDensityX96,,,,) = ldf.query(key, tick, 0, spotPriceTick, decodedLDFParams, LDF_STATE);
             uint256 amount1DensityX96 = _amount1DensityX96(tick, tickSpacing);
-            cumulativeAmount1DensityX96 += amount1DensityX96.fullMulDiv(liquidityDensityX96, FixedPoint96.Q96);
+            cumulativeAmount1DensityX96 += amount1DensityX96.fullMulDivUp(liquidityDensityX96, FixedPoint96.Q96);
         }
     }
 
@@ -133,12 +142,8 @@ abstract contract LiquidityDensityFunctionTest is Test {
         pure
         returns (uint256 amount1DensityX96)
     {
-        return (tickSpacing.getSqrtPriceAtTick() - FixedPoint96.Q96).fullMulDiv(
-            (roundedTick).getSqrtPriceAtTick(), FixedPoint96.Q96
+        return SqrtPriceMath.getAmount1Delta(
+            roundedTick.getSqrtPriceAtTick(), (roundedTick + tickSpacing).getSqrtPriceAtTick(), Q96, true
         );
     }
-}
-
-function _subError(uint256 x, uint256 err) pure returns (uint256) {
-    return x >= err ? x - err : 0;
 }

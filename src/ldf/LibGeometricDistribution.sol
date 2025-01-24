@@ -116,9 +116,15 @@ library LibGeometricDistribution {
                 cumulativeAmount0DensityX96 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
-                uint256 numerator =
-                    (Q96 - alphaX96) * (baseX96.rpow(uint24(x + 1), Q96) - baseX96.rpow(uint24(length), Q96));
-                uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
+                int24 xPlus1 = x + 1;
+                uint256 alphaPowXX96 = alphaX96.rpow(uint24(xPlus1), Q96);
+                uint256 alphaPowLengthX96 = alphaX96.rpow(uint24(length), Q96);
+                uint256 numerator = (Q96 - alphaX96)
+                    * (
+                        alphaPowXX96.mulDivUp((-tickSpacing * xPlus1).getSqrtPriceAtTick(), Q96)
+                            - alphaPowLengthX96.mulDivUp((-tickSpacing * length).getSqrtPriceAtTick(), Q96)
+                    );
+                uint256 denominator = (Q96 - alphaPowLengthX96) * (Q96 - baseX96);
                 cumulativeAmount0DensityX96 =
                     (Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(numerator, denominator).mulDivUp(Q96, sqrtRatioMinTick);
             }
@@ -130,7 +136,9 @@ library LibGeometricDistribution {
                 cumulativeAmount1DensityX96 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
-                uint256 numerator = dist(Q96, baseX96.rpow(uint24(x), Q96)) * (Q96 - alphaX96);
+                uint256 numerator = dist(
+                    Q96, alphaX96.rpow(uint24(x), Q96).mulDivUp((tickSpacing * x).getSqrtPriceAtTick(), Q96)
+                ) * (Q96 - alphaX96);
                 uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
                 cumulativeAmount1DensityX96 =
                     (sqrtRatioTickSpacing - Q96).fullMulDivUp(numerator, denominator).mulDivUp(sqrtRatioMinTick, Q96);
@@ -202,9 +210,14 @@ library LibGeometricDistribution {
                 cumulativeAmount0DensityX96 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
-                uint256 numerator =
-                    (Q96 - alphaX96) * (baseX96.rpow(uint24(x), Q96) - baseX96.rpow(uint24(length), Q96));
-                uint256 denominator = (Q96 - alphaX96.rpow(uint24(length), Q96)) * (Q96 - baseX96);
+                uint256 alphaPowXX96 = alphaX96.rpow(uint24(x), Q96);
+                uint256 alphaPowLengthX96 = alphaX96.rpow(uint24(length), Q96);
+                uint256 numerator = (Q96 - alphaX96)
+                    * (
+                        alphaPowXX96.mulDivUp((-tickSpacing * x).getSqrtPriceAtTick(), Q96)
+                            - alphaPowLengthX96.mulDivUp((-tickSpacing * length).getSqrtPriceAtTick(), Q96)
+                    );
+                uint256 denominator = (Q96 - alphaPowLengthX96) * (Q96 - baseX96);
                 cumulativeAmount0DensityX96 =
                     (Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(numerator, denominator).mulDivUp(Q96, sqrtRatioMinTick);
             }
@@ -277,7 +290,9 @@ library LibGeometricDistribution {
             } else {
                 uint256 sqrtRatioMinTick = minTick.getSqrtPriceAtTick();
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioTickSpacing, Q96);
-                uint256 numerator = dist(Q96, baseX96.rpow(uint24(x + 1), Q96)) * (Q96 - alphaX96);
+                uint256 numerator = dist(
+                    Q96, alphaX96.rpow(uint24(x + 1), Q96).mulDivUp((tickSpacing * (x + 1)).getSqrtPriceAtTick(), Q96)
+                ) * (Q96 - alphaX96);
                 uint256 denominator = dist(Q96, baseX96) * (Q96 - alphaX96.rpow(uint24(length), Q96));
                 cumulativeAmount1DensityX96 =
                     (sqrtRatioTickSpacing - Q96).fullMulDivUp(numerator, denominator).mulDivUp(sqrtRatioMinTick, Q96);

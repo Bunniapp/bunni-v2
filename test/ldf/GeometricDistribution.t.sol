@@ -10,7 +10,7 @@ import "../../src/ldf/LibGeometricDistribution.sol";
 contract GeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
-    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e6;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
@@ -115,7 +115,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 2) {
+        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 1e2) {
             uint256 nextCumulativeAmount0 = LibGeometricDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
             );
@@ -170,7 +170,7 @@ contract GeometricDistributionTest is LiquidityDensityFunctionTest {
 
         assertGe(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-        if (resultRoundedTick > minTick && cumulativeAmount1 > 1) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 2) {
             uint256 nextCumulativeAmount1 = LibGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96
             );

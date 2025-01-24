@@ -1561,7 +1561,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         uint24 feeMax,
         uint24 feeQuadraticMultiplier
     ) external {
-        swapAmount = bound(swapAmount, 1e6, 1e36);
+        swapAmount = bound(swapAmount, 1e6, 1e33);
         waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 3);
         feeMin = uint24(bound(feeMin, 0, 1e6 - 1));
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));

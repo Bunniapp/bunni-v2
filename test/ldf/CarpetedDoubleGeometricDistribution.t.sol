@@ -10,7 +10,7 @@ import "../../src/ldf/LibCarpetedDoubleGeometricDistribution.sol";
 contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
-    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e6;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(

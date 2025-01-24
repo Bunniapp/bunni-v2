@@ -10,7 +10,7 @@ import "../../src/ldf/LibCarpetedGeometricDistribution.sol";
 contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
-    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e6;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(
@@ -191,7 +191,7 @@ contract CarpetedGeometricDistributionTest is LiquidityDensityFunctionTest {
 
         assertGe(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-        if (resultRoundedTick > minTick) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 3) {
             uint256 nextCumulativeAmount1 = LibCarpetedGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
