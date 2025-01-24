@@ -68,11 +68,17 @@ Please create a `.env` file before deployment. An example can be found in `.env.
 #### Dryrun
 
 ```
-forge script script/Deploy.s.sol -f [network]
+forge script script/DeployCore.s.sol -f [network]
+forge script script/DeployBunniQuoter.s.sol -f [network]
+export BUNNI_HOOK=[insert deployed BunniHook address]
+FOUNDRY_PROFILE=ldf forge script script/DeployLDFs.s.sol -f [network]
 ```
 
 ### Live
 
 ```
-forge script script/Deploy.s.sol -f [network] --verify --broadcast
+forge script script/DeployCore.s.sol -f [network] --verify --broadcast
+forge script script/DeployBunniQuoter.s.sol -f [network] --verify --broadcast
+export BUNNI_HOOK=[insert deployed BunniHook address]
+FOUNDRY_PROFILE=ldf forge script script/DeployLDFs.s.sol -f [network] --verify --broadcast
 ```
