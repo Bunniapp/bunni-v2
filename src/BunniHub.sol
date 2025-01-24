@@ -291,7 +291,16 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IBunniHub
-    function setPauseFlags(uint8 pauseFlags) external onlyOwner {
+    function setPauser(address guy, bool status) external onlyOwner {
+        s.isPauser[guy] = status;
+        emit SetPauser(guy, status);
+    }
+
+    /// @inheritdoc IBunniHub
+    function setPauseFlags(uint8 pauseFlags) external {
+        // only owner or pauser can set pause flags
+        if (msg.sender != owner() && !s.isPauser[msg.sender]) revert BunniHub__Unauthorized();
+
         s.pauseFlags = pauseFlags;
         emit SetPauseFlags(pauseFlags);
     }
@@ -356,6 +365,11 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     /// @inheritdoc IBunniHub
     function getReferralRewardRecipient() external view returns (address) {
         return s.referralRewardRecipient;
+    }
+
+    /// @inheritdoc IBunniHub
+    function isPauser(address guy) external view returns (bool) {
+        return s.isPauser[guy];
     }
 
     /// @inheritdoc IBunniHub

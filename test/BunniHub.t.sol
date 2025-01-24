@@ -2709,6 +2709,37 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         vm.stopPrank();
     }
 
+    function test_pause_authChecks(uint8 pauseFlags) external {
+        // owner can set pauseFlags
+        hub.setPauseFlags(pauseFlags);
+        (uint8 pauseFlagsUpdated,) = hub.getPauseStatus();
+        assertEq(pauseFlagsUpdated, pauseFlags, "pauseFlags not set by owner");
+        hub.setPauseFlags(0); // reset
+
+        // pauser can set pauseFlags
+        address guy = makeAddr("guy");
+        hub.setPauser(guy, true);
+        assertTrue(hub.isPauser(guy), "pauser not set");
+        vm.prank(guy);
+        hub.setPauseFlags(pauseFlags);
+        (pauseFlagsUpdated,) = hub.getPauseStatus();
+        assertEq(pauseFlagsUpdated, pauseFlags, "pauseFlags not set by pauser");
+        hub.setPauseFlags(0); // reset
+
+        // others cannot set pauseFlags
+        address others = makeAddr("others");
+        vm.prank(others);
+        vm.expectRevert(BunniHub__Unauthorized.selector);
+        hub.setPauseFlags(pauseFlags);
+
+        // guy cannot set pauseFlags after revoking pauser role
+        hub.setPauser(guy, false);
+        assertFalse(hub.isPauser(guy), "pauser not set");
+        vm.prank(guy);
+        vm.expectRevert(BunniHub__Unauthorized.selector);
+        hub.setPauseFlags(pauseFlags);
+    }
+
     /// -----------------------------------------------------------------------
     /// Internal utils
     /// -----------------------------------------------------------------------

@@ -73,6 +73,10 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @notice Emitted when the recipient of referral rewards of the default referrer address(0) is set
     /// @param newReferralRewardRecipient The new recipient of referral rewards of the default referrer address(0)
     event SetReferralRewardRecipient(address indexed newReferralRewardRecipient);
+    /// @notice Emitted when a new address is added to or removed from the pauser set
+    /// @param guy The address that was added or removed from the pauser set
+    /// @param isPauser True if the address was added to the pauser set, false if it was removed
+    event SetPauser(address indexed guy, bool indexed isPauser);
     /// @notice Emitted when the pause flags are set
     /// @param pauseFlags The new pause flags, each bit corresponds to a function in BunniHub and is set to 1 if the function is paused
     event SetPauseFlags(uint8 indexed pauseFlags);
@@ -275,6 +279,11 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @param newReferralRewardRecipient The new address of the recipient of referral rewards
     function setReferralRewardRecipient(address newReferralRewardRecipient) external;
 
+    /// @notice Adds or removes an address from the pauser set. Only callable by the owner.
+    /// @param guy The address to add or remove from the pauser set
+    /// @param isPauser True if the address should be added to the pauser set, false if it should be removed
+    function setPauser(address guy, bool isPauser) external;
+
     /// @notice Sets the pause flags. Only callable by the owner.
     /// @param pauseFlags The new pause flags, each bit corresponds to a function in BunniHub and is set to 1 if the function is paused
     function setPauseFlags(uint8 pauseFlags) external;
@@ -317,6 +326,9 @@ interface IBunniHub is IUnlockCallback, IOwnable {
 
     /// @notice The address of the recipient of referral rewards belonging to the default referrer address(0).
     function getReferralRewardRecipient() external view returns (address);
+
+    /// @notice Returns true if the given address is a pauser who can pause/unpause external functions.
+    function isPauser(address guy) external view returns (bool);
 
     /// @notice The pause flags and pause fuse status.
     /// @return pauseFlags The pause flags, each bit corresponds to a function in BunniHub and is set to 1 if the function is paused
