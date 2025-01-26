@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.20;
 
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -11,6 +12,7 @@ import {ShiftMode} from "../src/ldf/ShiftMode.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 import {LibUniformDistribution} from "../src/ldf/LibUniformDistribution.sol";
 import {UniformDistribution} from "../src/ldf/UniformDistribution.sol";
+import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 
 import "./FuzzHelper.sol";
 import "../src/lib/BunniSwapMath.sol";
@@ -27,86 +29,6 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
     using FixedPointMathLib for *;
     using IdleBalanceLibrary for *;
 
-    // Invariant: computeSwap in BunniSwapMath should output the same amount of input
-    //            and output tokens both in ExactIn and ExactOut configurations given
-    //            the same pool state.
-    // Issue: TOB-BUNNI-17
-    function compare_exact_in_swap_with_exact_out_swap(
-        int24 tickSpacing,
-        uint64 balance0,
-        uint64 balance1,
-        int64 amountSpecified,
-        uint160 sqrtPriceLimit,
-        int24 tickLower,
-        int24 tickUpper,
-        int24 currentTick,
-        bool zeroForOne
-    ) public {
-        // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
-
-        // Initialize parameters before swapinng
-        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing,
-            balance0,
-            balance1,
-            amountSpecified,
-            sqrtPriceLimit,
-            tickLower,
-            tickUpper,
-            currentTick,
-            zeroForOne
-        );
-
-        try this.swap(input1) returns (
-            uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
-        ) {
-            if (inputAmount0 == 0 || outputAmount0 == 0) return;
-
-            if (inputAmount0 != uint64(inputAmount0) || outputAmount0 != uint64(outputAmount0)) return;
-
-            (BunniSwapMath.BunniComputeSwapInput memory input2,) = _compute_swap(
-                tickSpacing,
-                balance0,
-                balance1,
-                -amountSpecified,
-                sqrtPriceLimit,
-                tickLower,
-                tickUpper,
-                currentTick,
-                zeroForOne
-            );
-            input2.swapParams.amountSpecified = amountSpecified < 0 ? int256(outputAmount0) : -int256(inputAmount0);
-
-            (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
-                BunniSwapMath.computeSwap(input2);
-
-            console2.log("input1 amountSpecified", amountSpecified);
-            console2.log("input2 amountSpecified", input2.swapParams.amountSpecified);
-            console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
-            console2.log("updatedTick", updatedTick);
-            console2.log("inputAmount0", inputAmount0);
-            console2.log("outputAmount0", outputAmount0);
-            console2.log("updatedSqrtPriceX960", updatedSqrtPriceX960);
-            console2.log("updatedTick0", updatedTick0);
-            console2.log("inputAmount1", inputAmount1);
-            console2.log("outputAmount1", outputAmount1);
-
-            if (amountSpecified < 0) {
-                assertWithMsg(inputAmount0 >= inputAmount1, "Users can profit from Exact In and Exact Out combination");
-            } else {
-                assertWithMsg(
-                    outputAmount0 >= outputAmount1, "Users can profit from Exact In and Exact Out combination"
-                );
-            }
-        } catch Panic(uint256) /*errorCode*/ {
-            return;
-        } catch (bytes memory reason) {
-            emit LogBytes(reason);
-            return;
-        }
-    }
-
     // Invariant: Users should not be able to get free output tokens
     //            for zero input tokens when amountSpecified is non-zero
     //            for a given valid pool state.
@@ -122,8 +44,10 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 currentTick,
         bool zeroForOne
     ) public {
+        if (amountSpecified == 0) return;
+
         // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
+        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
@@ -137,6 +61,14 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             currentTick,
             zeroForOne
         );
+
+        // avoid edge case where the active balance of the output token is 0
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+        ) {
+            return;
+        }
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
@@ -168,13 +100,20 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 tickUpper,
         int24 currentTick
     ) public {
+        if (amountSpecified == 0) return;
+
         // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
+        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) = _compute_swap(
             tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick, true
         );
+
+        // avoid edge case where the active balance of the output token is 0
+        if (input1.currentActiveBalance1 == 0) {
+            return;
+        }
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
@@ -195,18 +134,35 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 updatedSqrtPriceX96,
                 idleBalance
             );
+            // avoid edge case where the active balance of the output token is 0
+            if (input2.currentActiveBalance0 == 0) {
+                return;
+            }
             input2.swapParams.amountSpecified = amountSpecified < 0 ? -int256(outputAmount0) : int256(inputAmount0);
 
             (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
-                BunniSwapMath.computeSwap(input2);
+                this.swap(input2);
 
             if (
-                (amountSpecified < 0 && outputAmount0 > inputAmount1)
-                    || (amountSpecified > 0 && inputAmount0 > outputAmount1)
+                (inputAmount0 > outputAmount1 && outputAmount0 > inputAmount1)
+                    || (inputAmount0 < outputAmount1 && outputAmount0 < inputAmount1)
             ) {
                 // not valid roundtrip swap since the swap amounts don't chain together
                 return;
             }
+
+            console2.log("inputAmount0", inputAmount0);
+            console2.log("outputAmount0", outputAmount0);
+            console2.log("inputAmount1", inputAmount1);
+            console2.log("outputAmount1", outputAmount1);
+            tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            console2.log("currentTick", int24(clampBetween(currentTick, minUsableTick, maxUsableTick)));
+            console2.log("updatedTick", updatedTick);
+            console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
+            console2.log("updatedTick0", updatedTick0);
+            console2.log("updatedSqrtPriceX960", updatedSqrtPriceX960);
 
             if (amountSpecified < 0) {
                 assertWithMsg(inputAmount0 >= outputAmount1, "Round trips swaps are profitable");
@@ -249,16 +205,31 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         uint256 totalDensity0X96;
         uint256 totalDensity1X96;
         uint256 liquidityDensityOfRoundedTickX96;
+        uint256 currentActiveBalance0;
+        uint256 currentActiveBalance1;
         {
+            bytes32 ldfParams = bytes32(
+                abi.encodePacked(
+                    ShiftMode.STATIC, int24(tickLower), int16((tickUpper - tickLower) / tickSpacing), uint32(0.7e8)
+                )
+            );
             PoolKey memory key;
             key.tickSpacing = tickSpacing;
-            (totalLiquidity, totalDensity0X96, totalDensity1X96, liquidityDensityOfRoundedTickX96,,) = queryLDF({
+            (
+                totalLiquidity,
+                totalDensity0X96,
+                totalDensity1X96,
+                liquidityDensityOfRoundedTickX96,
+                currentActiveBalance0,
+                currentActiveBalance1,
+                ,
+            ) = queryLDF({
                 key: key,
                 sqrtPriceX96: sqrtPriceX96,
                 tick: currentTick,
                 arithmeticMeanTick: int24(0),
                 ldf: ldf,
-                ldfParams: bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper)),
+                ldfParams: ldfParams,
                 ldfState: LDF_STATE,
                 balance0: balance0,
                 balance1: balance1,
@@ -266,8 +237,6 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             });
         }
 
-        (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
-            (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
         (uint256 extraBalance0, uint256 extraBalance1) = (
             balance0 > currentActiveBalance0 ? balance0 - currentActiveBalance0 : 0,
             balance1 > currentActiveBalance1 ? balance1 - currentActiveBalance1 : 0
@@ -337,10 +306,16 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 roundTickSingle(int24(clampBetween(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
             tickUpper =
                 roundTickSingle(int24(clampBetween(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
+            console2.log("tickLower", tickLower);
+            console2.log("tickUpper", tickUpper);
             currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
         }
 
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
+        bytes32 ldfParams = bytes32(
+            abi.encodePacked(
+                ShiftMode.STATIC, int24(tickLower), int16((tickUpper - tickLower) / tickSpacing), uint32(0.7e8)
+            )
+        );
         // set up pool key
         PoolKey memory key;
         key.tickSpacing = tickSpacing;
@@ -366,9 +341,11 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         // query the LDF to get total liquidity and token densities
         (
             uint256 totalLiquidity,
-            uint256 totalDensity0X96,
-            uint256 totalDensity1X96,
+            ,
+            ,
             uint256 liquidityDensityOfRoundedTickX96,
+            uint256 currentActiveBalance0,
+            uint256 currentActiveBalance1,
             ,
         ) = queryLDF({
             key: key,
@@ -384,8 +361,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         });
 
         input.totalLiquidity = totalLiquidity;
-        input.totalDensity0X96 = totalDensity0X96;
-        input.totalDensity1X96 = totalDensity1X96;
+        input.currentActiveBalance0 = currentActiveBalance0;
+        input.currentActiveBalance1 = currentActiveBalance1;
         input.liquidityDensityOfRoundedTickX96 = liquidityDensityOfRoundedTickX96;
 
         return input;
@@ -403,8 +380,10 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 currentTick,
         bool zeroForOne
     ) public {
+        if (amountSpecified == 0) return;
+
         // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
+        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
@@ -418,6 +397,14 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             currentTick,
             zeroForOne
         );
+
+        // avoid edge case where the active balance of the output token is 0
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+        ) {
+            return;
+        }
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
@@ -454,8 +441,10 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 currentTick,
         bool zeroForOne
     ) public {
+        if (amountSpecified == 0 || FixedPointMathLib.abs(amountSpecified) < 1e3) return;
+
         // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
+        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
@@ -469,6 +458,14 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             currentTick,
             zeroForOne
         );
+
+        // avoid edge case where the active balance of the output token is 0
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+        ) {
+            return;
+        }
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0

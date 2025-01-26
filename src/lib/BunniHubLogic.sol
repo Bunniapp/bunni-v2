@@ -285,8 +285,15 @@ library BunniHubLogic {
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
             bytes32 ldfState =
                 inputData.state.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? hook.ldfStates(inputData.poolId) : bytes32(0);
-            (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,, bytes32 newLdfState,) =
-            queryLDF({
+            (
+                uint256 totalLiquidity,
+                uint256 totalDensity0X96,
+                uint256 totalDensity1X96,
+                ,
+                uint256 addedAmount0,
+                uint256 addedAmount1,
+                bytes32 newLdfState,
+            ) = queryLDF({
                 key: inputData.params.poolKey,
                 sqrtPriceX96: inputData.sqrtPriceX96,
                 tick: inputData.currentTick,
@@ -303,8 +310,7 @@ library BunniHubLogic {
             }
 
             // compute token amounts to add
-            (returnData.amount0, returnData.amount1) =
-                (totalLiquidity.mulDivUp(totalDensity0X96, Q96), totalLiquidity.mulDivUp(totalDensity1X96, Q96));
+            (returnData.amount0, returnData.amount1) = (addedAmount0, addedAmount1);
 
             // sanity check against desired amounts
             // the amounts can exceed the desired amounts due to math errors

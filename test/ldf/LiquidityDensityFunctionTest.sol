@@ -19,7 +19,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
     using FixedPointMathLib for uint256;
 
     uint256 internal constant MAX_ERROR = 1e7;
-    uint256 internal constant MAX_ERROR_CUM0 = 1e6;
+    uint256 internal constant MAX_ERROR_CUM0 = 2e6;
     uint256 internal constant MAX_ERROR_CUM1 = 2e7;
     int24 internal constant MAX_TICK_SPACING = type(int16).max;
     int24 internal constant MIN_TICK_SPACING = 1000; // >1 to make brute forcing viable

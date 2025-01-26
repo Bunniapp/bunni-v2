@@ -1340,7 +1340,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
                 WrappedError.selector,
                 address(bunniHook),
                 IHooks.beforeSwap.selector,
-                stdError.arithmeticError,
+                abi.encodePacked(BunniHook__RequestedOutputExceedsBalance.selector),
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );

@@ -286,7 +286,17 @@ library LibCarpetedGeometricDistribution {
         int24 length,
         uint256 alphaX96,
         uint256 weightCarpet
-    ) internal pure returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity) {
+    )
+        internal
+        pure
+        returns (
+            bool success,
+            int24 roundedTick,
+            uint256 cumulativeAmount0_,
+            uint256 cumulativeAmount1_,
+            uint256 swapLiquidity
+        )
+    {
         if (exactIn == zeroForOne) {
             // compute roundedTick by inverting the cumulative amount
             // below is an illustration of 4 rounded ticks, the input amount, and the resulting roundedTick (rick)
@@ -305,12 +315,24 @@ library LibCarpetedGeometricDistribution {
             (success, roundedTick) = inverseCumulativeAmount0(
                 inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
-            if (!success) return (false, 0, 0, 0);
+            if (!success) return (false, 0, 0, 0, 0);
 
             // compute the cumulative amount up to roundedTick
             // below is an illustration of the cumulative amount at roundedTick
-            // notice that (cum - input) is the remainder of the swap that will be handled by Uniswap math
-            //       cum
+            // notice that exactIn ? (input - cum) : (cum - input) is the remainder of the swap that will be handled by Uniswap math
+            // exactIn:
+            //         cum
+            //       ├─────┤
+            // ┌──┬──┬──┬──┐
+            // │  │ █│██│██│
+            // │  │ █│██│██│
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //       │
+            //       ▼
+            //      rick + tickSpacing
+            // exactOut:
+            //        cum
             //    ├────────┤
             // ┌──┬──┬──┬──┐
             // │  │ █│██│██│
@@ -320,8 +342,41 @@ library LibCarpetedGeometricDistribution {
             //    │
             //    ▼
             //   rick
-            cumulativeAmount =
-                cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet);
+            cumulativeAmount0_ = exactIn
+                ? cumulativeAmount0(
+                    roundedTick + tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
+                )
+                : cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet);
+
+            // compute the cumulative amount of the complementary token
+            // below is an illustration
+            // exactIn:
+            //   cum
+            // ├─────┤
+            // ┌──┬──┬──┬──┐
+            // │  │ █│██│██│
+            // │  │ █│██│██│
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //    │
+            //    ▼
+            //   rick
+            // exactOut:
+            //  cum
+            // ├──┤
+            // ┌──┬──┬──┬──┐
+            // │  │ █│██│██│
+            // │  │ █│██│██│
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            // │
+            // ▼
+            //rick - tickSpacing
+            cumulativeAmount1_ = exactIn
+                ? cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet)
+                : cumulativeAmount1(
+                    roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
+                );
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
@@ -356,11 +411,12 @@ library LibCarpetedGeometricDistribution {
             (success, roundedTick) = inverseCumulativeAmount1(
                 inverseCumulativeAmountInput, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
-            if (!success) return (false, 0, 0, 0);
+            if (!success) return (false, 0, 0, 0, 0);
 
             // compute the cumulative amount up to roundedTick
             // below is an illustration of the cumulative amount at roundedTick
-            // notice that (input - cum) is the remainder of the swap that will be handled by Uniswap math
+            // notice that exactIn ? (input - cum) : (cum - input) is the remainder of the swap that will be handled by Uniswap math
+            // exactIn:
             //   cum
             // ├─────┤
             // ┌──┬──┬──┬──┐
@@ -371,9 +427,52 @@ library LibCarpetedGeometricDistribution {
             //    │
             //    ▼
             //   rick - tickSpacing
-            cumulativeAmount = cumulativeAmount1(
-                roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
-            );
+            // exactOut:
+            //     cum
+            // ├────────┤
+            // ┌──┬──┬──┬──┐
+            // │██│██│█ │  │
+            // │██│██│█ │  │
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //       │
+            //       ▼
+            //      rick
+            cumulativeAmount1_ = exactIn
+                ? cumulativeAmount1(
+                    roundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
+                )
+                : cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet);
+
+            // compute the cumulative amount of the complementary token
+            // below is an illustration
+            // exactIn:
+            //         cum
+            //       ├─────┤
+            // ┌──┬──┬──┬──┐
+            // │██│██│█ │  │
+            // │██│██│█ │  │
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //       │
+            //       ▼
+            //      rick
+            // exactOut:
+            //           cum
+            //          ├──┤
+            // ┌──┬──┬──┬──┐
+            // │██│██│█ │  │
+            // │██│██│█ │  │
+            // └──┴──┴──┴──┘
+            // 0  1  2  3  4
+            //          │
+            //          ▼
+            //         rick + tickSpacing
+            cumulativeAmount0_ = exactIn
+                ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet)
+                : cumulativeAmount0(
+                    roundedTick + tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
+                );
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap

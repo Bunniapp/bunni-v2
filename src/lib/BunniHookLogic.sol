@@ -198,8 +198,13 @@ library BunniHookLogic {
             (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
         // if it's an exact output swap, revert if the requested output is greater than the balance
+        // edge case: if the balance of the output token is 0, we need to revert
+        // BunniSwapMath would panic anyways but it's good to revert early to save gas
         bool exactIn = params.amountSpecified < 0;
-        if (!exactIn && uint256(params.amountSpecified) > (params.zeroForOne ? balance1 : balance0)) {
+        if (
+            (!exactIn && uint256(params.amountSpecified) > (params.zeroForOne ? balance1 : balance0))
+                || (params.zeroForOne && balance1 == 0) || (!params.zeroForOne && balance0 == 0)
+        ) {
             revert BunniHook__RequestedOutputExceedsBalance();
         }
 
@@ -244,9 +249,11 @@ library BunniHookLogic {
         bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? s.ldfStates[id] : bytes32(0);
         (
             uint256 totalLiquidity,
-            uint256 totalDensity0X96,
-            uint256 totalDensity1X96,
+            ,
+            ,
             uint256 liquidityDensityOfRoundedTickX96,
+            uint256 currentActiveBalance0,
+            uint256 currentActiveBalance1,
             bytes32 newLdfState,
             bool shouldSurge
         ) = queryLDF({
@@ -261,13 +268,20 @@ library BunniHookLogic {
             balance1: balance1,
             idleBalance: bunniState.idleBalance
         });
+
+        // ensure the current active balance of the requested output token is not zero
+        if (
+            params.zeroForOne && currentActiveBalance1 == 0 || !params.zeroForOne && currentActiveBalance0 == 0
+                || totalLiquidity == 0
+        ) {
+            revert BunniHook__RequestedOutputExceedsBalance();
+        }
+
         shouldSurge = shouldSurge && bunniState.ldfType != LDFType.STATIC; // only surge from LDF if LDF type is not static
         if (bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL) s.ldfStates[id] = newLdfState;
 
         if (shouldSurge) {
             // the LDF has been updated, so we need to update the idle balance
-            (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
-                (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
             (uint256 extraBalance0, uint256 extraBalance1) =
                 (subReLU(balance0, currentActiveBalance0), subReLU(balance1, currentActiveBalance1));
             bool isToken0 = extraBalance0 >= extraBalance1;
@@ -285,8 +299,8 @@ library BunniHookLogic {
                 key: key,
                 totalLiquidity: totalLiquidity,
                 liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
-                totalDensity0X96: totalDensity0X96,
-                totalDensity1X96: totalDensity1X96,
+                currentActiveBalance0: currentActiveBalance0,
+                currentActiveBalance1: currentActiveBalance1,
                 sqrtPriceX96: slot0.sqrtPriceX96,
                 currentTick: slot0.tick,
                 liquidityDensityFunction: bunniState.liquidityDensityFunction,
@@ -571,7 +585,7 @@ library BunniHookLogic {
                 s.states[id].cardinality
             );
         bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? s.ldfStates[id] : bytes32(0);
-        (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+        (,,,, uint256 currentActiveBalance0, uint256 currentActiveBalance1,,) = queryLDF({
             key: key,
             sqrtPriceX96: slot0.sqrtPriceX96,
             tick: slot0.tick,
@@ -583,8 +597,6 @@ library BunniHookLogic {
             balance1: balance1,
             idleBalance: IdleBalanceLibrary.ZERO // set to zero since we're recomputing the idle balance and shouldSurge isn't necessarily true
         });
-        (uint256 currentActiveBalance0, uint256 currentActiveBalance1) =
-            (totalDensity0X96.fullMulDiv(totalLiquidity, Q96), totalDensity1X96.fullMulDiv(totalLiquidity, Q96));
         (uint256 extraBalance0, uint256 extraBalance1) =
             (subReLU(balance0, currentActiveBalance0), subReLU(balance1, currentActiveBalance1));
         bool isToken0 = extraBalance0 >= extraBalance1;

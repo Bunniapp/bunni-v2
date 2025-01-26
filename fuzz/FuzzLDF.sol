@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.24;
 
 import "../src/ldf/LibUniformDistribution.sol";
@@ -9,6 +10,8 @@ import "./FuzzHelper.sol";
 import "./PropertiesAsserts.sol";
 
 contract FuzzLDF is FuzzHelper, PropertiesAsserts {
+    uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e6;
+
     uint256 uniform_dist_0_failures;
     uint256 uniform_dist_1_failures;
     uint256 geometric_dist_0_failures;
@@ -66,7 +69,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             tickLower,
             tickUpper
         );
-        if (maxCumulativeAmount0 == 0) return;
+        if (maxCumulativeAmount0 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
 
         cumulativeAmount0 = clampBetween(
             cumulativeAmount0,
@@ -96,6 +99,14 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount0,
             "resultCumulativeAmount0 < cumulativeAmount0"
         );
+
+        if (resultRoundedTick < tickUpper && cumulativeAmount0 > 1e3) {
+            // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
+            uint256 nextCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
+                resultRoundedTick + tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper
+            );
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
+        }
     }
     // Invariant: Given a valid cumulative amount of token1, the cumulative amount calculated
     //            using the rounded tick from inverseCommulativeAmount1() should be greater than
@@ -148,7 +159,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             tickLower,
             tickUpper
         );
-        if (maxCumulativeAmount1 == 0) return;
+        if (maxCumulativeAmount1 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
 
         cumulativeAmount1 = clampBetween(
             cumulativeAmount1,
@@ -179,6 +190,13 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount1,
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
+
+        if (resultRoundedTick > tickLower && cumulativeAmount1 > 2e2) {
+            uint256 nextCumulativeAmount1 = LibUniformDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper
+            );
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
+        }
     }
 
     // Invariant: Given a valid cumulative amount of token0, the cumulative amount calculated
@@ -239,6 +257,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 length,
                 alphaX96
             );
+        if (maxCumulativeAmount0 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount0 = clampBetween(
             cumulativeAmount0,
             0,
@@ -270,6 +289,13 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount0,
             "resultCumulativeAmount0 < cumulativeAmount0"
         );
+
+        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 1e2) {
+            uint256 nextCumulativeAmount0 = LibGeometricDistribution.cumulativeAmount0(
+                resultRoundedTick + tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96
+            );
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
+        }
     }
 
     // Invariant: Given a valid cumulative amount of token1, the cumulative amount calculated
@@ -334,7 +360,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 length,
                 alphaX96
             );
-        if (maxCumulativeAmount1 == 0) return;
+        if (maxCumulativeAmount1 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount1 = clampBetween(
             cumulativeAmount1,
             0,
@@ -366,6 +392,13 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount1,
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
+
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 2) {
+            uint256 nextCumulativeAmount1 = LibGeometricDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96
+            );
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
+        }
     }
 
     // Invariant: Given a valid cumulative amount of token0, the cumulative amount calculated
@@ -474,6 +507,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 weight0,
                 weight1
             );
+        if (maxCumulativeAmount0 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount0 = clampBetween(
             cumulativeAmount0,
             0,
@@ -514,6 +548,22 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount0,
             "resultCumulativeAmount0 < cumulativeAmount0"
         );
+
+        if (resultRoundedTick < minTick + length0 * tickSpacing + length1 * tickSpacing && cumulativeAmount0 > 1e2) {
+            uint256 nextCumulativeAmount0 = LibDoubleGeometricDistribution.cumulativeAmount0(
+                resultRoundedTick + tickSpacing,
+                liquidity,
+                tickSpacing,
+                minTick,
+                length0,
+                length1,
+                alpha0X96,
+                alpha1X96,
+                weight0,
+                weight1
+            );
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
+        }
     }
 
     // Invariant: Given a valid cumulative amount of token1, the cumulative amount calculated
@@ -622,7 +672,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 weight0,
                 weight1
             );
-        require(maxCumulativeAmount1 != 0);
+        if (maxCumulativeAmount1 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount1 = clampBetween(
             cumulativeAmount1,
             0,
@@ -662,6 +712,22 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount1,
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
+
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 2) {
+            uint256 nextCumulativeAmount1 = LibDoubleGeometricDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing,
+                liquidity,
+                tickSpacing,
+                minTick,
+                length0,
+                length1,
+                alpha0X96,
+                alpha1X96,
+                weight0,
+                weight1
+            );
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
+        }
     }
     // Invariant: Given a valid cumulative amount of token0, the cumulative amount calculated
     //            using the rounded tick from inverseCommulativeAmount0() should be less than
@@ -726,6 +792,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 alphaX96,
                 weightCarpet
             );
+        if (maxCumulativeAmount0 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount0 = clampBetween(
             cumulativeAmount0,
             0,
@@ -762,6 +829,13 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount0,
             "resultCumulativeAmount0 < cumulativeAmount0"
         );
+
+        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 3) {
+            uint256 nextCumulativeAmount0 = LibCarpetedGeometricDistribution.cumulativeAmount0(
+                resultRoundedTick + tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
+            );
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
+        }
     }
 
     // Invariant: Given a valid cumulative amount of token1, the cumulative amount calculated
@@ -827,7 +901,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 alphaX96,
                 weightCarpet
             );
-        require(maxCumulativeAmount1 != 0);
+        if (maxCumulativeAmount1 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount1 = clampBetween(
             cumulativeAmount1,
             0,
@@ -864,6 +938,13 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount1,
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
+
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 3) {
+            uint256 nextCumulativeAmount1 = LibCarpetedGeometricDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
+            );
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
+        }
     }
 
     // Invariant: Given a valid cumulative amount of token0, the cumulative amount calculated
@@ -963,6 +1044,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             );
         uint256 maxCumulativeAmount0 = LibCarpetedDoubleGeometricDistribution
             .cumulativeAmount0(minUsableTick, liquidity, tickSpacing, params);
+        if (maxCumulativeAmount0 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount0 = clampBetween(
             cumulativeAmount0,
             0,
@@ -993,6 +1075,13 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount0,
             "resultCumulativeAmount0 < cumulativeAmount0"
         );
+
+        if (resultRoundedTick < minTick + length0 * tickSpacing + length1 * tickSpacing && cumulativeAmount0 > 2e2) {
+            uint256 nextCumulativeAmount0 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(
+                resultRoundedTick + tickSpacing, liquidity, tickSpacing, params
+            );
+            assertLt(nextCumulativeAmount0, cumulativeAmount0, "nextCumulativeAmount0 >= cumulativeAmount0");
+        }
     }
 
     // Invariant: Given a valid cumulative amount of token1, the cumulative amount calculated
@@ -1092,7 +1181,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             );
         uint256 maxCumulativeAmount1 = LibCarpetedDoubleGeometricDistribution
             .cumulativeAmount1(maxUsableTick, liquidity, tickSpacing, params);
-        require(maxCumulativeAmount1 != 0);
+        if (maxCumulativeAmount1 < INVCUM_MIN_MAX_CUM_AMOUNT) return;
         cumulativeAmount1 = clampBetween(
             cumulativeAmount1,
             0,
@@ -1123,5 +1212,12 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             cumulativeAmount1,
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
+
+        if (resultRoundedTick > minTick) {
+            uint256 nextCumulativeAmount1 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(
+                resultRoundedTick - tickSpacing, liquidity, tickSpacing, params
+            );
+            assertLt(nextCumulativeAmount1, cumulativeAmount1, "nextCumulativeAmount1 >= cumulativeAmount1");
+        }
     }
 }

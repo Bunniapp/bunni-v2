@@ -40,3 +40,5 @@ error BunniHook__InsufficientOutput();
 error BunniHook__InvalidRebalanceOrderHash();
 error BunniHook__PrehookPostConditionFailed();
 error BunniHook__RequestedOutputExceedsBalance();
+
+error BunniSwapMath__SwapFailed();

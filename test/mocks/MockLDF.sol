@@ -62,7 +62,13 @@ contract MockLDF is ILiquidityDensityFunction {
         external
         view
         override
-        returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity)
+        returns (
+            bool success,
+            int24 roundedTick,
+            uint256 cumulativeAmount0_,
+            uint256 cumulativeAmount1_,
+            uint256 swapLiquidity
+        )
     {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
             LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);

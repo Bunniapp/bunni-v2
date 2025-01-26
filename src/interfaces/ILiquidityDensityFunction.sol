@@ -46,7 +46,6 @@ interface ILiquidityDensityFunction {
     /// @notice Aggregates LDF queries used during a swap.
     /// @dev A Bunni swap uses the inverseCumulativeAmount function to compute the rounded tick for which the cumulativeAmount is the closest to `inverseCumulativeAmountInput`
     /// and <= `inverseCumulativeAmountInput`. This rounded tick is the starting point for swapping the remaining tokens, which is done via Uniswap math (not done in this function though).
-    /// `cumulativeAmount` is the closest to `inverseCumulativeAmountInput` and <= `inverseCumulativeAmountInput`. `swapLiquidity` is the liquidity used for the remainder swap.
     /// @param key The key of the Uniswap v4 pool
     /// @param inverseCumulativeAmountInput The input to the inverseCumulativeAmount function
     /// @param totalLiquidity The total liquidity in the pool
@@ -58,7 +57,8 @@ interface ILiquidityDensityFunction {
     /// @param ldfState The current state of the liquidity density function
     /// @return success Whether the swap computation was successful
     /// @return roundedTick The rounded tick to start the remainder swap from
-    /// @return cumulativeAmount The cumulative amount that's closest to `inverseCumulativeAmountInput` and <= `inverseCumulativeAmountInput`
+    /// @return cumulativeAmount0_ The cumulative amount of token0 to the right of the starting tick of the Uniswap swap
+    /// @return cumulativeAmount1_ The cumulative amount of token1 to the left of the starting tick of the Uniswap swap
     /// @return swapLiquidity The liquidity used for the remainder swap
     function computeSwap(
         PoolKey calldata key,
@@ -70,7 +70,16 @@ interface ILiquidityDensityFunction {
         int24 spotPriceTick,
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external view returns (bool success, int24 roundedTick, uint256 cumulativeAmount, uint256 swapLiquidity);
+    )
+        external
+        view
+        returns (
+            bool success,
+            int24 roundedTick,
+            uint256 cumulativeAmount0_,
+            uint256 cumulativeAmount1_,
+            uint256 swapLiquidity
+        );
 
     /// @notice Computes the cumulative amount of token0 in the rounded ticks [roundedTick, maxUsableTick].
     /// @param key The key of the Uniswap v4 pool

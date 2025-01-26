@@ -77,7 +77,7 @@ library RebalanceLogic {
         );
 
         // compute total liquidity and densities
-        (uint256 totalLiquidity,,,,,) = queryLDF({
+        (uint256 totalLiquidity,,,,,,,) = queryLDF({
             key: input.key,
             sqrtPriceX96: input.updatedSqrtPriceX96,
             tick: input.updatedTick,
@@ -135,7 +135,7 @@ library RebalanceLogic {
         uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtPriceAtTick(rebalanceSpotPriceTick);
         // totalDensity0X96 and totalDensity1X96 are the token densities of the excess liquidity
         // after rebalancing
-        (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+        (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,,,) = queryLDF({
             key: input.key,
             sqrtPriceX96: rebalanceSpotPriceSqrtRatioX96,
             tick: rebalanceSpotPriceTick,

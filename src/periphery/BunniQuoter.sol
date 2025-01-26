@@ -120,9 +120,11 @@ contract BunniQuoter is IBunniQuoter {
         bytes32 ldfState = bunniState.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? hook.ldfStates(id) : bytes32(0);
         (
             uint256 totalLiquidity_,
-            uint256 totalDensity0X96,
-            uint256 totalDensity1X96,
+            ,
+            ,
             uint256 liquidityDensityOfRoundedTickX96,
+            uint256 currentActiveBalance0,
+            uint256 currentActiveBalance1,
             ,
             bool shouldSurge
         ) = queryLDF({
@@ -140,6 +142,14 @@ contract BunniQuoter is IBunniQuoter {
         shouldSurge = shouldSurge && bunniState.ldfType != LDFType.STATIC;
         totalLiquidity = totalLiquidity_;
 
+        // ensure the current active balance of the requested output token is not zero
+        if (
+            params.zeroForOne && currentActiveBalance1 == 0 || !params.zeroForOne && currentActiveBalance0 == 0
+                || totalLiquidity == 0
+        ) {
+            return (false, 0, 0, 0, 0, 0, 0);
+        }
+
         // check surge based on vault share prices
         shouldSurge =
             shouldSurge || _shouldSurgeFromVaults(id, hook, bunniState, hookParams, reserveBalance0, reserveBalance1);
@@ -150,8 +160,8 @@ contract BunniQuoter is IBunniQuoter {
                 key: key,
                 totalLiquidity: totalLiquidity,
                 liquidityDensityOfRoundedTickX96: liquidityDensityOfRoundedTickX96,
-                totalDensity0X96: totalDensity0X96,
-                totalDensity1X96: totalDensity1X96,
+                currentActiveBalance0: currentActiveBalance0,
+                currentActiveBalance1: currentActiveBalance1,
                 sqrtPriceX96: sqrtPriceX96,
                 currentTick: currentTick,
                 liquidityDensityFunction: bunniState.liquidityDensityFunction,
@@ -418,7 +428,7 @@ contract BunniQuoter is IBunniQuoter {
         );
 
         // compute total liquidity and densities
-        (totalLiquidity,,,,,) = queryLDF({
+        (totalLiquidity,,,,,,,) = queryLDF({
             key: key,
             sqrtPriceX96: updatedSqrtPriceX96,
             tick: updatedTick,
@@ -511,7 +521,15 @@ contract BunniQuoter is IBunniQuoter {
             IBunniHook hook = IBunniHook(address(inputData.params.poolKey.hooks));
             bytes32 ldfState =
                 inputData.state.ldfType == LDFType.DYNAMIC_AND_STATEFUL ? hook.ldfStates(inputData.poolId) : bytes32(0);
-            (uint256 totalLiquidity, uint256 totalDensity0X96, uint256 totalDensity1X96,,,) = queryLDF({
+            (
+                uint256 totalLiquidity,
+                uint256 totalDensity0X96,
+                uint256 totalDensity1X96,
+                ,
+                uint256 addedAmount0,
+                uint256 addedAmount1,
+                ,
+            ) = queryLDF({
                 key: inputData.params.poolKey,
                 sqrtPriceX96: inputData.sqrtPriceX96,
                 tick: inputData.currentTick,
@@ -525,8 +543,7 @@ contract BunniQuoter is IBunniQuoter {
             });
 
             // compute token amounts to add
-            (returnData.amount0, returnData.amount1) =
-                (totalLiquidity.mulDivUp(totalDensity0X96, Q96), totalLiquidity.mulDivUp(totalDensity1X96, Q96));
+            (returnData.amount0, returnData.amount1) = (addedAmount0, addedAmount1);
 
             // sanity check against desired amounts
             // the amounts can exceed the desired amounts due to math errors

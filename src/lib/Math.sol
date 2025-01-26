@@ -76,3 +76,16 @@ function subReLU(uint256 x, uint256 y) pure returns (uint256) {
 function divQ96RoundUp(uint256 value) pure returns (uint256) {
     return (value + ((1 << 96) - 1)) >> 96;
 }
+
+function fullMulDivUp(uint256 x, uint256 y, uint256 d, uint256 resultRoundedDown) pure returns (uint256 result) {
+    /// @solidity memory-safe-assembly
+    assembly {
+        if mulmod(x, y, d) {
+            result := add(resultRoundedDown, 1)
+            if iszero(result) {
+                mstore(0x00, 0xae47f702) // `FullMulDivFailed()`.
+                revert(0x1c, 0x04)
+            }
+        }
+    }
+}

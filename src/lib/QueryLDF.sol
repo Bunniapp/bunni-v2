@@ -10,7 +10,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "../types/IdleBalance.sol";
-import {roundTick} from "./Math.sol";
+import {roundTick, fullMulDivUp} from "./Math.sol";
 import {Q96} from "../base/Constants.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
@@ -31,6 +31,8 @@ using FixedPointMathLib for uint256;
 /// @return totalDensity0X96 The total density of token0 in the pool, scaled by Q96
 /// @return totalDensity1X96 The total density of token1 in the pool, scaled by Q96
 /// @return liquidityDensityOfRoundedTickX96 The liquidity density of the rounded tick, scaled by Q96
+/// @return activeBalance0 The active balance of token0 in the pool, which is the amount used by swap liquidity
+/// @return activeBalance1 The active balance of token1 in the pool, which is the amount used by swap liquidity
 /// @return newLdfState The new state of the liquidity density function
 /// @return shouldSurge Whether the pool should surge
 function queryLDF(
@@ -51,6 +53,8 @@ function queryLDF(
         uint256 totalDensity0X96,
         uint256 totalDensity1X96,
         uint256 liquidityDensityOfRoundedTickX96,
+        uint256 activeBalance0,
+        uint256 activeBalance1,
         bytes32 newLdfState,
         bool shouldSurge
     )
@@ -69,7 +73,7 @@ function queryLDF(
     ) = ldf.query(key, roundedTick, arithmeticMeanTick, tick, ldfParams, ldfState);
 
     (uint256 density0OfRoundedTickX96, uint256 density1OfRoundedTickX96) = LiquidityAmounts.getAmountsForLiquidity(
-        sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, uint128(liquidityDensityOfRoundedTickX96), false
+        sqrtPriceX96, roundedTickSqrtRatio, nextRoundedTickSqrtRatio, uint128(liquidityDensityOfRoundedTickX96), true
     );
     totalDensity0X96 = density0RightOfRoundedTickX96 + density0OfRoundedTickX96;
     totalDensity1X96 = density1LeftOfRoundedTickX96 + density1OfRoundedTickX96;
@@ -85,15 +89,21 @@ function queryLDF(
         }
     }
 
-    uint256 totalLiquidityEstimate0 =
-        (balance0 == 0 || totalDensity0X96 == 0) ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
-    uint256 totalLiquidityEstimate1 =
-        (balance1 == 0 || totalDensity1X96 == 0) ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
-    if (totalLiquidityEstimate0 == 0) {
-        totalLiquidity = totalLiquidityEstimate1;
-    } else if (totalLiquidityEstimate1 == 0) {
-        totalLiquidity = totalLiquidityEstimate0;
-    } else {
-        totalLiquidity = FixedPointMathLib.min(totalLiquidityEstimate0, totalLiquidityEstimate1);
+    if (balance0 != 0 || balance1 != 0) {
+        bool noToken0 = balance0 == 0 || totalDensity0X96 == 0;
+        bool noToken1 = balance1 == 0 || totalDensity1X96 == 0;
+        uint256 totalLiquidityEstimate0 = noToken0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
+        uint256 totalLiquidityEstimate1 = noToken1 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
+        bool useLiquidityEstimate0 = (totalLiquidityEstimate0 < totalLiquidityEstimate1 || totalLiquidityEstimate1 == 0)
+            && totalLiquidityEstimate0 != 0;
+        if (useLiquidityEstimate0) {
+            totalLiquidity = noToken0 ? 0 : fullMulDivUp(balance0, Q96, totalDensity0X96, totalLiquidityEstimate0);
+            (activeBalance0, activeBalance1) =
+                (noToken0 ? 0 : balance0, noToken1 ? 0 : totalLiquidityEstimate0.fullMulDiv(totalDensity1X96, Q96));
+        } else {
+            totalLiquidity = noToken1 ? 0 : fullMulDivUp(balance1, Q96, totalDensity1X96, totalLiquidityEstimate1);
+            (activeBalance0, activeBalance1) =
+                (noToken0 ? 0 : totalLiquidityEstimate1.fullMulDiv(totalDensity0X96, Q96), noToken1 ? 0 : balance1);
+        }
     }
 }
