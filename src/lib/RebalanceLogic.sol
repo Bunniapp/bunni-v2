@@ -21,10 +21,12 @@ import "../types/IdleBalance.sol";
 import "../base/SharedStructs.sol";
 import {Oracle} from "./Oracle.sol";
 import {queryLDF} from "./QueryLDF.sol";
+import {FullMathX96} from "./FullMathX96.sol";
 import {BunniHookLogic} from "./BunniHookLogic.sol";
 import {OrderHashMemory} from "./OrderHashMemory.sol";
 
 library RebalanceLogic {
+    using FullMathX96 for *;
     using SafeTransferLib for *;
     using FixedPointMathLib for *;
     using IdleBalanceLibrary for *;
@@ -149,8 +151,8 @@ library RebalanceLogic {
         });
 
         // compute target amounts (i.e. the token amounts of the excess liquidity)
-        uint256 targetAmount0 = excessLiquidity.fullMulDiv(totalDensity0X96, Q96);
-        uint256 targetAmount1 = excessLiquidity.fullMulDiv(totalDensity1X96, Q96);
+        uint256 targetAmount0 = excessLiquidity.fullMulX96(totalDensity0X96);
+        uint256 targetAmount1 = excessLiquidity.fullMulX96(totalDensity1X96);
 
         // determine input & output
         (inputToken, outputToken) = willRebalanceToken0

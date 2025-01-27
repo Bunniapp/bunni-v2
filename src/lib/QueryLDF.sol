@@ -10,11 +10,13 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import "../types/IdleBalance.sol";
-import {roundTick, fullMulDivUp} from "./Math.sol";
 import {Q96} from "../base/Constants.sol";
+import {FullMathX96} from "./FullMathX96.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
+import {roundTick, roundUpFullMulDivResult} from "./Math.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
+using FullMathX96 for uint256;
 using FixedPointMathLib for uint256;
 
 /// @notice Queries the liquidity density function for the given pool and tick
@@ -97,13 +99,15 @@ function queryLDF(
         bool useLiquidityEstimate0 = (totalLiquidityEstimate0 < totalLiquidityEstimate1 || totalLiquidityEstimate1 == 0)
             && totalLiquidityEstimate0 != 0;
         if (useLiquidityEstimate0) {
-            totalLiquidity = noToken0 ? 0 : fullMulDivUp(balance0, Q96, totalDensity0X96, totalLiquidityEstimate0);
+            totalLiquidity =
+                noToken0 ? 0 : roundUpFullMulDivResult(balance0, Q96, totalDensity0X96, totalLiquidityEstimate0);
             (activeBalance0, activeBalance1) =
-                (noToken0 ? 0 : balance0, noToken1 ? 0 : totalLiquidityEstimate0.fullMulDiv(totalDensity1X96, Q96));
+                (noToken0 ? 0 : balance0, noToken1 ? 0 : totalLiquidityEstimate0.fullMulX96(totalDensity1X96));
         } else {
-            totalLiquidity = noToken1 ? 0 : fullMulDivUp(balance1, Q96, totalDensity1X96, totalLiquidityEstimate1);
+            totalLiquidity =
+                noToken1 ? 0 : roundUpFullMulDivResult(balance1, Q96, totalDensity1X96, totalLiquidityEstimate1);
             (activeBalance0, activeBalance1) =
-                (noToken0 ? 0 : totalLiquidityEstimate1.fullMulDiv(totalDensity0X96, Q96), noToken1 ? 0 : balance1);
+                (noToken0 ? 0 : totalLiquidityEstimate1.fullMulX96(totalDensity0X96), noToken1 ? 0 : balance1);
         }
     }
 }

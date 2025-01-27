@@ -15,12 +15,14 @@ import "../base/Constants.sol";
 import "../types/IdleBalance.sol";
 import {SwapMath} from "./SwapMath.sol";
 import {queryLDF} from "./QueryLDF.sol";
+import {FullMathX96} from "./FullMathX96.sol";
 import {SqrtPriceMath} from "./SqrtPriceMath.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
 library BunniSwapMath {
     using TickMath for *;
+    using FullMathX96 for *;
     using SafeCastLib for uint256;
     using FixedPointMathLib for uint256;
 
@@ -265,8 +267,7 @@ library BunniSwapMath {
                 idleBalance: IdleBalanceLibrary.ZERO
             });
             (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
-                totalDensity0X96.fullMulDivUp(input.totalLiquidity, Q96),
-                totalDensity1X96.fullMulDivUp(input.totalLiquidity, Q96)
+                totalDensity0X96.fullMulX96Up(input.totalLiquidity), totalDensity1X96.fullMulX96Up(input.totalLiquidity)
             );
             // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
             // we output 0 instead of reverting.

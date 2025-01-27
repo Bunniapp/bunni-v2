@@ -77,7 +77,10 @@ function divQ96RoundUp(uint256 value) pure returns (uint256) {
     return (value + ((1 << 96) - 1)) >> 96;
 }
 
-function fullMulDivUp(uint256 x, uint256 y, uint256 d, uint256 resultRoundedDown) pure returns (uint256 result) {
+function roundUpFullMulDivResult(uint256 x, uint256 y, uint256 d, uint256 resultRoundedDown)
+    pure
+    returns (uint256 result)
+{
     /// @solidity memory-safe-assembly
     assembly {
         if mulmod(x, y, d) {

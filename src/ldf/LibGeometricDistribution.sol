@@ -12,8 +12,10 @@ import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../lib/ExpMath.sol";
 import "../base/Constants.sol";
+import {FullMathX96} from "../lib/FullMathX96.sol";
 
 library LibGeometricDistribution {
+    using FullMathX96 for *;
     using TickMath for int24;
     using ExpMath for int256;
     using SafeCastLib for *;
@@ -223,7 +225,7 @@ library LibGeometricDistribution {
             }
         }
 
-        amount0 = cumulativeAmount0DensityX96.fullMulDivUp(totalLiquidity, Q96);
+        amount0 = cumulativeAmount0DensityX96.fullMulX96Up(totalLiquidity);
     }
 
     /// @dev Computes the cumulative amount of token1 in the rounded ticks [tickLower, roundedTick].
@@ -299,7 +301,7 @@ library LibGeometricDistribution {
             }
         }
 
-        amount1 = cumulativeAmount1DensityX96.fullMulDivUp(totalLiquidity, Q96);
+        amount1 = cumulativeAmount1DensityX96.fullMulX96Up(totalLiquidity);
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
