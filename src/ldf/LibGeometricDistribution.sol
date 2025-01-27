@@ -442,7 +442,18 @@ library LibGeometricDistribution {
             uint256 numerator = cumulativeAmount1DensityX96.fullMulDiv(Q96, sqrtRatioMinTick).fullMulDiv(
                 denominator, sqrtRatioTickSpacing - Q96
             );
-            if (Q96 > baseX96 && Q96 <= numerator / (Q96 - alphaX96)) return (false, 0);
+            if (Q96 > baseX96 && Q96 <= numerator / (Q96 - alphaX96)) {
+                // this usually happens when cumulativeAmount1DensityX96 is very close to zero
+                // return minTick if cumulativeAmount1_ <= cumulativeAmount1(minTick)
+                if (
+                    cumulativeAmount1_
+                        <= cumulativeAmount1(minTick, totalLiquidity, tickSpacing, minTick, length, alphaX96)
+                ) {
+                    return (true, minTick);
+                } else {
+                    return (false, 0);
+                }
+            }
             uint256 basePowXPlusOneX96 =
                 Q96 > baseX96 ? Q96 - numerator / (Q96 - alphaX96) : Q96 + numerator / (Q96 - alphaX96);
             xWad = basePowXPlusOneX96.toInt256().lnQ96().sDivWad(lnBaseX96) - int256(WAD);
