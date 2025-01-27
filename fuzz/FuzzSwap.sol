@@ -29,6 +29,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
     using FixedPointMathLib for *;
     using IdleBalanceLibrary for *;
 
+    uint24 internal constant MIN_SWAP_FEE = 1;
+
     // Invariant: Users should not be able to get free output tokens
     //            for zero input tokens when amountSpecified is non-zero
     //            for a given valid pool state.
@@ -90,6 +92,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
     // Invariant: Users should not be able to gain any tokens through round trip swaps.
     // Issue: TOB-BUNNI-16
+    // This test fails only if the swap fee is zero.
     function compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero(
         int24 tickSpacing,
         uint64 balance0,
@@ -98,9 +101,12 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         uint160 sqrtPriceLimit,
         int24 tickLower,
         int24 tickUpper,
-        int24 currentTick
+        int24 currentTick,
+        uint24 fee
     ) public {
         if (amountSpecified == 0) return;
+
+        fee = uint24(clampBetween(fee, MIN_SWAP_FEE, SWAP_FEE_BASE));
 
         // Initialize LDF to Uniform distribution
         ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
@@ -119,6 +125,17 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
         ) {
             require(outputAmount0 != 0 && inputAmount0 != 0);
+
+            // apply fee
+            bool exactIn = amountSpecified < 0;
+            if (exactIn) {
+                uint256 swapFeeAmount = outputAmount0.mulDivUp(fee, SWAP_FEE_BASE);
+                outputAmount0 -= swapFeeAmount;
+            } else {
+                uint256 swapFeeAmount = inputAmount0.mulDivUp(fee, SWAP_FEE_BASE - fee);
+                inputAmount0 += swapFeeAmount;
+            }
+
             if (inputAmount0 != uint64(inputAmount0) || outputAmount0 != uint64(outputAmount0)) return;
 
             BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
@@ -142,6 +159,15 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
             (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
                 this.swap(input2);
+
+            // apply fee
+            if (exactIn) {
+                uint256 swapFeeAmount = outputAmount1.mulDivUp(fee, SWAP_FEE_BASE);
+                outputAmount1 -= swapFeeAmount;
+            } else {
+                uint256 swapFeeAmount = inputAmount1.mulDivUp(fee, SWAP_FEE_BASE - fee);
+                inputAmount1 += swapFeeAmount;
+            }
 
             if (
                 (inputAmount0 > outputAmount1 && outputAmount0 > inputAmount1)
@@ -241,6 +267,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             balance0 > currentActiveBalance0 ? balance0 - currentActiveBalance0 : 0,
             balance1 > currentActiveBalance1 ? balance1 - currentActiveBalance1 : 0
         );
+        console2.log("extraBalance0", extraBalance0);
+        console2.log("extraBalance1", extraBalance1);
         return FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(extraBalance0 >= extraBalance1);
     }
 

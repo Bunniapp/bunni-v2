@@ -29,7 +29,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(85056314318470914758954069592399629272),
             int24(6640401),
             int24(0),
-            int24(-1799758)
+            int24(-1799758),
+            uint24(1)
         );
     }
 
@@ -46,7 +47,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(710163743211927015848304420800787679451462454),
             int24(6409846),
             int24(0),
-            int24(-5492544)
+            int24(-5492544),
+            uint24(1)
         );
     }
 
@@ -63,7 +65,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(21568223422732958735409864914889077464615),
             int24(4701807),
             int24(-3605371),
-            int24(-331617)
+            int24(-331617),
+            uint24(1)
         );
     }
 
@@ -80,7 +83,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(1427194115788375096016312661214820322289581407),
             int24(1547774),
             int24(-4187041),
-            int24(-5464271)
+            int24(-5464271),
+            uint24(1)
         );
     }
 
@@ -97,7 +101,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(42717923540202160063961267744615499421409),
             int24(4713897),
             int24(1125039),
-            int24(-5491709)
+            int24(-5491709),
+            uint24(1)
         );
     }
 
@@ -114,7 +119,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(726913614897034508082728756708377286632053995),
             int24(6402679),
             int24(0),
-            int24(-5469915)
+            int24(-5469915),
+            uint24(1)
         );
     }
 
@@ -131,7 +137,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(664491927640541106163018584877414082),
             int24(-1925528),
             int24(0),
-            int24(-5477136)
+            int24(-5477136),
+            uint24(1)
         );
     }
 
@@ -148,7 +155,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(900543424168539962403563343261829133530948046073),
             int24(1360131),
             int24(1152953),
-            int24(-5222259)
+            int24(-5222259),
+            uint24(1)
         );
     }
 
@@ -165,7 +173,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(87112285912481955893110548791447535976447),
             int24(4734731),
             int24(0),
-            int24(-5467076)
+            int24(-5467076),
+            uint24(1)
         );
     }
 
@@ -182,7 +191,8 @@ contract FuzzEntry_Medusa_Test is Test {
             uint160(168426605690165285741581720059410128),
             int24(-39009),
             int24(-2433093),
-            int24(-42489)
+            int24(-42489),
+            uint24(1)
         );
     }
 }

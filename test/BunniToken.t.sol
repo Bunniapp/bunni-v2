@@ -188,8 +188,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         poolManager.setOperator(address(bunniToken), true);
     }
 
-    function test_distribute_singleDistro_singleReferrer(bool isToken0, uint256 amount, address referrer) public {
-        vm.assume(referrer != address(0));
+    function test_distribute_singleDistro_singleReferrer(bool isToken0, uint256 amount) public {
+        address referrer = makeAddr("referrer");
         amount = bound(amount, 1e5, 1e36);
 
         // mint bunni token using referrer

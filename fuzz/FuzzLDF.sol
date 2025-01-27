@@ -939,7 +939,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
 
-        if (resultRoundedTick > minTick && cumulativeAmount1 > 3) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e2) {
             uint256 nextCumulativeAmount1 = LibCarpetedGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );

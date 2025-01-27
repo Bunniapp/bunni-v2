@@ -119,8 +119,6 @@ library BunniSwapMath {
                         naiveSwapAmountOut, zeroForOne ? input.currentActiveBalance1 : input.currentActiveBalance0
                     );
 
-                    console2.log("Naive swap");
-
                     // early return
                     return (naiveSwapResultSqrtPriceX96, updatedTick, naiveSwapAmountIn, naiveSwapAmountOut);
                 }
@@ -237,20 +235,9 @@ library BunniSwapMath {
                             subReLU(input.currentActiveBalance0, updatedActiveBalance0)
                         );
 
-                    console2.log("Regular swap");
-                    console2.log("zeroForOne", zeroForOne ? "true" : "false");
-                    console2.log("exactIn", exactIn ? "true" : "false");
-                    console2.log("totalLiquidity", input.totalLiquidity);
-                    console2.log("input.currentActiveBalance0", input.currentActiveBalance0);
-                    console2.log("input.currentActiveBalance1", input.currentActiveBalance1);
-                    console2.log("updatedActiveBalance0", updatedActiveBalance0);
-                    console2.log("updatedActiveBalance1", updatedActiveBalance1);
-
                     return (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount);
                 }
             }
-
-            console2.log("Not enough liquidity");
 
             // liquidity is insufficient to handle all of the input/output tokens
             // or the sqrt price limit has been reached
@@ -281,13 +268,6 @@ library BunniSwapMath {
                 totalDensity0X96.fullMulDivUp(input.totalLiquidity, Q96),
                 totalDensity1X96.fullMulDivUp(input.totalLiquidity, Q96)
             );
-            console2.log("zeroForOne", zeroForOne ? "true" : "false");
-            console2.log("exactIn", exactIn ? "true" : "false");
-            console2.log("totalLiquidity", input.totalLiquidity);
-            console2.log("input.currentActiveBalance0", input.currentActiveBalance0);
-            console2.log("input.currentActiveBalance1", input.currentActiveBalance1);
-            console2.log("updatedActiveBalance0", updatedActiveBalance0);
-            console2.log("updatedActiveBalance1", updatedActiveBalance1);
             // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
             // we output 0 instead of reverting.
             if (zeroForOne) {
