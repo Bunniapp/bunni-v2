@@ -41,14 +41,12 @@ contract DeployCoreScript is CREATE3Script {
                 create3.deploy(
                     getCreate3ContractSalt("BunniHub"),
                     bytes.concat(
-                        type(BunniHub).creationCode, abi.encode(poolManager, weth, permit2, new BunniToken(), owner)
+                        type(BunniHub).creationCode,
+                        abi.encode(poolManager, weth, permit2, new BunniToken(), owner, hookFeeRecipient)
                     )
                 )
             )
         );
-
-        // set the default referrer's reward recipient address to owner
-        hub.setReferralRewardRecipient(owner);
 
         zone = BunniZone(
             payable(

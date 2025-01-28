@@ -183,7 +183,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         swapper = new Uniswapper(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this));
+        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this), address(this));
 
         // deploy zone
         zone = new BunniZone(address(this));

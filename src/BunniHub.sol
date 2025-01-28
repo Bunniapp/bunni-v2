@@ -94,17 +94,22 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         WETH weth_,
         IPermit2 permit2_,
         IBunniToken bunniTokenImplementation_,
-        address initialOwner
+        address initialOwner,
+        address initialReferralRewardRecipient
     ) {
         require(
             address(permit2_) != address(0) && address(poolManager_) != address(0) && address(weth_) != address(0)
                 && address(bunniTokenImplementation_) != address(0) && initialOwner != address(0)
+                && initialReferralRewardRecipient != address(0)
         );
         weth = weth_;
         permit2 = permit2_;
         poolManager = poolManager_;
         bunniTokenImplementation = bunniTokenImplementation_;
         _initializeOwner(initialOwner);
+
+        s.referralRewardRecipient = initialReferralRewardRecipient;
+        emit SetReferralRewardRecipient(initialReferralRewardRecipient);
     }
 
     /// -----------------------------------------------------------

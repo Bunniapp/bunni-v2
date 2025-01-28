@@ -85,7 +85,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         floodPlain = _deployFlood(address(PERMIT2));
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this));
+        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this), address(this));
 
         // deploy zone
         zone = new BunniZone(address(this));
