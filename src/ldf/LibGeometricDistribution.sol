@@ -155,8 +155,6 @@ library LibGeometricDistribution {
         int24 length,
         uint256 alphaX96
     ) internal pure returns (uint256 amount0) {
-        uint256 cumulativeAmount0DensityX96;
-
         // x is the index of the roundedTick in the distribution
         // should be in the range [0, length)
         int24 x;
@@ -182,14 +180,14 @@ library LibGeometricDistribution {
             // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
             if (x >= length) {
                 // roundedTick is to the right of the last tick in the distribution
-                // cumulativeAmount0DensityX96 is just 0
-                cumulativeAmount0DensityX96 = 0;
+                // amount0 is just 0
+                amount0 = 0;
             } else {
                 uint24 lengthMinusX = uint24(length - x);
                 bool intermediateTermIsPositive = alphaInvX96 > sqrtRatioNegTickSpacing;
                 uint256 numeratorTermLeft = alphaInvX96.rpow(lengthMinusX, Q96);
                 uint256 numeratorTermRight = (-tickSpacing * int24(lengthMinusX)).getSqrtPriceAtTick();
-                cumulativeAmount0DensityX96 = (Q96 - alphaInvX96).mulDivUp(
+                uint256 cumulativeAmount0DensityX96 = (Q96 - alphaInvX96).mulDivUp(
                     intermediateTermIsPositive
                         ? numeratorTermLeft - numeratorTermRight
                         : numeratorTermRight - numeratorTermLeft,
@@ -198,6 +196,8 @@ library LibGeometricDistribution {
                         : sqrtRatioNegTickSpacing - alphaInvX96
                 ).mulDivUp((-tickSpacing * x).getSqrtPriceAtTick(), Q96 - alphaInvX96.rpow(uint24(length), Q96))
                     .mulDivUp(Q96 - sqrtRatioNegTickSpacing, sqrtRatioMinTick);
+
+                amount0 = cumulativeAmount0DensityX96.fullMulX96Up(totalLiquidity);
             }
         } else {
             // alpha <= 1
@@ -206,8 +206,8 @@ library LibGeometricDistribution {
             // compute cumulativeAmount0DensityX96 for the rounded tick to the right of the rounded current tick
             if (x >= length) {
                 // roundedTick is to the right of the last tick in the distribution
-                // cumulativeAmount0DensityX96 is just 0
-                cumulativeAmount0DensityX96 = 0;
+                // amount0 is just 0
+                amount0 = 0;
             } else {
                 uint256 baseX96 = alphaX96.mulDiv(sqrtRatioNegTickSpacing, Q96);
                 uint256 alphaPowXX96 = alphaX96.rpow(uint24(x), Q96);
@@ -218,12 +218,12 @@ library LibGeometricDistribution {
                             - alphaPowLengthX96.mulDivUp((-tickSpacing * length).getSqrtPriceAtTick(), Q96)
                     );
                 uint256 denominator = (Q96 - alphaPowLengthX96) * (Q96 - baseX96);
-                cumulativeAmount0DensityX96 =
-                    (Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(numerator, denominator).mulDivUp(Q96, sqrtRatioMinTick);
+
+                amount0 = (Q96 - sqrtRatioNegTickSpacing).fullMulDivUp(numerator, denominator).fullMulDivUp(
+                    totalLiquidity, sqrtRatioMinTick
+                );
             }
         }
-
-        amount0 = cumulativeAmount0DensityX96.fullMulX96Up(totalLiquidity);
     }
 
     /// @dev Computes the cumulative amount of token1 in the rounded ticks [tickLower, roundedTick].
