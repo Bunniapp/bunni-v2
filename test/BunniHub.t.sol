@@ -80,6 +80,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     int24 internal constant TICK_SPACING = 10;
     uint32 internal constant HOOK_FEE_MODIFIER = 0.1e6;
     uint32 internal constant REFERRAL_REWARD_MODIFIER = 0.1e6;
+    uint48 internal constant K = 7200;
     uint32 internal constant ALPHA = 0.7e8;
     uint256 internal constant MAX_ERROR = 1e9;
     uint24 internal constant FEE_MIN = 0.0001e6;
@@ -113,7 +114,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     ERC4626WithFeeMock internal vault1WithFee;
     ERC4626WithFeeMock internal vaultWethWithFee;
     IBunniHub internal hub;
-    BunniHook internal bunniHook = BunniHook(payable(address(uint160(HOOK_FLAGS))));
+    BunniHook internal bunniHook;
     BunniQuoter internal quoter;
     ILiquidityDensityFunction internal ldf;
     Uniswapper internal swapper;
@@ -201,7 +202,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
                     address(this),
                     HOOK_FEE_RECIPIENT,
                     HOOK_FEE_MODIFIER,
-                    REFERRAL_REWARD_MODIFIER
+                    REFERRAL_REWARD_MODIFIER,
+                    K
                 )
             );
             for (uint256 offset; offset < 100000; offset++) {
@@ -222,7 +224,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             address(this),
             HOOK_FEE_RECIPIENT,
             HOOK_FEE_MODIFIER,
-            REFERRAL_REWARD_MODIFIER
+            REFERRAL_REWARD_MODIFIER,
+            K
         );
         vm.label(address(bunniHook), "BunniHook");
 
@@ -436,13 +439,11 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         bunniToken.approve(address(bunniHook), type(uint256).max);
         uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
         uint128 rentDeposit = minRent * 2 days;
-        bunniHook.bid(
-            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
-        );
+        bunniHook.bid(id, address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), minRent * 2, rentDeposit);
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
-        skip(24 hours);
+        skipBlocks(K);
         assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
 
         // queue withdraw
@@ -488,13 +489,11 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         bunniToken.approve(address(bunniHook), type(uint256).max);
         uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
         uint128 rentDeposit = minRent * 2 days;
-        bunniHook.bid(
-            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
-        );
+        bunniHook.bid(id, address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), minRent * 2, rentDeposit);
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
-        skip(24 hours);
+        skipBlocks(K);
         assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
 
         // withdraw
@@ -544,13 +543,11 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         bunniToken.approve(address(bunniHook), type(uint256).max);
         uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
         uint128 rentDeposit = minRent * 2 days;
-        bunniHook.bid(
-            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
-        );
+        bunniHook.bid(id, address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), minRent * 2, rentDeposit);
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
-        skip(24 hours);
+        skipBlocks(K);
         assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
 
         // queue withdraw
@@ -593,13 +590,11 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         bunniToken.approve(address(bunniHook), type(uint256).max);
         uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
         uint128 rentDeposit = minRent * 2 days;
-        bunniHook.bid(
-            id, address(this), bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)), minRent * 2, rentDeposit
-        );
+        bunniHook.bid(id, address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), minRent * 2, rentDeposit);
         shares -= rentDeposit;
 
         // wait until address(this) is the manager
-        skip(24 hours);
+        skipBlocks(K);
         assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
 
         // queue withdraw
@@ -2214,11 +2209,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         deal(address(bt1), address(this), bidAmount);
         bt1.approve(address(bunniHook), bidAmount);
         bunniHook.bid(
-            poolKey1.toId(),
-            address(this),
-            bytes7(abi.encodePacked(uint24(1e3), uint24(2e3), true)),
-            minRent * 2,
-            bidAmount
+            poolKey1.toId(), address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), minRent * 2, bidAmount
         );
 
         // Record the initial BT1 balance of BunniHook
@@ -3351,5 +3342,9 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         return address(
             uint160(uint256(keccak256(abi.encodePacked(bytes1(0xFF), deployer, salt, keccak256(creationCode)))))
         );
+    }
+
+    function skipBlocks(uint256 numBlocks) internal {
+        vm.roll(vm.getBlockNumber() + numBlocks);
     }
 }

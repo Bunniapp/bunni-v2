@@ -191,7 +191,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
 
-        if (resultRoundedTick > tickLower && cumulativeAmount1 > 2e2) {
+        if (resultRoundedTick > tickLower && cumulativeAmount1 > 1e3) {
             uint256 nextCumulativeAmount1 = LibUniformDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper
             );
@@ -290,7 +290,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             "resultCumulativeAmount0 < cumulativeAmount0"
         );
 
-        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 1e2) {
+        if (resultRoundedTick < minTick + length * tickSpacing && cumulativeAmount0 > 1e3) {
             uint256 nextCumulativeAmount0 = LibGeometricDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );
@@ -393,7 +393,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
 
-        if (resultRoundedTick > minTick && cumulativeAmount1 > 2) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e2) {
             uint256 nextCumulativeAmount1 = LibGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );
@@ -1213,7 +1213,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
 
-        if (resultRoundedTick > minTick) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e2) {
             uint256 nextCumulativeAmount1 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, params
             );

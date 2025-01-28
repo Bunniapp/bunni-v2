@@ -39,6 +39,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     using LibString for *;
     using CurrencyLibrary for Currency;
 
+    uint48 internal constant K = 7200;
     uint32 internal constant ALPHA = 0.7e8;
     uint24 internal constant FEE_MIN = 0.0001e6;
     uint24 internal constant FEE_MAX = 0.1e6;
@@ -63,7 +64,7 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
     address internal constant HOOK_FEE_RECIPIENT = address(0xfee);
 
     IBunniHub internal hub;
-    BunniHook internal bunniHook = BunniHook(payable(address(uint160(HOOK_FLAGS))));
+    BunniHook internal bunniHook;
     IPoolManager internal poolManager;
     WETH internal weth;
     IFloodPlain internal floodPlain;
@@ -103,7 +104,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
                     address(this),
                     HOOK_FEE_RECIPIENT,
                     HOOK_FEE_MODIFIER,
-                    REFERRAL_REWARD_MODIFIER
+                    REFERRAL_REWARD_MODIFIER,
+                    K
                 )
             );
             for (uint256 offset; offset < 100000; offset++) {
@@ -124,7 +126,8 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
             address(this),
             HOOK_FEE_RECIPIENT,
             HOOK_FEE_MODIFIER,
-            REFERRAL_REWARD_MODIFIER
+            REFERRAL_REWARD_MODIFIER,
+            K
         );
         vm.label(address(bunniHook), "BunniHook");
 

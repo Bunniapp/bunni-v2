@@ -55,6 +55,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// Immutable args
     /// -----------------------------------------------------------------------
 
+    uint48 internal immutable _K;
     WETH internal immutable weth;
     IBunniHub internal immutable hub;
     address internal immutable permit2;
@@ -101,7 +102,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         address owner_,
         address hookFeeRecipient_,
         uint32 hookFeeModifier_,
-        uint32 referralRewardModifier_
+        uint32 referralRewardModifier_,
+        uint48 k_
     ) BaseHook(poolManager_) {
         if (hookFeeModifier_ > MODIFIER_BASE || referralRewardModifier_ > MODIFIER_BASE) {
             revert BunniHook__InvalidModifier();
@@ -111,9 +113,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
+        _K = k_;
         require(
             address(hub_) != address(0) && address(floodPlain_) != address(0) && address(permit2) != address(0)
-                && address(weth_) != address(0) && owner_ != address(0)
+                && address(weth_) != address(0) && owner_ != address(0) && k_ != 0
         );
 
         hookFeeRecipient = hookFeeRecipient_;
@@ -575,12 +578,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// AmAmm support
     /// -----------------------------------------------------------------------
 
-    function K(PoolId) internal view virtual override returns (uint40) {
-        return 24 hours;
-    }
-
-    function EPOCH_SIZE(PoolId) internal view virtual override returns (uint256) {
-        return 1 seconds;
+    function K(PoolId) internal view virtual override returns (uint48) {
+        return _K;
     }
 
     function MIN_RENT(PoolId id) internal view virtual override returns (uint128) {
@@ -610,7 +609,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         return poolEnabled;
     }
 
-    function _payloadIsValid(PoolId id, bytes7 payload) internal view virtual override returns (bool) {
+    function _payloadIsValid(PoolId id, bytes6 payload) internal view virtual override returns (bool) {
         // use feeMax from hookParams
         bytes memory hookParams = hub.hookParams(id);
         bytes32 firstWord;

@@ -32,6 +32,7 @@ contract DeployCoreScript is CREATE3Script {
         uint32 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint32();
         uint32 referralRewardModifier = vm.envUint("REFERRAL_REWARD_MODIFIER").toUint32();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
+        uint48 k = vm.envUint(string.concat("AMAMM_K_", block.chainid.toString())).toUint48();
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -85,7 +86,8 @@ contract DeployCoreScript is CREATE3Script {
                             owner,
                             hookFeeRecipient,
                             hookFeeModifier,
-                            referralRewardModifier
+                            referralRewardModifier,
+                            k
                         )
                     )
                 )
