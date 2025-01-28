@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.19;
 
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "./ShiftMode.sol";
+import {Guarded} from "../base/Guarded.sol";
 import {LibUniformDistribution} from "./LibUniformDistribution.sol";
 import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction.sol";
 
@@ -11,8 +12,10 @@ import {ILiquidityDensityFunction} from "../interfaces/ILiquidityDensityFunction
 /// @author zefram.eth
 /// @notice Uniform distribution between two ticks, equivalent to a basic Uniswap v3 position.
 /// Can shift using TWAP.
-contract UniformDistribution is ILiquidityDensityFunction {
+contract UniformDistribution is ILiquidityDensityFunction, Guarded {
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
+
+    constructor(address hub_, address hook_, address quoter_) Guarded(hub_, hook_, quoter_) {}
 
     /// @inheritdoc ILiquidityDensityFunction
     function query(
@@ -24,8 +27,9 @@ contract UniformDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        pure
+        view
         override
+        guarded
         returns (
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
@@ -62,8 +66,9 @@ contract UniformDistribution is ILiquidityDensityFunction {
         bytes32 ldfState
     )
         external
-        pure
+        view
         override
+        guarded
         returns (
             bool success,
             int24 roundedTick,
@@ -95,7 +100,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
             LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastTickLower) = _decodeState(ldfState);
@@ -118,7 +123,7 @@ contract UniformDistribution is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external pure override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (int24 tickLower, int24 tickUpper, ShiftMode shiftMode) =
             LibUniformDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         (bool initialized, int24 lastTickLower) = _decodeState(ldfState);

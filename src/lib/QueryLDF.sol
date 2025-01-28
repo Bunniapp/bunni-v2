@@ -2,8 +2,6 @@
 
 pragma solidity ^0.8.19;
 
-import "forge-std/console2.sol";
-
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 

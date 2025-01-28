@@ -11,7 +11,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
     uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e1;
 
     function _setUpLDF() internal override {
-        ldf = ILiquidityDensityFunction(address(new UniformDistribution()));
+        ldf = ILiquidityDensityFunction(address(new UniformDistribution(address(this), address(this), address(this))));
     }
 
     function test_liquidityDensity_sumUpToOne(int24 tickSpacing, int24 tickLower, int24 tickUpper) external virtual {

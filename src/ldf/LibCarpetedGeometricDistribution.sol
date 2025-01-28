@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.19;
 
-import {console2} from "forge-std/console2.sol";
-
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 

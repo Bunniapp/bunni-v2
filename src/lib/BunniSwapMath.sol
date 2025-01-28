@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.19;
 
-import {console2} from "forge-std/console2.sol";
-
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IPoolManager, PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
@@ -47,8 +45,8 @@ library BunniSwapMath {
     /// @return updatedTick The updated tick after the swap
     /// @return inputAmount The input amount of the swap
     /// @return outputAmount The output amount of the swap
-    function computeSwap(BunniComputeSwapInput memory input)
-        internal
+    function computeSwap(BunniComputeSwapInput calldata input)
+        external
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {

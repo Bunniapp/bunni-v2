@@ -378,7 +378,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     }
 
     function test_withdraw_revertWhenRebalanceOrderIsActive() public {
-        MockLDF ldf_ = new MockLDF();
+        MockLDF ldf_ = new MockLDF(address(hub), address(bunniHook), address(quoter));
         ldf_.setMinTick(-30);
 
         // deploy pool and init liquidity
@@ -1304,7 +1304,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     }
 
     function test_hookHasInsufficientTokens() external {
-        MockLDF ldf_ = new MockLDF();
+        MockLDF ldf_ = new MockLDF(address(hub), address(bunniHook), address(quoter));
 
         // set mu to be far to the left of rounded tick 0
         // so that the pool will have mostly token1
@@ -1867,7 +1867,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
 
-        MockLDF ldf_ = new MockLDF();
+        MockLDF ldf_ = new MockLDF(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         {
             PoolKey memory key_;
@@ -2117,7 +2117,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         uint24 feeMax = 0.5e6;
         uint24 feeQuadraticMultiplier = 1e6;
 
-        MockLDF ldf_ = new MockLDF();
+        MockLDF ldf_ = new MockLDF(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
         ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
@@ -2218,7 +2218,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         // Step 3: Create a new pool with BT1 and AttackerToken
         ERC20Mock attackerToken = new ERC20Mock();
-        MockLDF mockLDF = new MockLDF();
+        MockLDF mockLDF = new MockLDF(address(hub), address(bunniHook), address(quoter));
         mockLDF.setMinTick(-30); // minTick of MockLDFs need initialization
 
         // approve tokens
@@ -2409,7 +2409,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     }
 
     function test_idleBalance_ldfShiftUpdatesIdleBalance() public {
-        MockLDF ldf_ = new MockLDF();
+        MockLDF ldf_ = new MockLDF(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA));
         ldf_.setMinTick(-30);
 
@@ -2437,7 +2437,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
     }
 
     function test_idleBalance_rebalanceUpdatesIdleBalance() public {
-        MockLDF ldf_ = new MockLDF();
+        MockLDF ldf_ = new MockLDF(address(hub), address(bunniHook), address(quoter));
         bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA));
         ldf_.setMinTick(-30);
 

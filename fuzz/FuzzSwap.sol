@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.20;
 
+import {console2} from "forge-std/console2.sol";
+
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";

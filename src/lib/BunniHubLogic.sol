@@ -2,8 +2,6 @@
 
 pragma solidity ^0.8.19;
 
-import {console2} from "forge-std/console2.sol";
-
 import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
 
 import {ClonesWithImmutableArgs} from "clones-with-immutable-args/ClonesWithImmutableArgs.sol";

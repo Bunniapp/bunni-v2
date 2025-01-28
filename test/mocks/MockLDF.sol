@@ -6,14 +6,17 @@ import "forge-std/console.sol";
 import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 import "../../src/ldf/ShiftMode.sol";
+import {Guarded} from "../../src/base/Guarded.sol";
 import {ILiquidityDensityFunction} from "../../src/interfaces/ILiquidityDensityFunction.sol";
 import {LibGeometricDistribution} from "../../src/ldf/LibGeometricDistribution.sol";
 
 /// @dev DiscreteLaplaceDistribution with a modifiable mu for testing
-contract MockLDF is ILiquidityDensityFunction {
+contract MockLDF is ILiquidityDensityFunction, Guarded {
     int24 internal _minTick;
 
     uint32 internal constant INITIALIZED_STATE = 1 << 24;
+
+    constructor(address hub_, address hook_, address quoter_) Guarded(hub_, hook_, quoter_) {}
 
     function query(
         PoolKey calldata key,
@@ -26,6 +29,7 @@ contract MockLDF is ILiquidityDensityFunction {
         external
         view
         override
+        guarded
         returns (
             uint256 liquidityDensityX96_,
             uint256 cumulativeAmount0DensityX96,
@@ -62,6 +66,7 @@ contract MockLDF is ILiquidityDensityFunction {
         external
         view
         override
+        guarded
         returns (
             bool success,
             int24 roundedTick,
@@ -98,7 +103,7 @@ contract MockLDF is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external view override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
             LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         minTick = _minTick;
@@ -120,7 +125,7 @@ contract MockLDF is ILiquidityDensityFunction {
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 ldfState
-    ) external view override returns (uint256) {
+    ) external view override guarded returns (uint256) {
         (int24 minTick, int24 length, uint256 alphaX96, ShiftMode shiftMode) =
             LibGeometricDistribution.decodeParams(twapTick, key.tickSpacing, ldfParams);
         minTick = _minTick;
