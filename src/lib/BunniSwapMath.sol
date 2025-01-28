@@ -161,7 +161,7 @@ library BunniSwapMath {
 
             if (success && swapLiquidity != 0) {
                 // use Uniswap math to compute updated sqrt price
-                // the swap is called "partial swap" or "naive swap"
+                // the swap is called "partial swap"
                 // which always has the same exactIn and zeroForOne as the overall swap
                 (int24 tickStart, int24 tickNext) = zeroForOne
                     ? (updatedRoundedTick + input.key.tickSpacing, updatedRoundedTick)
@@ -174,6 +174,15 @@ library BunniSwapMath {
                     (zeroForOne && sqrtPriceLimitX96 <= startSqrtPriceX96)
                         || (!zeroForOne && sqrtPriceLimitX96 >= startSqrtPriceX96)
                 ) {
+                    // adjust the cumulativeAmount of the input token to be at least the corresponding currentActiveBalance
+                    // we know that we're swapping in a different rounded tick as the starting one (based on the first naive swap)
+                    // so this should be true but sometimes isn't due to precision error which is why the adjustment is necessary
+                    if (zeroForOne) {
+                        cumulativeAmount0 = FixedPointMathLib.max(cumulativeAmount0, input.currentActiveBalance0);
+                    } else {
+                        cumulativeAmount1 = FixedPointMathLib.max(cumulativeAmount1, input.currentActiveBalance1);
+                    }
+
                     int256 amountSpecifiedRemaining = exactIn
                         ? -(inverseCumulativeAmountFnInput - (zeroForOne ? cumulativeAmount0 : cumulativeAmount1)).toInt256()
                         : ((zeroForOne ? cumulativeAmount1 : cumulativeAmount0) - inverseCumulativeAmountFnInput).toInt256();

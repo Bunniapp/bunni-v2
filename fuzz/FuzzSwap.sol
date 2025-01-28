@@ -126,8 +126,6 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
         ) {
-            require(outputAmount0 != 0 && inputAmount0 != 0);
-
             // apply fee
             bool exactIn = amountSpecified < 0;
             if (exactIn) {
@@ -158,6 +156,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 return;
             }
             input2.swapParams.amountSpecified = amountSpecified < 0 ? -int256(outputAmount0) : int256(inputAmount0);
+
+            if (input2.swapParams.amountSpecified == 0) return;
 
             (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
                 this.swap(input2);
@@ -439,7 +439,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
         ) {
-            require(outputAmount0 != 0 && inputAmount0 != 0);
+            if (outputAmount0 == 0 || inputAmount0 == 0) return;
             assertWithMsg(
                 updatedSqrtPriceX96 >= MIN_SQRT_PRICE && updatedSqrtPriceX96 <= MAX_SQRT_PRICE,
                 "sqrtPrice is outside the Limit"
