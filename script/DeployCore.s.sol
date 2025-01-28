@@ -24,11 +24,11 @@ contract DeployCoreScript is CREATE3Script {
 
         address deployer = vm.addr(deployerPrivateKey);
 
-        address poolManager = vm.envAddress("POOL_MANAGER");
+        address poolManager = vm.envAddress(string.concat("POOL_MANAGER_", block.chainid.toString()));
         address weth = vm.envAddress(string.concat("WETH_", block.chainid.toString()));
         address permit2 = vm.envAddress("PERMIT2");
-        address owner = vm.envAddress(string.concat("OWNER_", block.chainid.toString()));
-        address hookFeeRecipient = vm.envAddress(string.concat("HOOK_FEE_RECIPIENT_", block.chainid.toString()));
+        address owner = vm.envAddress("OWNER");
+        address hookFeeRecipient = vm.envAddress("HOOK_FEE_RECIPIENT");
         uint32 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint32();
         uint32 referralRewardModifier = vm.envUint("REFERRAL_REWARD_MODIFIER").toUint32();
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
