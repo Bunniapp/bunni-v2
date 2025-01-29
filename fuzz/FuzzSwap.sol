@@ -12,9 +12,11 @@ import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 import "../src/lib/Math.sol";
 import {ShiftMode} from "../src/ldf/ShiftMode.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
-import {LibUniformDistribution} from "../src/ldf/LibUniformDistribution.sol";
 import {UniformDistribution} from "../src/ldf/UniformDistribution.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
+import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
+import {CarpetedGeometricDistribution} from "../src/ldf/CarpetedGeometricDistribution.sol";
+import {CarpetedDoubleGeometricDistribution} from "../src/ldf/CarpetedDoubleGeometricDistribution.sol";
 
 import "./FuzzHelper.sol";
 import "../src/lib/BunniSwapMath.sol";
@@ -33,6 +35,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
     using IdleBalanceLibrary for *;
 
     uint24 internal constant MIN_SWAP_FEE = 1;
+    uint8 internal constant NUM_LDFS = 5;
 
     // Invariant: Users should not be able to get free output tokens
     //            for zero input tokens when amountSpecified is non-zero
@@ -44,28 +47,20 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         uint64 balance1,
         int64 amountSpecified,
         uint160 sqrtPriceLimit,
-        int24 tickLower,
-        int24 tickUpper,
         int24 currentTick,
-        bool zeroForOne
+        bool zeroForOne,
+        bytes8 ldfSeed
     ) public {
+        (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
+
         if (amountSpecified == 0) return;
 
-        // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
+        // Set up LDF
+        _setUpLDF(ldfSeed, tickSpacing);
 
         // Initialize parameters before swapinng
-        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing,
-            balance0,
-            balance1,
-            amountSpecified,
-            sqrtPriceLimit,
-            tickLower,
-            tickUpper,
-            currentTick,
-            zeroForOne
-        );
+        (BunniSwapMath.BunniComputeSwapInput memory input1,) =
+            _compute_swap(tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, currentTick, zeroForOne);
 
         // avoid edge case where the active balance of the output token is 0
         // or if the output token's balance is less than requested in an exact output swap
@@ -98,103 +93,32 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         }
     }
 
-    /* function swap_should_move_sqrt_price_in_correct_direction(
-        int24 tickSpacing,
-        uint64 balance0,
-        uint64 balance1,
-        int64 amountSpecified,
-        uint160 sqrtPriceLimit,
-        int24 tickLower,
-        int24 tickUpper,
-        int24 currentTick,
-        bool zeroForOne
-    ) public {
-        if (amountSpecified == 0) return;
-
-        // Initialize LDF to Geometric distribution
-        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
-
-        // Initialize parameters before swapinng
-        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) = _compute_swap(
-            tickSpacing,
-            balance0,
-            balance1,
-            amountSpecified,
-            sqrtPriceLimit,
-            tickLower,
-            tickUpper,
-            currentTick,
-            zeroForOne
-        );
-
-        // avoid edge case where the active balance of the output token is 0
-        if (
-            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
-                || input1.totalLiquidity == 0
-        ) {
-            return;
-        }
-
-        try this.swap(input1) returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256, uint256) {
-            tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-            (int24 minUsableTick, int24 maxUsableTick) =
-                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-            currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
-
-            if (zeroForOne) {
-                assertLt(updatedSqrtPriceX96, currentTick.getSqrtPriceAtTick(), "sqrtPriceX96 should be less");
-                assertLte(updatedTick, currentTick, "tick should be less");
-            } else {
-                assertGt(updatedSqrtPriceX96, currentTick.getSqrtPriceAtTick(), "sqrtPriceX96 should be greater");
-                assertGte(updatedTick, currentTick, "tick should be greater");
-            }
-        } catch Panic(uint256) {
-            // This is executed in case of a panic,
-            // i.e. a serious error like division by zero
-            // or overflow. The error code can be used
-            // to determine the kind of error.
-            //assert(false);
-            return;
-        } catch (bytes memory reason) {
-            emit LogBytes(reason);
-            return;
-        }
-    } */
-
     // Invariant: Users should not be able to gain any tokens through round trip swaps.
     // Issue: TOB-BUNNI-16
     // This test fails only if the swap fee is zero.
-    function compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero(
+    function test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero(
         int24 tickSpacing,
         uint64 balance0,
         uint64 balance1,
         int64 amountSpecified,
         uint160 sqrtPriceLimit,
-        int24 tickLower,
-        int24 tickUpper,
         int24 currentTick,
         uint24 fee,
-        bool zeroForOne
+        bool zeroForOne,
+        bytes8 ldfSeed
     ) public {
+        (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
+
         if (amountSpecified == 0) return;
 
         fee = uint24(clampBetween(fee, MIN_SWAP_FEE, SWAP_FEE_BASE));
 
-        // Initialize LDF to Geometric distribution
-        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
+        // Set up LDF
+        _setUpLDF(ldfSeed, tickSpacing);
 
         // Initialize parameters before swapinng
-        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) = _compute_swap(
-            tickSpacing,
-            balance0,
-            balance1,
-            amountSpecified,
-            sqrtPriceLimit,
-            tickLower,
-            tickUpper,
-            currentTick,
-            zeroForOne
-        );
+        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) =
+            _compute_swap(tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, currentTick, zeroForOne);
 
         // avoid edge case where the active balance of the output token is 0
         // or if the output token's balance is less than requested in an exact output swap
@@ -232,8 +156,6 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 uint64(balance1 - outputAmount0),
                 -amountSpecified,
                 input1.sqrtPriceX96, // sqrtPriceLimit
-                tickLower,
-                tickUpper,
                 updatedTick,
                 !zeroForOne,
                 updatedSqrtPriceX96,
@@ -280,10 +202,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             console2.log("outputAmount0", outputAmount0);
             console2.log("inputAmount1", inputAmount1);
             console2.log("outputAmount1", outputAmount1);
-            tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-            (int24 minUsableTick, int24 maxUsableTick) =
-                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-            console2.log("currentTick", int24(clampBetween(currentTick, minUsableTick, maxUsableTick)));
+            console2.log("currentTick", currentTick);
             console2.log("updatedTick", updatedTick);
             console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
             console2.log("updatedTick0", updatedTick0);
@@ -317,189 +236,6 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         (updatedSqrtPriceX96, updatedTick, inputAmount0, outputAmount0) = BunniSwapMath.computeSwap(input);
     }
 
-    function _compute_idle_balance(
-        int24 tickSpacing,
-        uint64 balance0,
-        uint64 balance1,
-        int24 tickLower,
-        int24 tickUpper,
-        int24 currentTick,
-        uint160 sqrtPriceX96
-    ) internal view returns (IdleBalance idleBalance) {
-        uint256 totalLiquidity;
-        uint256 totalDensity0X96;
-        uint256 totalDensity1X96;
-        uint256 liquidityDensityOfRoundedTickX96;
-        uint256 currentActiveBalance0;
-        uint256 currentActiveBalance1;
-        {
-            bytes32 ldfParams = bytes32(
-                abi.encodePacked(
-                    ShiftMode.STATIC, int24(tickLower), int16((tickUpper - tickLower) / tickSpacing), uint32(0.7e8)
-                )
-            );
-            PoolKey memory key;
-            key.tickSpacing = tickSpacing;
-            (
-                totalLiquidity,
-                totalDensity0X96,
-                totalDensity1X96,
-                liquidityDensityOfRoundedTickX96,
-                currentActiveBalance0,
-                currentActiveBalance1,
-                ,
-            ) = queryLDF({
-                key: key,
-                sqrtPriceX96: sqrtPriceX96,
-                tick: currentTick,
-                arithmeticMeanTick: int24(0),
-                ldf: ldf,
-                ldfParams: ldfParams,
-                ldfState: LDF_STATE,
-                balance0: balance0,
-                balance1: balance1,
-                idleBalance: IdleBalanceLibrary.ZERO
-            });
-        }
-
-        (uint256 extraBalance0, uint256 extraBalance1) = (
-            balance0 > currentActiveBalance0 ? balance0 - currentActiveBalance0 : 0,
-            balance1 > currentActiveBalance1 ? balance1 - currentActiveBalance1 : 0
-        );
-        console2.log("extraBalance0", extraBalance0);
-        console2.log("extraBalance1", extraBalance1);
-        (uint256 extraBalanceProportion0, uint256 extraBalanceProportion1) =
-            (balance0 == 0 ? 0 : extraBalance0.divWad(balance0), balance1 == 0 ? 0 : extraBalance1.divWad(balance1));
-        console2.log("extraBalanceProportion0", extraBalanceProportion0);
-        console2.log("extraBalanceProportion1", extraBalanceProportion1);
-        bool isToken0 = extraBalanceProportion0 >= extraBalanceProportion1;
-        return (isToken0 ? extraBalance0 : extraBalance1).toIdleBalance(isToken0);
-    }
-
-    function _compute_swap(
-        int24 tickSpacing,
-        uint64 balance0,
-        uint64 balance1,
-        int64 amountSpecified,
-        uint160 sqrtPriceLimitX96,
-        int24 tickLower,
-        int24 tickUpper,
-        int24 currentTick,
-        bool zeroForOne
-    ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input, IdleBalance idleBalance) {
-        tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-        (int24 minUsableTick, int24 maxUsableTick) =
-            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-        currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
-        tickLower =
-            roundTickSingle(int24(clampBetween(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
-        tickUpper = roundTickSingle(int24(clampBetween(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-
-        // compute sqrtPriceX96 and idleBalance
-        uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(currentTick);
-        idleBalance =
-            _compute_idle_balance(tickSpacing, balance0, balance1, tickLower, tickUpper, currentTick, sqrtPriceX96);
-
-        input = _compute_swap(
-            tickSpacing,
-            balance0,
-            balance1,
-            amountSpecified,
-            sqrtPriceLimitX96,
-            tickLower,
-            tickUpper,
-            currentTick,
-            zeroForOne,
-            sqrtPriceX96,
-            idleBalance
-        );
-    }
-
-    // Helper function to initialize the parameters for the swap
-    function _compute_swap(
-        int24 tickSpacing,
-        uint64 balance0,
-        uint64 balance1,
-        int64 amountSpecified,
-        uint160 sqrtPriceLimitX96,
-        int24 tickLower,
-        int24 tickUpper,
-        int24 currentTick,
-        bool zeroForOne,
-        uint160 sqrtPriceX96,
-        IdleBalance idleBalance
-    ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input) {
-        {
-            tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
-            (int24 minUsableTick, int24 maxUsableTick) =
-                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
-
-            tickLower =
-                roundTickSingle(int24(clampBetween(tickLower, minUsableTick, maxUsableTick - tickSpacing)), tickSpacing);
-            tickUpper =
-                roundTickSingle(int24(clampBetween(tickUpper, tickLower + tickSpacing, maxUsableTick)), tickSpacing);
-            console2.log("tickLower", tickLower);
-            console2.log("tickUpper", tickUpper);
-            currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
-        }
-
-        bytes32 ldfParams = bytes32(
-            abi.encodePacked(
-                ShiftMode.STATIC, int24(tickLower), int16((tickUpper - tickLower) / tickSpacing), uint32(0.7e8)
-            )
-        );
-        // set up pool key
-        PoolKey memory key;
-        key.tickSpacing = tickSpacing;
-
-        if (!ldf.isValidParams(key, 0, ldfParams)) revert();
-
-        // set up BunniComputeSwapInput
-        input.key = key;
-        input.sqrtPriceX96 = sqrtPriceX96;
-        input.currentTick = currentTick;
-        input.liquidityDensityFunction = ldf;
-        input.arithmeticMeanTick = int24(0);
-        input.ldfParams = ldfParams;
-        input.ldfState = LDF_STATE;
-
-        // initialize swap params
-        input.swapParams.amountSpecified = clampBetween(amountSpecified, type(int64).min, type(int64).max);
-        input.swapParams.sqrtPriceLimitX96 = zeroForOne
-            ? uint160(clampBetween(sqrtPriceLimitX96, MIN_SQRT_PRICE, sqrtPriceX96 - 1))
-            : uint160(clampBetween(sqrtPriceLimitX96, sqrtPriceX96 + 1, MAX_SQRT_PRICE));
-        input.swapParams.zeroForOne = zeroForOne;
-
-        // query the LDF to get total liquidity and token densities
-        (
-            uint256 totalLiquidity,
-            ,
-            ,
-            uint256 liquidityDensityOfRoundedTickX96,
-            uint256 currentActiveBalance0,
-            uint256 currentActiveBalance1,
-            ,
-        ) = queryLDF({
-            key: key,
-            sqrtPriceX96: input.sqrtPriceX96,
-            tick: input.currentTick,
-            arithmeticMeanTick: input.arithmeticMeanTick,
-            ldf: ldf,
-            ldfParams: ldfParams,
-            ldfState: LDF_STATE,
-            balance0: balance0,
-            balance1: balance1,
-            idleBalance: idleBalance
-        });
-
-        input.totalLiquidity = totalLiquidity;
-        input.currentActiveBalance0 = currentActiveBalance0;
-        input.currentActiveBalance1 = currentActiveBalance1;
-        input.liquidityDensityOfRoundedTickX96 = liquidityDensityOfRoundedTickX96;
-
-        return input;
-    }
-
     // Invariant: computeSwap in BunniSwapMath should output a valid sqrtPrice of the pool after the swap.
     function test_sqrtPrice_after_the_swap_is_valid(
         int24 tickSpacing,
@@ -507,28 +243,20 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         uint64 balance1,
         int64 amountSpecified,
         uint160 sqrtPriceLimit,
-        int24 tickLower,
-        int24 tickUpper,
         int24 currentTick,
-        bool zeroForOne
+        bool zeroForOne,
+        bytes8 ldfSeed
     ) public {
+        (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
+
         if (amountSpecified == 0) return;
 
-        // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
+        // Set up LDF
+        _setUpLDF(ldfSeed, tickSpacing);
 
         // Initialize parameters before swapinng
-        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing,
-            balance0,
-            balance1,
-            amountSpecified,
-            sqrtPriceLimit,
-            tickLower,
-            tickUpper,
-            currentTick,
-            zeroForOne
-        );
+        (BunniSwapMath.BunniComputeSwapInput memory input1,) =
+            _compute_swap(tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, currentTick, zeroForOne);
 
         // avoid edge case where the active balance of the output token is 0
         // or if the output token's balance is less than requested in an exact output swap
@@ -573,28 +301,20 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         uint64 balance1,
         int64 amountSpecified,
         uint160 sqrtPriceLimit,
-        int24 tickLower,
-        int24 tickUpper,
         int24 currentTick,
-        bool zeroForOne
+        bool zeroForOne,
+        bytes8 ldfSeed
     ) public {
+        (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
+
         if (amountSpecified == 0 || FixedPointMathLib.abs(amountSpecified) < 1e3) return;
 
-        // Initialize LDF to Uniform distribution
-        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
+        // Set up LDF
+        _setUpLDF(ldfSeed, tickSpacing);
 
         // Initialize parameters before swapinng
-        (BunniSwapMath.BunniComputeSwapInput memory input1,) = _compute_swap(
-            tickSpacing,
-            balance0,
-            balance1,
-            amountSpecified,
-            sqrtPriceLimit,
-            tickLower,
-            tickUpper,
-            currentTick,
-            zeroForOne
-        );
+        (BunniSwapMath.BunniComputeSwapInput memory input1,) =
+            _compute_swap(tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, currentTick, zeroForOne);
 
         // avoid edge case where the active balance of the output token is 0
         // or if the output token's balance is less than requested in an exact output swap
@@ -621,5 +341,241 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             emit LogBytes(reason);
             return;
         }
+    }
+
+    function _processInputs(int24 tickSpacing, int64 amountSpecified, int24 currentTick)
+        internal
+        returns (int24 tickSpacing_, int64 amountSpecified_, int24 currentTick_)
+    {
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+        tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+        currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
+        amountSpecified = int64(clampBetween(amountSpecified, type(int64).min, type(int64).max));
+
+        return (tickSpacing, amountSpecified, currentTick);
+    }
+
+    function _compute_idle_balance(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int24 currentTick,
+        uint160 sqrtPriceX96
+    ) internal returns (IdleBalance idleBalance) {
+        uint256 totalLiquidity;
+        uint256 totalDensity0X96;
+        uint256 totalDensity1X96;
+        uint256 liquidityDensityOfRoundedTickX96;
+        uint256 currentActiveBalance0;
+        uint256 currentActiveBalance1;
+        {
+            PoolKey memory key;
+            key.tickSpacing = tickSpacing;
+            (
+                totalLiquidity,
+                totalDensity0X96,
+                totalDensity1X96,
+                liquidityDensityOfRoundedTickX96,
+                currentActiveBalance0,
+                currentActiveBalance1,
+                ,
+            ) = queryLDF({
+                key: key,
+                sqrtPriceX96: sqrtPriceX96,
+                tick: currentTick,
+                arithmeticMeanTick: int24(0),
+                ldf: ldf,
+                ldfParams: ldfParams,
+                ldfState: LDF_STATE,
+                balance0: balance0,
+                balance1: balance1,
+                idleBalance: IdleBalanceLibrary.ZERO
+            });
+        }
+
+        (uint256 extraBalance0, uint256 extraBalance1) = (
+            balance0 > currentActiveBalance0 ? balance0 - currentActiveBalance0 : 0,
+            balance1 > currentActiveBalance1 ? balance1 - currentActiveBalance1 : 0
+        );
+        console2.log("extraBalance0", extraBalance0);
+        console2.log("extraBalance1", extraBalance1);
+        (uint256 extraBalanceProportion0, uint256 extraBalanceProportion1) =
+            (balance0 == 0 ? 0 : extraBalance0.divWad(balance0), balance1 == 0 ? 0 : extraBalance1.divWad(balance1));
+        console2.log("extraBalanceProportion0", extraBalanceProportion0);
+        console2.log("extraBalanceProportion1", extraBalanceProportion1);
+        bool isToken0 = extraBalanceProportion0 >= extraBalanceProportion1;
+        return (isToken0 ? extraBalance0 : extraBalance1).toIdleBalance(isToken0);
+    }
+
+    function _compute_swap(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int64 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        int24 currentTick,
+        bool zeroForOne
+    ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input, IdleBalance idleBalance) {
+        // compute sqrtPriceX96 and idleBalance
+        uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(currentTick);
+        idleBalance = _compute_idle_balance(tickSpacing, balance0, balance1, currentTick, sqrtPriceX96);
+
+        input = _compute_swap(
+            tickSpacing,
+            balance0,
+            balance1,
+            amountSpecified,
+            sqrtPriceLimitX96,
+            currentTick,
+            zeroForOne,
+            sqrtPriceX96,
+            idleBalance
+        );
+    }
+
+    // Helper function to initialize the parameters for the swap
+    function _compute_swap(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int64 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        int24 currentTick,
+        bool zeroForOne,
+        uint160 sqrtPriceX96,
+        IdleBalance idleBalance
+    ) internal returns (BunniSwapMath.BunniComputeSwapInput memory input) {
+        // set up pool key
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
+
+        require(ldf.isValidParams(key, 0, ldfParams), "invalid LDF params");
+
+        // set up BunniComputeSwapInput
+        input.key = key;
+        input.sqrtPriceX96 = sqrtPriceX96;
+        input.currentTick = currentTick;
+        input.liquidityDensityFunction = ldf;
+        input.arithmeticMeanTick = int24(0);
+        input.ldfParams = ldfParams;
+        input.ldfState = LDF_STATE;
+
+        // initialize swap params
+        input.swapParams.amountSpecified = amountSpecified;
+        input.swapParams.sqrtPriceLimitX96 = zeroForOne
+            ? uint160(clampBetween(sqrtPriceLimitX96, MIN_SQRT_PRICE, sqrtPriceX96 - 1))
+            : uint160(clampBetween(sqrtPriceLimitX96, sqrtPriceX96 + 1, MAX_SQRT_PRICE));
+        input.swapParams.zeroForOne = zeroForOne;
+
+        // query the LDF to get total liquidity and token densities
+        (
+            uint256 totalLiquidity,
+            ,
+            ,
+            uint256 liquidityDensityOfRoundedTickX96,
+            uint256 currentActiveBalance0,
+            uint256 currentActiveBalance1,
+            ,
+        ) = queryLDF({
+            key: key,
+            sqrtPriceX96: input.sqrtPriceX96,
+            tick: input.currentTick,
+            arithmeticMeanTick: input.arithmeticMeanTick,
+            ldf: ldf,
+            ldfParams: ldfParams,
+            ldfState: LDF_STATE,
+            balance0: balance0,
+            balance1: balance1,
+            idleBalance: idleBalance
+        });
+
+        input.totalLiquidity = totalLiquidity;
+        input.currentActiveBalance0 = currentActiveBalance0;
+        input.currentActiveBalance1 = currentActiveBalance1;
+        input.liquidityDensityOfRoundedTickX96 = liquidityDensityOfRoundedTickX96;
+
+        return input;
+    }
+
+    function _setUpLDF(bytes8 ldfSeed, int24 tickSpacing) internal {
+        (int24 minUsableTick, int24 maxUsableTick) =
+            (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+
+        uint8 ldfIdx = uint8(clampBetween(_rng(ldfSeed, 0), 0, NUM_LDFS - 1));
+        if (ldfIdx == 0) {
+            ldf =
+                ILiquidityDensityFunction(address(new UniformDistribution(address(this), address(this), address(this))));
+            int24 tickLower = roundTickSingle(
+                int24(clampBetween(int256(_rng(ldfSeed, 1)), minUsableTick, maxUsableTick)), tickSpacing
+            );
+            int24 tickUpper = roundTickSingle(
+                int24(clampBetween(int256(_rng(ldfSeed, 2)), tickLower + tickSpacing, maxUsableTick)), tickSpacing
+            );
+            ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
+        } else if (ldfIdx == 1) {
+            ldf = ILiquidityDensityFunction(
+                address(new GeometricDistribution(address(this), address(this), address(this)))
+            );
+            int24 minTick = roundTickSingle(
+                int24(clampBetween(int256(_rng(ldfSeed, 1)), minUsableTick, maxUsableTick - 2 * tickSpacing)),
+                tickSpacing
+            );
+            int16 length = int16(clampBetween(int256(_rng(ldfSeed, 2)), 1, maxUsableTick / tickSpacing - 2));
+            uint32 alpha = uint32(clampBetween(_rng(ldfSeed, 3), MIN_ALPHA, MAX_ALPHA));
+            ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, length, alpha));
+        } else if (ldfIdx == 2) {
+            ldf = ILiquidityDensityFunction(
+                address(new DoubleGeometricDistribution(address(this), address(this), address(this)))
+            );
+            int24 minTick = roundTickSingle(
+                int24(clampBetween(int256(_rng(ldfSeed, 1)), minUsableTick, maxUsableTick - 2 * tickSpacing)),
+                tickSpacing
+            );
+            int16 length0 = int16(clampBetween(int256(_rng(ldfSeed, 2)), 1, maxUsableTick / tickSpacing - 2));
+            uint32 alpha0 = uint32(clampBetween(_rng(ldfSeed, 3), MIN_ALPHA, MAX_ALPHA));
+            int16 length1 = int16(clampBetween(int256(_rng(ldfSeed, 4)), 1, maxUsableTick / tickSpacing - 2));
+            uint32 alpha1 = uint32(clampBetween(_rng(ldfSeed, 5), MIN_ALPHA, MAX_ALPHA));
+            uint32 weight0 = uint32(clampBetween(_rng(ldfSeed, 6), uint256(1), uint256(1e6)));
+            uint32 weight1 = uint32(clampBetween(_rng(ldfSeed, 7), uint256(1), uint256(1e6)));
+            ldfParams =
+                bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, length0, alpha0, weight0, length1, alpha1, weight1));
+        } else if (ldfIdx == 3) {
+            ldf = ILiquidityDensityFunction(
+                address(new CarpetedGeometricDistribution(address(this), address(this), address(this)))
+            );
+            int24 minTick = roundTickSingle(
+                int24(clampBetween(int256(_rng(ldfSeed, 1)), minUsableTick, maxUsableTick - 2 * tickSpacing)),
+                tickSpacing
+            );
+            int16 length = int16(clampBetween(int256(_rng(ldfSeed, 2)), 1, maxUsableTick / tickSpacing - 2));
+            uint32 alpha = uint32(clampBetween(_rng(ldfSeed, 3), MIN_ALPHA, MAX_ALPHA));
+            uint32 weightCarpet = uint32(clampBetween(_rng(ldfSeed, 4), 1e9, type(uint32).max));
+            ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, length, alpha, weightCarpet));
+        } else if (ldfIdx == 4) {
+            ldf = ILiquidityDensityFunction(
+                address(new CarpetedDoubleGeometricDistribution(address(this), address(this), address(this)))
+            );
+            int24 minTick = roundTickSingle(
+                int24(clampBetween(int256(_rng(ldfSeed, 1)), minUsableTick, maxUsableTick - 2 * tickSpacing)),
+                tickSpacing
+            );
+            int16 length0 = int16(clampBetween(int256(_rng(ldfSeed, 2)), 1, maxUsableTick / tickSpacing - 2));
+            uint32 alpha0 = uint32(clampBetween(_rng(ldfSeed, 3), MIN_ALPHA, MAX_ALPHA));
+            int16 length1 = int16(clampBetween(int256(_rng(ldfSeed, 4)), 1, maxUsableTick / tickSpacing - 2));
+            uint32 alpha1 = uint32(clampBetween(_rng(ldfSeed, 5), MIN_ALPHA, MAX_ALPHA));
+            uint32 weight0 = uint32(clampBetween(_rng(ldfSeed, 6), uint256(1), uint256(1e6)));
+            uint32 weight1 = uint32(clampBetween(_rng(ldfSeed, 7), uint256(1), uint256(1e6)));
+            uint32 weightCarpet = uint32(clampBetween(_rng(ldfSeed, 8), 1, type(uint32).max));
+            ldfParams = bytes32(
+                abi.encodePacked(
+                    ShiftMode.STATIC, minTick, length0, alpha0, weight0, length1, alpha1, weight1, weightCarpet
+                )
+            );
+        }
+    }
+
+    function _rng(bytes8 seed, uint8 id) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(seed, id)));
     }
 }

@@ -16,6 +16,7 @@ abstract contract FuzzHelper {
     uint256 internal constant INVCUM0_MAX_ERROR = 10;
     int24 internal constant MIN_TICK_SPACING = 1000; // >1 to make brute forcing viable
     ILiquidityDensityFunction internal ldf;
+    bytes32 internal ldfParams;
     uint24 internal constant MAX_SWAP_FEE = 1_000_000;
     uint160 internal constant MIN_SQRT_PRICE = TickMath.MIN_SQRT_PRICE + 1;
     uint160 internal constant MAX_SQRT_PRICE = TickMath.MAX_SQRT_PRICE - 1;
