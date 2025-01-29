@@ -43,6 +43,8 @@ forge test
 
 Bunni uses [Medusa](https://github.com/crytic/medusa) and [fuzz-utils](https://github.com/crytic/fuzz-utils) for fuzzing.
 
+Before fuzzing, `BunniSwapMath` should be temporarily modified to use `internal` instead of `external` and to use `memory` instead of `calldata` for the `computeSwap` function. This is because Medusa doesn't support external libraries.
+
 To start fuzzing, run:
 
 ```
@@ -65,12 +67,18 @@ forge test --mc FuzzEntry_Medusa_Test
 
 Please create a `.env` file before deployment. An example can be found in `.env.example`.
 
+The Create3 salts for the following contracts are required in the `.env` file:
+
+- `BunniHub`
+- `BunniZone`
+- `BunniHook`
+- `BunniQuoter`
+
 #### Dryrun
 
 ```
 forge script script/DeployCore.s.sol -f [network]
 forge script script/DeployBunniQuoter.s.sol -f [network]
-export BUNNI_HOOK=[insert deployed BunniHook address]
 FOUNDRY_PROFILE=ldf forge script script/DeployLDFs.s.sol -f [network]
 ```
 
@@ -79,6 +87,5 @@ FOUNDRY_PROFILE=ldf forge script script/DeployLDFs.s.sol -f [network]
 ```
 forge script script/DeployCore.s.sol -f [network] --verify --broadcast
 forge script script/DeployBunniQuoter.s.sol -f [network] --verify --broadcast
-export BUNNI_HOOK=[insert deployed BunniHook address]
 FOUNDRY_PROFILE=ldf forge script script/DeployLDFs.s.sol -f [network] --verify --broadcast
 ```

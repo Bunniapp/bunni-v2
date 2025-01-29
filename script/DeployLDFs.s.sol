@@ -26,9 +26,9 @@ contract DeployLDFsScript is CREATE3Script {
     {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
-        address hub = getCreate3Contract("BunniHub");
-        address hook = vm.envAddress("BUNNI_HOOK");
-        address quoter = getCreate3Contract("BunniQuoter");
+        address hub = getCreate3ContractFromEnvSalt("BunniHub");
+        address hook = getCreate3ContractFromEnvSalt("BunniHook");
+        address quoter = getCreate3ContractFromEnvSalt("BunniQuoter");
 
         vm.startBroadcast(deployerPrivateKey);
 

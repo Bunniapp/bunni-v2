@@ -19,7 +19,10 @@ contract DeployCoreScript is CREATE3Script {
 
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
-    function run() external returns (BunniHub hub, BunniZone zone, BunniHook hook, bytes32 hookSalt) {
+    function run()
+        external
+        returns (BunniHub hub, BunniZone zone, BunniHook hook, bytes32 hubSalt, bytes32 zoneSalt, bytes32 hookSalt)
+    {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
         address deployer = vm.addr(deployerPrivateKey);
@@ -34,12 +37,16 @@ contract DeployCoreScript is CREATE3Script {
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
         uint48 k = vm.envUint(string.concat("AMAMM_K_", block.chainid.toString())).toUint48();
 
+        hubSalt = getCreate3SaltFromEnv("BunniHub");
+        zoneSalt = getCreate3SaltFromEnv("BunniZone");
+        hookSalt = getCreate3SaltFromEnv("BunniHook");
+
         vm.startBroadcast(deployerPrivateKey);
 
         hub = BunniHub(
             payable(
                 create3.deploy(
-                    getCreate3ContractSalt("BunniHub"),
+                    hubSalt,
                     bytes.concat(
                         type(BunniHub).creationCode,
                         abi.encode(poolManager, weth, permit2, new BunniToken(), owner, hookFeeRecipient)
@@ -48,27 +55,16 @@ contract DeployCoreScript is CREATE3Script {
             )
         );
 
-        zone = BunniZone(
-            payable(
-                create3.deploy(
-                    getCreate3ContractSalt("BunniZone"), bytes.concat(type(BunniZone).creationCode, abi.encode(owner))
-                )
-            )
-        );
+        zone =
+            BunniZone(payable(create3.deploy(zoneSalt, bytes.concat(type(BunniZone).creationCode, abi.encode(owner)))));
 
-        unchecked {
-            bytes32 hookBaseSalt = getCreate3ContractSalt("BunniHook");
-            uint256 hookFlags = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
-                + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
-            for (uint256 offset; offset < 100000; offset++) {
-                hookSalt = bytes32(uint256(hookBaseSalt) + offset);
-                address hookDeployed = create3.getDeployed(deployer, hookSalt);
-                if (uint160(bytes20(hookDeployed)) & Hooks.ALL_HOOK_MASK == hookFlags && hookDeployed.code.length == 0)
-                {
-                    break;
-                }
-            }
-        }
+        uint256 hookFlags = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
+            + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;
+        address hookDeployed = create3.getDeployed(deployer, hookSalt);
+        require(
+            uint160(bytes20(hookDeployed)) & Hooks.ALL_HOOK_MASK == hookFlags && hookDeployed.code.length == 0,
+            "hook address invalid"
+        );
         hook = BunniHook(
             payable(
                 create3.deploy(

@@ -40,4 +40,17 @@ abstract contract CREATE3Script is Script {
     {
         return keccak256(bytes(string.concat(name, "-v", _version)));
     }
+
+    function getCreate3SaltFromEnv(string memory name) internal view virtual returns (bytes32) {
+        bytes32 salt = vm.envBytes32(string.concat("SALT_", name));
+        return salt;
+    }
+
+    function getCreate3ContractFromEnvSalt(string memory name) internal view virtual returns (address) {
+        uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
+        address deployer = vm.addr(deployerPrivateKey);
+        bytes32 salt = vm.envBytes32(string.concat("SALT_", name));
+
+        return create3.getDeployed(deployer, salt);
+    }
 }
