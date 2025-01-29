@@ -197,17 +197,6 @@ library BunniHookLogic {
         (uint256 balance0, uint256 balance1) =
             (bunniState.rawBalance0 + reserveBalance0, bunniState.rawBalance1 + reserveBalance1);
 
-        // if it's an exact output swap, revert if the requested output is greater than the balance
-        // edge case: if the balance of the output token is 0, we need to revert
-        // BunniSwapMath would panic anyways but it's good to revert early to save gas
-        bool exactIn = params.amountSpecified < 0;
-        if (
-            (!exactIn && uint256(params.amountSpecified) > (params.zeroForOne ? balance1 : balance0))
-                || (params.zeroForOne && balance1 == 0) || (!params.zeroForOne && balance0 == 0)
-        ) {
-            revert BunniHook__RequestedOutputExceedsBalance();
-        }
-
         // decode hook params
         DecodedHookParams memory hookParams = _decodeParams(bunniState.hookParams);
 
@@ -270,9 +259,15 @@ library BunniHookLogic {
         });
 
         // ensure the current active balance of the requested output token is not zero
+        // or less than the requested output if it's an exact output swap
+        bool exactIn = params.amountSpecified < 0;
         if (
             params.zeroForOne && currentActiveBalance1 == 0 || !params.zeroForOne && currentActiveBalance0 == 0
                 || totalLiquidity == 0
+                || (
+                    !exactIn
+                        && uint256(params.amountSpecified) > (params.zeroForOne ? currentActiveBalance1 : currentActiveBalance0)
+                )
         ) {
             revert BunniHook__RequestedOutputExceedsBalance();
         }
@@ -282,10 +277,10 @@ library BunniHookLogic {
 
         if (shouldSurge) {
             // the LDF has been updated, so we need to update the idle balance
-            (uint256 extraBalance0, uint256 extraBalance1) =
-                (subReLU(balance0, currentActiveBalance0), subReLU(balance1, currentActiveBalance1));
-            bool isToken0 = extraBalance0 >= extraBalance1;
-            env.hub.hookSetIdleBalance(key, FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(isToken0));
+            env.hub.hookSetIdleBalance(
+                key,
+                IdleBalanceLibrary.computeIdleBalance(currentActiveBalance0, currentActiveBalance1, balance0, balance1)
+            );
         }
 
         // check surge based on vault share prices
@@ -597,10 +592,9 @@ library BunniHookLogic {
             balance1: balance1,
             idleBalance: IdleBalanceLibrary.ZERO // set to zero since we're recomputing the idle balance and shouldSurge isn't necessarily true
         });
-        (uint256 extraBalance0, uint256 extraBalance1) =
-            (subReLU(balance0, currentActiveBalance0), subReLU(balance1, currentActiveBalance1));
-        bool isToken0 = extraBalance0 >= extraBalance1;
-        hub.hookSetIdleBalance(key, FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(isToken0));
+        hub.hookSetIdleBalance(
+            key, IdleBalanceLibrary.computeIdleBalance(currentActiveBalance0, currentActiveBalance1, balance0, balance1)
+        );
     }
 
     function isValidParams(bytes calldata hookParams) external pure returns (bool) {

@@ -204,8 +204,8 @@ library BunniHubLogic {
             uint256 newBalance = balance
                 + (
                     isToken0
-                        ? (depositReturnData.balance0 == 0 ? amount0 : amount0.mulDiv(balance, depositReturnData.balance0))
-                        : (depositReturnData.balance1 == 0 ? amount1 : amount1.mulDiv(balance, depositReturnData.balance1))
+                        ? (depositReturnData.balance0 == 0 ? amount0 : amount0.mulDivUp(balance, depositReturnData.balance0))
+                        : (depositReturnData.balance1 == 0 ? amount1 : amount1.mulDivUp(balance, depositReturnData.balance1))
                 );
             if (newBalance != balance) {
                 s.idleBalance[poolId] = newBalance.toIdleBalance(isToken0);

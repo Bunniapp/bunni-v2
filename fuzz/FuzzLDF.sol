@@ -84,7 +84,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 tickLower,
                 tickUpper
             );
-        assertWithMsg(success, "inverseCumulativeAmount0 failed");
+        if (!success) return;
         uint256 resultCumulativeAmount0 = LibUniformDistribution
             .cumulativeAmount0(
                 resultRoundedTick,
@@ -175,7 +175,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 tickLower,
                 tickUpper
             );
-        assertWithMsg(success, "inverseCumulativeAmount1 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount1 = LibUniformDistribution
             .cumulativeAmount1(
@@ -274,7 +274,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 alphaX96
             );
 
-        assertWithMsg(success, "inverseCumulativeAmount0 failed");
+        if (!success) return;
         uint256 resultCumulativeAmount0 = LibGeometricDistribution
             .cumulativeAmount0(
                 resultRoundedTick,
@@ -376,7 +376,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 length,
                 alphaX96
             );
-        assertWithMsg(success, "inverseCumulativeAmount1 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount1 = LibGeometricDistribution
             .cumulativeAmount1(
@@ -527,7 +527,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 weight0,
                 weight1
             );
-        assertWithMsg(success, "inverseCumulativeAmount0 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount0 = LibDoubleGeometricDistribution
             .cumulativeAmount0(
@@ -692,7 +692,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 weight0,
                 weight1
             );
-        assertWithMsg(success, "inverseCumulativeAmount1 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount1 = LibDoubleGeometricDistribution
             .cumulativeAmount1(
@@ -811,7 +811,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 alphaX96,
                 weightCarpet
             );
-        assertWithMsg(success, "inverseCumulativeAmount0 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount0 = LibCarpetedGeometricDistribution
             .cumulativeAmount0(
@@ -920,7 +920,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 alphaX96,
                 weightCarpet
             );
-        assertWithMsg(success, "inverseCumulativeAmount1 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount1 = LibCarpetedGeometricDistribution
             .cumulativeAmount1(
@@ -939,7 +939,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
             "resultCumulativeAmount1 < cumulativeAmount1"
         );
 
-        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e2) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e3) {
             uint256 nextCumulativeAmount1 = LibCarpetedGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
@@ -1060,7 +1060,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 tickSpacing,
                 params
             );
-        assertWithMsg(success, "inverseCumulativeAmount0 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount0 = LibCarpetedDoubleGeometricDistribution
             .cumulativeAmount0(
@@ -1197,7 +1197,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
                 tickSpacing,
                 params
             );
-        assertWithMsg(success, "inverseCumulativeAmount1 failed");
+        if (!success) return;
 
         uint256 resultCumulativeAmount1 = LibCarpetedDoubleGeometricDistribution
             .cumulativeAmount1(

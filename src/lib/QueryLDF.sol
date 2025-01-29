@@ -83,9 +83,9 @@ function queryLDF(
     if (!shouldSurge) {
         (uint256 balance, bool isToken0) = IdleBalanceLibrary.fromIdleBalance(idleBalance);
         if (isToken0) {
-            balance0 -= balance;
+            balance0 = subReLU(balance0, balance);
         } else {
-            balance1 -= balance;
+            balance1 = subReLU(balance1, balance);
         }
     }
 
@@ -94,18 +94,22 @@ function queryLDF(
         bool noToken1 = balance1 == 0 || totalDensity1X96 == 0;
         uint256 totalLiquidityEstimate0 = noToken0 ? 0 : balance0.fullMulDiv(Q96, totalDensity0X96);
         uint256 totalLiquidityEstimate1 = noToken1 ? 0 : balance1.fullMulDiv(Q96, totalDensity1X96);
-        bool useLiquidityEstimate0 = (totalLiquidityEstimate0 < totalLiquidityEstimate1 || totalLiquidityEstimate1 == 0)
-            && totalLiquidityEstimate0 != 0;
+        bool useLiquidityEstimate0 =
+            (totalLiquidityEstimate0 < totalLiquidityEstimate1 || totalDensity1X96 == 0) && totalDensity0X96 != 0;
         if (useLiquidityEstimate0) {
             totalLiquidity =
                 noToken0 ? 0 : roundUpFullMulDivResult(balance0, Q96, totalDensity0X96, totalLiquidityEstimate0);
-            (activeBalance0, activeBalance1) =
-                (noToken0 ? 0 : balance0, noToken1 ? 0 : totalLiquidityEstimate0.fullMulX96(totalDensity1X96));
+            (activeBalance0, activeBalance1) = (
+                noToken0 ? 0 : FixedPointMathLib.min(balance0, totalLiquidityEstimate0.fullMulX96(totalDensity0X96)),
+                noToken1 ? 0 : FixedPointMathLib.min(balance1, totalLiquidityEstimate0.fullMulX96(totalDensity1X96))
+            );
         } else {
             totalLiquidity =
                 noToken1 ? 0 : roundUpFullMulDivResult(balance1, Q96, totalDensity1X96, totalLiquidityEstimate1);
-            (activeBalance0, activeBalance1) =
-                (noToken0 ? 0 : totalLiquidityEstimate1.fullMulX96(totalDensity0X96), noToken1 ? 0 : balance1);
+            (activeBalance0, activeBalance1) = (
+                noToken0 ? 0 : FixedPointMathLib.min(balance0, totalLiquidityEstimate1.fullMulX96(totalDensity0X96)),
+                noToken1 ? 0 : FixedPointMathLib.min(balance1, totalLiquidityEstimate1.fullMulX96(totalDensity1X96))
+            );
         }
     }
 }

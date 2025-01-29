@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
+
+import {subReLU} from "../lib/Math.sol";
+
 type IdleBalance is bytes32;
 
 using {equals as ==, notEqual as !=} for IdleBalance global;
@@ -15,6 +19,9 @@ function notEqual(IdleBalance bal, IdleBalance other) pure returns (bool) {
 }
 
 library IdleBalanceLibrary {
+    using FixedPointMathLib for uint256;
+    using IdleBalanceLibrary for uint256;
+
     uint256 private constant _BALANCE_MASK = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
     /// @dev Set isToken0 to true in ZERO to keep storage slots dirty
     IdleBalance internal constant ZERO =
@@ -41,5 +48,18 @@ library IdleBalanceLibrary {
         }
 
         return IdleBalance.wrap(packed);
+    }
+
+    function computeIdleBalance(uint256 activeBalance0, uint256 activeBalance1, uint256 balance0, uint256 balance1)
+        internal
+        pure
+        returns (IdleBalance)
+    {
+        (uint256 extraBalance0, uint256 extraBalance1) =
+            (subReLU(balance0, activeBalance0), subReLU(balance1, activeBalance1));
+        (uint256 extraBalanceProportion0, uint256 extraBalanceProportion1) =
+            (balance0 == 0 ? 0 : extraBalance0.divWad(balance0), balance1 == 0 ? 0 : extraBalance1.divWad(balance1));
+        bool isToken0 = extraBalanceProportion0 >= extraBalanceProportion1;
+        return (isToken0 ? extraBalance0 : extraBalance1).toIdleBalance(isToken0);
     }
 }

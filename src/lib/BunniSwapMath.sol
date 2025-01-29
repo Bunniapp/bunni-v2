@@ -136,9 +136,8 @@ library BunniSwapMath {
                     zeroForOne ? input.currentActiveBalance0 + inputAmount : input.currentActiveBalance1 + inputAmount;
             } else {
                 // exact output swap
-                inverseCumulativeAmountFnInput = zeroForOne
-                    ? input.currentActiveBalance1 - FixedPointMathLib.min(outputAmount, input.currentActiveBalance1)
-                    : input.currentActiveBalance0 - FixedPointMathLib.min(outputAmount, input.currentActiveBalance0);
+                inverseCumulativeAmountFnInput =
+                    zeroForOne ? input.currentActiveBalance1 - outputAmount : input.currentActiveBalance0 - outputAmount;
             }
 
             (
@@ -159,7 +158,7 @@ library BunniSwapMath {
                 input.ldfState
             );
 
-            if (success && swapLiquidity != 0) {
+            if (success) {
                 // use Uniswap math to compute updated sqrt price
                 // the swap is called "partial swap"
                 // which always has the same exactIn and zeroForOne as the overall swap
@@ -168,6 +167,9 @@ library BunniSwapMath {
                     : (updatedRoundedTick, updatedRoundedTick + input.key.tickSpacing);
                 uint160 startSqrtPriceX96 = tickStart.getSqrtPriceAtTick();
                 uint160 sqrtPriceNextX96 = tickNext.getSqrtPriceAtTick();
+
+                // initialize updatedTick to tickStart
+                updatedTick = tickStart;
 
                 // handle the case where sqrtPriceLimitX96 has already been reached
                 if (
@@ -183,16 +185,26 @@ library BunniSwapMath {
                         cumulativeAmount1 = FixedPointMathLib.max(cumulativeAmount1, input.currentActiveBalance1);
                     }
 
-                    int256 amountSpecifiedRemaining = exactIn
-                        ? -(inverseCumulativeAmountFnInput - (zeroForOne ? cumulativeAmount0 : cumulativeAmount1)).toInt256()
-                        : ((zeroForOne ? cumulativeAmount1 : cumulativeAmount0) - inverseCumulativeAmountFnInput).toInt256();
-                    (uint160 naiveSwapResultSqrtPriceX96, uint256 naiveSwapAmountIn, uint256 naiveSwapAmountOut) =
-                    SwapMath.computeSwapStep({
-                        sqrtPriceCurrentX96: startSqrtPriceX96,
-                        sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(zeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96),
-                        liquidity: swapLiquidity,
-                        amountRemaining: amountSpecifiedRemaining
-                    });
+                    uint160 naiveSwapResultSqrtPriceX96;
+                    uint256 naiveSwapAmountIn;
+                    uint256 naiveSwapAmountOut;
+                    if (swapLiquidity == 0) {
+                        // no liquidity, don't move from the starting price
+                        (naiveSwapResultSqrtPriceX96, naiveSwapAmountIn, naiveSwapAmountOut) = (startSqrtPriceX96, 0, 0);
+                    } else {
+                        // has swap liquidity, use Uniswap math to compute updated sqrt price and input/output amounts
+                        int256 amountSpecifiedRemaining = exactIn
+                            ? -(inverseCumulativeAmountFnInput - (zeroForOne ? cumulativeAmount0 : cumulativeAmount1)).toInt256(
+                            )
+                            : ((zeroForOne ? cumulativeAmount1 : cumulativeAmount0) - inverseCumulativeAmountFnInput)
+                                .toInt256();
+                        (naiveSwapResultSqrtPriceX96, naiveSwapAmountIn, naiveSwapAmountOut) = SwapMath.computeSwapStep({
+                            sqrtPriceCurrentX96: startSqrtPriceX96,
+                            sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(zeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96),
+                            liquidity: swapLiquidity,
+                            amountRemaining: amountSpecifiedRemaining
+                        });
+                    }
 
                     if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
                         // Equivalent to `updatedTick = zeroForOne ? tickNext - 1 : tickNext;`
@@ -248,14 +260,11 @@ library BunniSwapMath {
                 }
             }
 
-            // liquidity is insufficient to handle all of the input/output tokens
-            // or the sqrt price limit has been reached
-            (updatedSqrtPriceX96, updatedTick) = (success && swapLiquidity == 0)
-                ? (updatedRoundedTick.getSqrtPriceAtTick(), updatedRoundedTick)
-                : (
-                    sqrtPriceLimitX96,
-                    sqrtPriceLimitX96 == input.sqrtPriceX96 ? input.currentTick : sqrtPriceLimitX96.getTickAtSqrtPrice() // recompute tick unless we haven't moved
-                );
+            // the sqrt price limit has been reached
+            (updatedSqrtPriceX96, updatedTick) = (
+                sqrtPriceLimitX96,
+                sqrtPriceLimitX96 == input.sqrtPriceX96 ? input.currentTick : sqrtPriceLimitX96.getTickAtSqrtPrice() // recompute tick unless we haven't moved
+            );
 
             // Rounding directions:
             // currentActiveBalance: down

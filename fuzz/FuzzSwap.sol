@@ -28,6 +28,7 @@ error Overflow();
 // Before running this with medusa, change the external functions of BunniSwapMath to internals
 // and calldata arguments to memory
 contract FuzzSwap is FuzzHelper, PropertiesAsserts {
+    using TickMath for *;
     using FixedPointMathLib for *;
     using IdleBalanceLibrary for *;
 
@@ -67,9 +68,14 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         );
 
         // avoid edge case where the active balance of the output token is 0
+        // or if the output token's balance is less than requested in an exact output swap
         if (
             (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
                 || input1.totalLiquidity == 0
+                || (
+                    amountSpecified > 0
+                        && uint64(amountSpecified) > (zeroForOne ? input1.currentActiveBalance1 : input1.currentActiveBalance0)
+                )
         ) {
             return;
         }
@@ -92,6 +98,69 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         }
     }
 
+    /* function swap_should_move_sqrt_price_in_correct_direction(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int64 amountSpecified,
+        uint160 sqrtPriceLimit,
+        int24 tickLower,
+        int24 tickUpper,
+        int24 currentTick,
+        bool zeroForOne
+    ) public {
+        if (amountSpecified == 0) return;
+
+        // Initialize LDF to Geometric distribution
+        ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
+
+        // Initialize parameters before swapinng
+        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) = _compute_swap(
+            tickSpacing,
+            balance0,
+            balance1,
+            amountSpecified,
+            sqrtPriceLimit,
+            tickLower,
+            tickUpper,
+            currentTick,
+            zeroForOne
+        );
+
+        // avoid edge case where the active balance of the output token is 0
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+        ) {
+            return;
+        }
+
+        try this.swap(input1) returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256, uint256) {
+            tickSpacing = int24(clampBetween(tickSpacing, MIN_TICK_SPACING, MAX_TICK_SPACING));
+            (int24 minUsableTick, int24 maxUsableTick) =
+                (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
+            currentTick = int24(clampBetween(currentTick, minUsableTick, maxUsableTick));
+
+            if (zeroForOne) {
+                assertLt(updatedSqrtPriceX96, currentTick.getSqrtPriceAtTick(), "sqrtPriceX96 should be less");
+                assertLte(updatedTick, currentTick, "tick should be less");
+            } else {
+                assertGt(updatedSqrtPriceX96, currentTick.getSqrtPriceAtTick(), "sqrtPriceX96 should be greater");
+                assertGte(updatedTick, currentTick, "tick should be greater");
+            }
+        } catch Panic(uint256) {
+            // This is executed in case of a panic,
+            // i.e. a serious error like division by zero
+            // or overflow. The error code can be used
+            // to determine the kind of error.
+            //assert(false);
+            return;
+        } catch (bytes memory reason) {
+            emit LogBytes(reason);
+            return;
+        }
+    } */
+
     // Invariant: Users should not be able to gain any tokens through round trip swaps.
     // Issue: TOB-BUNNI-16
     // This test fails only if the swap fee is zero.
@@ -104,24 +173,43 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         int24 tickLower,
         int24 tickUpper,
         int24 currentTick,
-        uint24 fee
+        uint24 fee,
+        bool zeroForOne
     ) public {
         if (amountSpecified == 0) return;
 
         fee = uint24(clampBetween(fee, MIN_SWAP_FEE, SWAP_FEE_BASE));
 
-        // Initialize LDF to Uniform distribution
+        // Initialize LDF to Geometric distribution
         ldf = ILiquidityDensityFunction(address(new GeometricDistribution(address(this), address(this), address(this))));
 
         // Initialize parameters before swapinng
         (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) = _compute_swap(
-            tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, tickLower, tickUpper, currentTick, true
+            tickSpacing,
+            balance0,
+            balance1,
+            amountSpecified,
+            sqrtPriceLimit,
+            tickLower,
+            tickUpper,
+            currentTick,
+            zeroForOne
         );
 
         // avoid edge case where the active balance of the output token is 0
-        if (input1.currentActiveBalance1 == 0) {
+        // or if the output token's balance is less than requested in an exact output swap
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+                || (
+                    amountSpecified > 0
+                        && uint64(amountSpecified) > (zeroForOne ? input1.currentActiveBalance1 : input1.currentActiveBalance0)
+                )
+        ) {
             return;
         }
+
+        if (input1.totalLiquidity < 1e3) return;
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
@@ -147,12 +235,21 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 tickLower,
                 tickUpper,
                 updatedTick,
-                false,
+                !zeroForOne,
                 updatedSqrtPriceX96,
                 idleBalance
             );
             // avoid edge case where the active balance of the output token is 0
-            if (input2.currentActiveBalance0 == 0) {
+            // or if the output token's balance is less than requested in an exact output swap
+            if (
+                (zeroForOne && input2.currentActiveBalance1 == 0) || (!zeroForOne && input2.currentActiveBalance0 == 0)
+                    || input2.totalLiquidity == 0
+                    || (
+                        amountSpecified > 0
+                            && uint64(amountSpecified)
+                                > (zeroForOne ? input2.currentActiveBalance1 : input2.currentActiveBalance0)
+                    )
+            ) {
                 return;
             }
             input2.swapParams.amountSpecified = amountSpecified < 0 ? -int256(outputAmount0) : int256(inputAmount0);
@@ -271,7 +368,12 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         );
         console2.log("extraBalance0", extraBalance0);
         console2.log("extraBalance1", extraBalance1);
-        return FixedPointMathLib.max(extraBalance0, extraBalance1).toIdleBalance(extraBalance0 >= extraBalance1);
+        (uint256 extraBalanceProportion0, uint256 extraBalanceProportion1) =
+            (balance0 == 0 ? 0 : extraBalance0.divWad(balance0), balance1 == 0 ? 0 : extraBalance1.divWad(balance1));
+        console2.log("extraBalanceProportion0", extraBalanceProportion0);
+        console2.log("extraBalanceProportion1", extraBalanceProportion1);
+        bool isToken0 = extraBalanceProportion0 >= extraBalanceProportion1;
+        return (isToken0 ? extraBalance0 : extraBalance1).toIdleBalance(isToken0);
     }
 
     function _compute_swap(
@@ -364,8 +466,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         // initialize swap params
         input.swapParams.amountSpecified = clampBetween(amountSpecified, type(int64).min, type(int64).max);
         input.swapParams.sqrtPriceLimitX96 = zeroForOne
-            ? uint160(clampBetween(sqrtPriceLimitX96, MIN_SQRT_PRICE, sqrtPriceX96))
-            : uint160(clampBetween(sqrtPriceLimitX96, sqrtPriceX96, MAX_SQRT_PRICE));
+            ? uint160(clampBetween(sqrtPriceLimitX96, MIN_SQRT_PRICE, sqrtPriceX96 - 1))
+            : uint160(clampBetween(sqrtPriceLimitX96, sqrtPriceX96 + 1, MAX_SQRT_PRICE));
         input.swapParams.zeroForOne = zeroForOne;
 
         // query the LDF to get total liquidity and token densities
@@ -429,9 +531,14 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         );
 
         // avoid edge case where the active balance of the output token is 0
+        // or if the output token's balance is less than requested in an exact output swap
         if (
             (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
                 || input1.totalLiquidity == 0
+                || (
+                    amountSpecified > 0
+                        && uint64(amountSpecified) > (zeroForOne ? input1.currentActiveBalance1 : input1.currentActiveBalance0)
+                )
         ) {
             return;
         }
@@ -490,9 +597,14 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         );
 
         // avoid edge case where the active balance of the output token is 0
+        // or if the output token's balance is less than requested in an exact output swap
         if (
             (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
                 || input1.totalLiquidity == 0
+                || (
+                    amountSpecified > 0
+                        && uint64(amountSpecified) > (zeroForOne ? input1.currentActiveBalance1 : input1.currentActiveBalance0)
+                )
         ) {
             return;
         }
