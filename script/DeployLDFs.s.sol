@@ -21,7 +21,13 @@ contract DeployLDFsScript is CREATE3Script {
             CarpetedGeometricDistribution carpetedGeometric,
             CarpetedDoubleGeometricDistribution carpetedDoubleGeometric,
             UniformDistribution uniform,
-            BuyTheDipGeometricDistribution buyTheDipGeometric
+            BuyTheDipGeometricDistribution buyTheDipGeometric,
+            bytes32 geometricSalt,
+            bytes32 doubleGeometricSalt,
+            bytes32 carpetedGeometricSalt,
+            bytes32 carpetedDoubleGeometricSalt,
+            bytes32 uniformSalt,
+            bytes32 buyTheDipGeometricSalt
         )
     {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
@@ -30,13 +36,19 @@ contract DeployLDFsScript is CREATE3Script {
         address hook = getCreate3ContractFromEnvSalt("BunniHook");
         address quoter = getCreate3ContractFromEnvSalt("BunniQuoter");
 
+        geometricSalt = getCreate3SaltFromEnv("GeometricDistribution");
+        doubleGeometricSalt = getCreate3SaltFromEnv("DoubleGeometricDistribution");
+        carpetedGeometricSalt = getCreate3SaltFromEnv("CarpetedGeometricDistribution");
+        carpetedDoubleGeometricSalt = getCreate3SaltFromEnv("CarpetedDoubleGeometricDistribution");
+        uniformSalt = getCreate3SaltFromEnv("UniformDistribution");
+        buyTheDipGeometricSalt = getCreate3SaltFromEnv("BuyTheDipGeometricDistribution");
+
         vm.startBroadcast(deployerPrivateKey);
 
         geometric = GeometricDistribution(
             payable(
                 create3.deploy(
-                    getCreate3ContractSalt("GeometricDistribution"),
-                    bytes.concat(type(GeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
+                    geometricSalt, bytes.concat(type(GeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
         );
@@ -44,7 +56,7 @@ contract DeployLDFsScript is CREATE3Script {
         doubleGeometric = DoubleGeometricDistribution(
             payable(
                 create3.deploy(
-                    getCreate3ContractSalt("DoubleGeometricDistribution"),
+                    doubleGeometricSalt,
                     bytes.concat(type(DoubleGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
@@ -53,7 +65,7 @@ contract DeployLDFsScript is CREATE3Script {
         carpetedGeometric = CarpetedGeometricDistribution(
             payable(
                 create3.deploy(
-                    getCreate3ContractSalt("CarpetedGeometricDistribution"),
+                    carpetedGeometricSalt,
                     bytes.concat(type(CarpetedGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
@@ -62,7 +74,7 @@ contract DeployLDFsScript is CREATE3Script {
         carpetedDoubleGeometric = CarpetedDoubleGeometricDistribution(
             payable(
                 create3.deploy(
-                    getCreate3ContractSalt("CarpetedDoubleGeometricDistribution"),
+                    carpetedDoubleGeometricSalt,
                     bytes.concat(type(CarpetedDoubleGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
@@ -70,14 +82,16 @@ contract DeployLDFsScript is CREATE3Script {
 
         uniform = UniformDistribution(
             payable(
-                create3.deploy(getCreate3ContractSalt("UniformDistribution"), type(UniformDistribution).creationCode)
+                create3.deploy(
+                    uniformSalt, bytes.concat(type(UniformDistribution).creationCode, abi.encode(hub, hook, quoter))
+                )
             )
         );
 
         buyTheDipGeometric = BuyTheDipGeometricDistribution(
             payable(
                 create3.deploy(
-                    getCreate3ContractSalt("BuyTheDipGeometricDistribution"),
+                    buyTheDipGeometricSalt,
                     bytes.concat(type(BuyTheDipGeometricDistribution).creationCode, abi.encode(hub, hook, quoter))
                 )
             )
