@@ -53,7 +53,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
 
         cumulativeAmount0 = clampBetween(cumulativeAmount0, 0, maxCumulativeAmount0);
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
-            cumulativeAmount0, totalLiquidity, tickSpacing, tickLower, tickUpper
+            cumulativeAmount0, totalLiquidity, tickSpacing, tickLower, tickUpper, false
         );
         if (!success) return;
         uint256 resultCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
@@ -105,7 +105,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
         cumulativeAmount1 = clampBetween(cumulativeAmount1, 0, maxCumulativeAmount1);
 
         (bool success, int24 resultRoundedTick) = LibUniformDistribution.inverseCumulativeAmount1(
-            cumulativeAmount1, totalLiquidity, tickSpacing, tickLower, tickUpper
+            cumulativeAmount1, totalLiquidity, tickSpacing, tickLower, tickUpper, false
         );
         if (!success) return;
 

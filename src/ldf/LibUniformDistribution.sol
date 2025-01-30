@@ -129,18 +129,23 @@ library LibUniformDistribution {
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 tickLower,
-        int24 tickUpper
+        int24 tickUpper,
+        bool isCarpet
     ) internal pure returns (bool success, int24 roundedTick) {
         // short circuit if cumulativeAmount0_ is 0
         if (cumulativeAmount0_ == 0) return (true, tickUpper);
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
-        uint256 liquidity = totalLiquidity.divUp(length);
 
         uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
-        uint160 sqrtPrice =
-            SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(sqrtRatioTickUpper, liquidity, cumulativeAmount0_, true);
+        uint160 sqrtPrice = isCarpet
+            ? SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(
+                sqrtRatioTickUpper, totalLiquidity.divUp(length), cumulativeAmount0_, true
+            )
+            : SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(
+                sqrtRatioTickUpper, Q96.divUp(length), cumulativeAmount0_.fullMulDiv(Q96, totalLiquidity), true
+            );
         if (sqrtPrice < sqrtRatioTickLower) {
             return (false, 0);
         }
@@ -168,19 +173,23 @@ library LibUniformDistribution {
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 tickLower,
-        int24 tickUpper
+        int24 tickUpper,
+        bool isCarpet
     ) internal pure returns (bool success, int24 roundedTick) {
         // short circuit if cumulativeAmount1_ is 0
         if (cumulativeAmount1_ == 0) return (true, tickLower - tickSpacing);
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
-        uint256 liquidity = totalLiquidity.divUp(length);
 
         uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
-        uint160 sqrtPrice = SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(
-            sqrtRatioTickLower, liquidity, cumulativeAmount1_, true
-        );
+        uint160 sqrtPrice = isCarpet
+            ? SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(
+                sqrtRatioTickLower, totalLiquidity.divUp(length), cumulativeAmount1_, true
+            )
+            : SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(
+                sqrtRatioTickLower, Q96.divUp(length), cumulativeAmount1_.fullMulDiv(Q96, totalLiquidity), true
+            );
         if (sqrtPrice > sqrtRatioTickUpper) {
             return (false, 0);
         }
@@ -256,7 +265,7 @@ library LibUniformDistribution {
             //    ▼
             //   rick
             (success, roundedTick) = inverseCumulativeAmount0(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper, false
             );
             if (!success) return (false, 0, 0, 0, 0);
 
@@ -346,7 +355,7 @@ library LibUniformDistribution {
             //       ▼
             //      rick
             (success, roundedTick) = inverseCumulativeAmount1(
-                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper
+                inverseCumulativeAmountInput, totalLiquidity, tickSpacing, tickLower, tickUpper, false
             );
             if (!success) return (false, 0, 0, 0, 0);
 

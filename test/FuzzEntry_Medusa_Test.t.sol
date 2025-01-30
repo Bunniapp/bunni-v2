@@ -93,8 +93,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407309064000-458cd45f-b4ab-4f7a-9482-7b1b5c80b49c.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_4()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2373606), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738206361037685000-9e02ea6e-18a8-49c4-89ae-f76579827b0c.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_4() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_5() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -110,8 +122,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407308223000-4c4e7a63-f4e2-49c3-a5b6-f1d97d6deb6c.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_6()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314752), int24(-2370885), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738193973770063000-6c5612c1-21b0-401e-8ebb-aecc26e707bd.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_5() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_7() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -129,7 +153,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361040709000-fb37fb50-c6c9-4f29-a9ed-4a4f6fda35c3.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_6() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_8() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -146,7 +170,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333246926000-ec82496f-7a72-4c22-80e3-98b34ab8bdd2.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_7(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_9(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -167,7 +191,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361038013000-1c9ac421-6af5-4f8b-93e2-988f32723a61.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_8() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_10() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -184,7 +208,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361037081000-bfbc7d47-b432-49bc-945c-d23d79ed17ad.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_9() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_11() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -201,7 +225,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253079989000-96d43da8-38c1-47a7-8d37-9c369db59384.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_10() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_12() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -218,7 +242,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532501423000-1a6e6450-f3f7-4c29-8e81-3f106a0bbba7.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_11() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_13() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -236,7 +260,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114941870000-64ae6384-9ac0-4a8b-9821-e9e3c39b2825.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_12(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_14(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -257,7 +281,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711365809000-ab355229-00d7-477c-94fb-11f8baa18f5e.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_13() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_15() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -274,7 +298,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114942024000-72c0764c-5262-45c7-aeb6-744682aa970d.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_14(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_16(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -295,7 +319,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532413083000-eda7524a-67d3-4a88-9b79-be2388b8399b.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_15() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_17() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -313,7 +337,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114942509000-7707180b-eee0-4bf3-827e-157bb446a443.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_16(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_18(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -333,8 +357,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407307480000-b824f99b-94fc-45cd-be3d-d691150f243c.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_19()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2375114), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738222333246687000-410264ec-8ce2-43a0-8e54-b763b74047ce.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_17(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_20(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -355,7 +391,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333248575000-db061a33-06d4-4b6f-a1e2-c27e41b676e3.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_18(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_21(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -376,7 +412,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738185270969674000-a66b3338-218c-4ebe-883d-cf094574b41d.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_19(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_22(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -397,7 +433,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532499948000-ab7b2653-f427-4e73-b0b4-58067bc36c58.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_20() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_23() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -415,7 +451,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361036664000-affbe9fb-08a0-47cf-9c70-c7c6d435f908.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_21() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_24() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -432,7 +468,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253080967000-4099185c-76d1-4706-9cf9-6b01087ad410.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_22() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_25() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -448,8 +484,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407310226000-74697208-2c3d-41ff-9991-b418ec24ea65.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_26()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2374891), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738184483528642000-b1759628-7eaa-44ac-94cf-57fd11f7df61.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_23(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_27(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -470,7 +518,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711364844000-c353fb2c-d6aa-4c20-a19e-c63662803918.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_24() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_28() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -487,7 +535,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738185270999955000-ffaf67db-3ea1-4b30-a94d-948b95ccf094.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_25(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_29(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -508,7 +556,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532497947000-6d29ae0b-b3ad-4ea4-a078-8c4000eee465.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_26() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_30() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -526,7 +574,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361036149000-bab2e812-129f-4a44-80fd-0dea7ed0f8d0.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_27() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_31() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -543,7 +591,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333245625000-a115980e-7446-47a6-8cd6-ff687e5263e7.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_28(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_32(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -564,7 +612,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333247153000-89b130e2-4d62-471d-a5d5-4319a424f4eb.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_29(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_33(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -585,7 +633,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361038302000-5cb97f73-9ecf-460e-8c9a-7a6964bc0d72.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_30() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_34() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -602,7 +650,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711332717000-cc1ac6b1-7980-44f7-ac26-76e0465df571.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_31() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_35() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -618,8 +666,25 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738238197415810000-82463e99-6762-49ec-9ef9-f77b8f6fe1a6.json
+    function test_auto_test_swap_panics_36() public {
+        vm.warp(block.timestamp + 169036);
+        vm.roll(block.number + 48792);
+        vm.prank(0x0000000000000000000000000000000000020000);
+        target.test_swap_panics(
+            int24(65013),
+            uint64(2467141791054031296),
+            uint64(10057466192125231),
+            int64(1876),
+            uint160(76429621831671064769780767652672760683548302899),
+            int24(795865),
+            true,
+            bytes8(hex"6c6dd0939f6d8a96")
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738193973773469000-8dba8bd4-8310-4736-a89a-2ad2cd2517e9.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_32() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_37() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -636,8 +701,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407308665000-75e49237-12d5-4040-b70d-66bea54783dd.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_38()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2372209), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738199532500076000-fa7b27d6-aa55-4dd0-94d6-03321b3e39d2.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_33() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_39() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -655,7 +732,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711362935000-ab032d2e-56de-4711-95d8-ffe2c9e397e0.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_34() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_40() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -672,7 +749,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361040062000-9267aba4-c8f0-47e7-940f-660db530bf99.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_35() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_41() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -689,7 +766,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253081572000-ce61da69-e564-463f-860d-98464bd97edf.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_36() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_42() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -706,7 +783,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253080449000-3bf10b64-6da3-4bbc-80f9-6827f807d5e4.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_37() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_43() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -723,7 +800,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114915613000-d3b71748-1c9e-4498-8af0-1c1676949e38.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_38(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_44(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -744,7 +821,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738185271002714000-d2f2ef73-9213-44d7-9b67-4652181f0f63.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_39(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_45(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -765,7 +842,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711365547000-5d671ab3-14ed-4daf-82cc-179b8dbaaabd.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_40() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_46() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -782,7 +859,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973772691000-3657d0df-cfa5-4a83-bc82-4817d45983f8.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_41() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_47() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -800,7 +877,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973768686000-a885465f-658f-4335-8c00-dabcd67e8066.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_42() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_48() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -818,7 +895,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206360971059000-61707b2c-6d89-4fbb-81f0-f80ff2965ad3.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_43() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_49() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -835,7 +912,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333246031000-53e7f429-4969-4b98-8aa3-d8e5469178c6.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_44(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_50(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -855,8 +932,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407309936000-6305fbeb-ed9f-45f0-ade2-a31ce1d404ba.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_51()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2373719), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738185270998236000-4a6238a7-3002-4825-a729-bf5f77686642.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_45(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_52(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -877,7 +966,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738185271003812000-fe727212-af78-4f6d-a80a-dfa89f0367af.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_46(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_53(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -898,7 +987,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333177617000-ab084b3d-a31b-43a7-902f-44605287b3a4.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_47(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_54(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -919,7 +1008,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333244978000-d5e00577-5ebc-418a-95d4-1838cf33ad63.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_48(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_55(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -939,8 +1028,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407302718000-04a8430d-c97e-4584-9f02-6004b4a1f959.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_56()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2372619), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738205114941361000-1fb776c0-d6ef-4bac-b64f-7034132a69fc.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_49(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_57(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -961,7 +1062,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333247381000-a37548a7-dfb0-4a2b-9ef2-d1eb010aa902.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_50(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_58(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -982,7 +1083,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333248195000-9ecc850b-d96c-420c-be5f-3a731047300c.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_51(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_59(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -1003,7 +1104,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738218910031393000-fa650ca6-d04f-4a88-b9fd-a1f3021a62c6.json
-    function test_auto_test_free_or_loss_of_tokens_during_swap_52() public {
+    function test_auto_test_free_or_loss_of_tokens_during_swap_60() public {
         vm.warp(block.timestamp + 308783);
         vm.roll(block.number + 176);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1020,7 +1121,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738185270997202000-5bd72e2a-ae39-4ee1-9bd9-2af81f2719ba.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_53(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_61(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -1041,7 +1142,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253083447000-f8f3e969-44e4-400c-bb08-d895a28da93c.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_54() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_62() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1058,7 +1159,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973769311000-f9bf631d-e58e-40c7-9b29-08ed31707c73.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_55() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_63() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1076,7 +1177,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114940024000-f8e3c42f-6df6-4648-b38f-3feeb1e70d01.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_56(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_64(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -1097,7 +1198,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532503662000-4e1e9154-739e-4ce0-8144-a7d962c5bb64.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_57() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_65() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1115,7 +1216,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114940640000-61c63052-71a8-4801-a231-e89180b6ccb5.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_58(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_66(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -1136,7 +1237,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711364349000-17d47630-c636-4429-9903-cd907d4c064b.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_59() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_67() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1153,7 +1254,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532500199000-d6b77ede-1d3f-4eb9-8f4f-f1f8368d4334.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_60() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_68() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1171,7 +1272,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532499165000-4896fa15-a4a5-4cf5-8113-9dc12e0d4cfa.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_61() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_69() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1189,7 +1290,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711365286000-a8e1cf8b-e30e-4ff6-a364-e122cf0f0127.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_62() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_70() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1205,8 +1306,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407294585000-fa06199d-2592-4492-9136-72a88055f762.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_71()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314617), int24(4697402), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738206361038691000-96e860af-8d98-4bbb-8081-b6914614d56d.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_63() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_72() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1223,7 +1336,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253083105000-44f686c0-834e-4f81-9bd2-52d191a96cc8.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_64() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_73() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1240,7 +1353,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333243999000-3de5ba77-d3f2-4b0b-8d82-d967096b6e53.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_65(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_74(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -1261,7 +1374,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361038900000-a04b25ce-87d9-469d-acc4-8df599d44b5d.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_66() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_75() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1278,7 +1391,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973770858000-af87df5a-43d5-412f-9316-6762f806c235.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_67() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_76() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1296,7 +1409,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738185270999492000-e5a6f9ea-7bb1-4eab-983a-5de01faa157a.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_68(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_77(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -1317,7 +1430,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114942345000-462854df-bb5d-4f26-9e8c-d5090ec407e4.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_69(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_78(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -1338,7 +1451,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253079599000-747a00fe-3ef7-42ce-8afa-643083f965ed.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_70() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_79() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1354,8 +1467,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407310538000-586d1360-66fb-41e2-9080-c83786698bc4.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_80()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2373235), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738185270997513000-97901f55-a0e0-4ef1-a02b-2e585478fefb.json
-    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_71(
+    function test_auto_inverse_cummulative_amount0_greater_than_equal_to_cummulative_amount0_in_carpeted_double_geometric_81(
     ) public {
         vm.warp(block.timestamp + 15);
         vm.roll(block.number + 0);
@@ -1376,7 +1501,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532498323000-1e7b86d0-a79d-41c4-8ae4-27525cf9efa7.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_72() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_82() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1394,7 +1519,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711366069000-600464a9-b692-4d36-9766-1b3634c299e9.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_73() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_83() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1411,7 +1536,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973717256000-0ebfd75b-e221-4d7a-a335-cf22ebb82881.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_74() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_84() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1429,7 +1554,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738206361038502000-29c591bd-da05-462a-bcb9-c19dcb5c9f58.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_75() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_85() public {
         vm.warp(block.timestamp + 335997);
         vm.roll(block.number + 46509);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1446,7 +1571,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738226711367283000-3458e227-2194-451c-bbc3-2ca3d25049fe.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_76() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_86() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1463,7 +1588,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973772177000-a6e12f88-f007-4269-8de1-0c2aca0d5fed.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_77() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_87() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1481,7 +1606,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253044660000-9ab6347c-bca4-4b8a-87cd-e6a76de55089.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_78() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_88() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1498,7 +1623,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253081962000-560ca5fb-eaa9-426a-b9c2-fb33ce9bd84c.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_79() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_89() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1514,8 +1639,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407309354000-cf36f57f-2ec5-48fa-b431-3d3dbcbe580b.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_90()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314617), int24(-2373437), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738193973775548000-f77ebd19-8f4e-484d-9c26-88b162c02c8f.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_80() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_91() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1533,7 +1670,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532499606000-7d1e205c-69e0-4d14-bc63-cc29505b2a02.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_81() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_92() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1551,7 +1688,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738182207631426000-e3e75eee-69fd-473b-9743-39edeee76640.json
-    function test_auto_test_free_or_loss_of_tokens_during_swap_82() public {
+    function test_auto_test_free_or_loss_of_tokens_during_swap_93() public {
         vm.warp(block.timestamp + 330191);
         vm.roll(block.number + 16879);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1568,7 +1705,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532500819000-b88e020d-2590-4c85-9db4-3b05cd70a7de.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_83() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_94() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1586,7 +1723,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114941026000-8ad31aa1-d2fc-4563-ae6d-6bde0748291d.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_84(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_95(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -1607,7 +1744,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114941710000-7028621e-c5c6-45cc-9511-5bdcc16d729b.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_85(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_96(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -1628,7 +1765,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253082604000-beccff97-60a9-44b5-86c1-097cf38da6a9.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_86() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_97() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1645,7 +1782,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973771356000-615da74d-6431-4125-86ee-3e6b27af06aa.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_87() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_98() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1663,7 +1800,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199532500330000-b5819594-6b3c-416d-baba-8ef67861ccb0.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_88() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_99() public {
         vm.warp(block.timestamp + 477561);
         vm.roll(block.number + 23867);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1680,8 +1817,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407309647000-16a20af5-337a-4922-ba2e-3a4bfcd1b161.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_100()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2372644), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738226711363505000-b34b54dd-1a4e-4eb1-a3c3-5f90ba0bad08.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_89() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_101() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);
@@ -1698,7 +1847,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738222333244540000-f3c2cf77-5123-49f7-a5ac-bd091abdee9c.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_90(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_102(
     ) public {
         vm.warp(block.timestamp + 30);
         vm.roll(block.number + 16);
@@ -1719,7 +1868,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738193973771604000-c74fd018-fe38-405a-8e36-7294d1a3ea1c.json
-    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_91() public {
+    function test_auto_test_compare_swap_with_reverse_swap_with_zeroForOne_vs_oneForZero_103() public {
         vm.warp(block.timestamp + 35392);
         vm.roll(block.number + 32);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1737,7 +1886,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253081342000-de1fbb50-3aec-4564-b939-b45a85342bb3.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_92() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_104() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1754,7 +1903,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738205114942186000-e0b77ff4-9e9f-4d27-948e-abfc426c2309.json
-    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_93(
+    function test_auto_inverse_cummulative_amount1_greater_than_equal_to_cummulative_amount1_in_carpeted_double_geometric_105(
     ) public {
         vm.warp(block.timestamp + 147384);
         vm.roll(block.number + 7502);
@@ -1775,7 +1924,7 @@ contract FuzzEntry_Medusa_Test is Test {
     }
 
     // Reproduced from: medusa/test_results/1738199253080712000-4da8f69a-3050-4b9b-8bb1-d043c7c62d90.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_94() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_106() public {
         vm.warp(block.timestamp + 206627);
         vm.roll(block.number + 41149);
         vm.prank(0x0000000000000000000000000000000000010000);
@@ -1791,8 +1940,20 @@ contract FuzzEntry_Medusa_Test is Test {
         );
     }
 
+    // Reproduced from: medusa/test_results/1738231407297928000-89229557-8098-4dd4-b6ee-62a4ccb024be.json
+    function test_auto_inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution_107()
+        public
+    {
+        vm.warp(block.timestamp + 525367);
+        vm.roll(block.number + 7044);
+        vm.prank(0x0000000000000000000000000000000000030000);
+        target.inverse_cummulative_amount1_less_than_equal_to_cummulative_amount1_in_uniform_distribution(
+            uint256(0), uint256(1809), int24(-314513), int24(-2374858), int24(0)
+        );
+    }
+
     // Reproduced from: medusa/test_results/1738226711366330000-366adad3-5b16-40bf-80e9-a160b607fb9c.json
-    function test_auto_swap_should_move_sqrt_price_in_correct_direction_95() public {
+    function test_auto_swap_should_move_sqrt_price_in_correct_direction_108() public {
         vm.warp(block.timestamp + 347792);
         vm.roll(block.number + 25575);
         vm.prank(0x0000000000000000000000000000000000020000);

@@ -158,7 +158,8 @@ library LibCarpetedDoubleGeometricDistribution {
                 rightCarpetLiquidity,
                 tickSpacing,
                 params.minTick + length * tickSpacing,
-                maxUsableTick
+                maxUsableTick,
+                true
             );
         } else {
             uint256 remainder = cumulativeAmount0_ - rightCarpetCumulativeAmount0;
@@ -193,7 +194,7 @@ library LibCarpetedDoubleGeometricDistribution {
                 // use left carpet
                 remainder -= mainCumulativeAmount0;
                 return LibUniformDistribution.inverseCumulativeAmount0(
-                    remainder, leftCarpetLiquidity, tickSpacing, minUsableTick, params.minTick
+                    remainder, leftCarpetLiquidity, tickSpacing, minUsableTick, params.minTick, true
                 );
             }
         }
@@ -228,7 +229,7 @@ library LibCarpetedDoubleGeometricDistribution {
         if (cumulativeAmount1_ <= leftCarpetCumulativeAmount1 && leftCarpetLiquidity != 0) {
             // use left carpet
             return LibUniformDistribution.inverseCumulativeAmount1(
-                cumulativeAmount1_, leftCarpetLiquidity, tickSpacing, minUsableTick, params.minTick
+                cumulativeAmount1_, leftCarpetLiquidity, tickSpacing, minUsableTick, params.minTick, true
             );
         } else {
             uint256 remainder = cumulativeAmount1_ - leftCarpetCumulativeAmount1;
@@ -263,7 +264,12 @@ library LibCarpetedDoubleGeometricDistribution {
                 // use right carpet
                 remainder -= mainCumulativeAmount1;
                 return LibUniformDistribution.inverseCumulativeAmount1(
-                    remainder, rightCarpetLiquidity, tickSpacing, params.minTick + length * tickSpacing, maxUsableTick
+                    remainder,
+                    rightCarpetLiquidity,
+                    tickSpacing,
+                    params.minTick + length * tickSpacing,
+                    maxUsableTick,
+                    true
                 );
             }
         }

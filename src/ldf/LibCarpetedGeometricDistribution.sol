@@ -137,7 +137,12 @@ library LibCarpetedGeometricDistribution {
         if (cumulativeAmount0_ <= rightCarpetCumulativeAmount0 && rightCarpetLiquidity != 0) {
             // use right carpet
             return LibUniformDistribution.inverseCumulativeAmount0(
-                cumulativeAmount0_, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick
+                cumulativeAmount0_,
+                rightCarpetLiquidity,
+                tickSpacing,
+                minTick + length * tickSpacing,
+                maxUsableTick,
+                true
             );
         } else {
             uint256 remainder = cumulativeAmount0_ - rightCarpetCumulativeAmount0;
@@ -155,7 +160,7 @@ library LibCarpetedGeometricDistribution {
                 remainder -= mainCumulativeAmount0;
 
                 (success, roundedTick) = LibUniformDistribution.inverseCumulativeAmount0(
-                    remainder, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
+                    remainder, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, true
                 );
                 return (success, roundedTick);
             }
@@ -193,7 +198,7 @@ library LibCarpetedGeometricDistribution {
         if (cumulativeAmount1_ <= leftCarpetCumulativeAmount1 && leftCarpetLiquidity != 0) {
             // use left carpet
             return LibUniformDistribution.inverseCumulativeAmount1(
-                cumulativeAmount1_, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
+                cumulativeAmount1_, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, true
             );
         } else {
             uint256 remainder = cumulativeAmount1_ - leftCarpetCumulativeAmount1;
@@ -210,7 +215,7 @@ library LibCarpetedGeometricDistribution {
                 // use right carpet
                 remainder -= mainCumulativeAmount1;
                 return LibUniformDistribution.inverseCumulativeAmount1(
-                    remainder, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick
+                    remainder, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick, true
                 );
             }
         }
