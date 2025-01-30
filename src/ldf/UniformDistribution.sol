@@ -110,8 +110,9 @@ contract UniformDistribution is ILiquidityDensityFunction, Guarded {
             tickUpper = tickLower + tickLength;
         }
 
-        return
-            LibUniformDistribution.cumulativeAmount0(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
+        return LibUniformDistribution.cumulativeAmount0(
+            roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper, false
+        );
     }
 
     /// @inheritdoc ILiquidityDensityFunction
@@ -133,8 +134,9 @@ contract UniformDistribution is ILiquidityDensityFunction, Guarded {
             tickUpper = tickLower + tickLength;
         }
 
-        return
-            LibUniformDistribution.cumulativeAmount1(roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper);
+        return LibUniformDistribution.cumulativeAmount1(
+            roundedTick, totalLiquidity, key.tickSpacing, tickLower, tickUpper, false
+        );
     }
 
     /// @inheritdoc ILiquidityDensityFunction

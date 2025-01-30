@@ -312,11 +312,11 @@ library BunniHookLogic {
         }
 
         // ensure swap never moves price in the opposite direction
-        // ensure the inputAmount is non-zero when it's an exact output swap
+        // ensure the inputAmount and outputAmount are non-zero
         if (
             (params.zeroForOne && updatedSqrtPriceX96 > slot0.sqrtPriceX96)
                 || (!params.zeroForOne && updatedSqrtPriceX96 < slot0.sqrtPriceX96)
-                || (params.amountSpecified > 0 && inputAmount == 0)
+                || (outputAmount == 0 || inputAmount == 0)
         ) {
             revert BunniHook__InvalidSwap();
         }

@@ -9,6 +9,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../base/Constants.sol";
+import {FullMathX96} from "../lib/FullMathX96.sol";
 import {SqrtPriceMath} from "../lib/SqrtPriceMath.sol";
 
 library LibUniformDistribution {
@@ -16,9 +17,7 @@ library LibUniformDistribution {
     using TickMath for uint160;
     using FixedPointMathLib for *;
     using SafeCastLib for uint256;
-
-    /// @dev (1 / SQRT_PRICE_MAX_REL_ERROR) is the maximum relative error allowed for TickMath.getSqrtPriceAtTick()
-    uint256 internal constant SQRT_PRICE_MAX_REL_ERROR = 1e8;
+    using FullMathX96 for uint256;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
@@ -35,7 +34,7 @@ library LibUniformDistribution {
         liquidityDensityX96_ = liquidityDensityX96(roundedTick, tickSpacing, tickLower, tickUpper);
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
-        uint256 liquidity = Q96 / length;
+        uint256 liquidity = Q96.divUp(length);
 
         uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
@@ -72,7 +71,8 @@ library LibUniformDistribution {
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 tickLower,
-        int24 tickUpper
+        int24 tickUpper,
+        bool isCarpet
     ) internal pure returns (uint256 amount0) {
         if (roundedTick >= tickUpper || tickLower >= tickUpper) {
             // cumulativeAmount0DensityX96 is just 0
@@ -82,9 +82,14 @@ library LibUniformDistribution {
         }
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
-        uint256 liquidity = totalLiquidity / length;
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
-        amount0 = SqrtPriceMath.getAmount0Delta(roundedTick.getSqrtPriceAtTick(), sqrtRatioTickUpper, liquidity, true);
+        amount0 = isCarpet
+            ? SqrtPriceMath.getAmount0Delta(
+                roundedTick.getSqrtPriceAtTick(), sqrtRatioTickUpper, totalLiquidity.divUp(length), true
+            )
+            : totalLiquidity.fullMulX96Up(
+                SqrtPriceMath.getAmount0Delta(roundedTick.getSqrtPriceAtTick(), sqrtRatioTickUpper, Q96.divUp(length), true)
+            );
     }
 
     /// @dev Computes the cumulative amount of token1 in the rounded ticks [tickLower, roundedTick].
@@ -93,7 +98,8 @@ library LibUniformDistribution {
         uint256 totalLiquidity,
         int24 tickSpacing,
         int24 tickLower,
-        int24 tickUpper
+        int24 tickUpper,
+        bool isCarpet
     ) internal pure returns (uint256 amount1) {
         if (roundedTick < tickLower || tickLower >= tickUpper) {
             // cumulativeAmount1DensityX96 is just 0
@@ -103,11 +109,16 @@ library LibUniformDistribution {
         }
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
-        uint256 liquidity = totalLiquidity / length;
         uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
-        amount1 = SqrtPriceMath.getAmount1Delta(
-            sqrtRatioTickLower, (roundedTick + tickSpacing).getSqrtPriceAtTick(), liquidity, true
-        );
+        amount1 = isCarpet
+            ? SqrtPriceMath.getAmount1Delta(
+                sqrtRatioTickLower, (roundedTick + tickSpacing).getSqrtPriceAtTick(), totalLiquidity.divUp(length), true
+            )
+            : totalLiquidity.fullMulX96Up(
+                SqrtPriceMath.getAmount1Delta(
+                    sqrtRatioTickLower, (roundedTick + tickSpacing).getSqrtPriceAtTick(), Q96.divUp(length), true
+                )
+            );
     }
 
     /// @dev Given a cumulativeAmount0, computes the rounded tick whose cumulativeAmount0 is closest to the input. Range is [tickLower, tickUpper].
@@ -124,19 +135,12 @@ library LibUniformDistribution {
         if (cumulativeAmount0_ == 0) return (true, tickUpper);
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
-        uint256 liquidity = totalLiquidity / length;
+        uint256 liquidity = totalLiquidity.divUp(length);
 
         uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
-        uint256 maxCumulativeAmount0 =
-            SqrtPriceMath.getAmount0Delta(sqrtRatioTickLower, sqrtRatioTickUpper, liquidity, true);
-        if (cumulativeAmount0_ > maxCumulativeAmount0) {
-            // input exceeds the maximum cumulative amount
-            return (false, 0);
-        }
-        uint160 sqrtPrice = SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(
-            sqrtRatioTickLower, liquidity, maxCumulativeAmount0 - cumulativeAmount0_, false
-        );
+        uint160 sqrtPrice =
+            SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(sqrtRatioTickUpper, liquidity, cumulativeAmount0_, true);
         if (sqrtPrice < sqrtRatioTickLower) {
             return (false, 0);
         }
@@ -170,18 +174,12 @@ library LibUniformDistribution {
         if (cumulativeAmount1_ == 0) return (true, tickLower - tickSpacing);
 
         uint24 length = uint24((tickUpper - tickLower) / tickSpacing);
-        uint256 liquidity = totalLiquidity / length;
+        uint256 liquidity = totalLiquidity.divUp(length);
 
         uint160 sqrtRatioTickLower = tickLower.getSqrtPriceAtTick();
         uint160 sqrtRatioTickUpper = tickUpper.getSqrtPriceAtTick();
-        uint256 maxCumulativeAmount1 =
-            SqrtPriceMath.getAmount1Delta(sqrtRatioTickLower, sqrtRatioTickUpper, liquidity, true);
-        if (cumulativeAmount1_ > maxCumulativeAmount1) {
-            // input exceeds the maximum cumulative amount
-            return (false, 0);
-        }
         uint160 sqrtPrice = SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(
-            sqrtRatioTickUpper, liquidity, maxCumulativeAmount1 - cumulativeAmount1_, false
+            sqrtRatioTickLower, liquidity, cumulativeAmount1_, true
         );
         if (sqrtPrice > sqrtRatioTickUpper) {
             return (false, 0);
@@ -288,8 +286,8 @@ library LibUniformDistribution {
             //    ▼
             //   rick
             cumulativeAmount0_ = exactIn
-                ? cumulativeAmount0(roundedTick + tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper)
-                : cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper);
+                ? cumulativeAmount0(roundedTick + tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper, false)
+                : cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper, false);
 
             // compute the cumulative amount of the complementary token
             // below is an illustration
@@ -316,8 +314,8 @@ library LibUniformDistribution {
             // ▼
             //rick - tickSpacing
             cumulativeAmount1_ = exactIn
-                ? cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper)
-                : cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper);
+                ? cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper, false)
+                : cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper, false);
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap
@@ -378,8 +376,8 @@ library LibUniformDistribution {
             //       ▼
             //      rick
             cumulativeAmount1_ = exactIn
-                ? cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper)
-                : cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper);
+                ? cumulativeAmount1(roundedTick - tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper, false)
+                : cumulativeAmount1(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper, false);
 
             // compute the cumulative amount of the complementary token
             // below is an illustration
@@ -406,8 +404,8 @@ library LibUniformDistribution {
             //          ▼
             //         rick + tickSpacing
             cumulativeAmount0_ = exactIn
-                ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper)
-                : cumulativeAmount0(roundedTick + tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper);
+                ? cumulativeAmount0(roundedTick, totalLiquidity, tickSpacing, tickLower, tickUpper, false)
+                : cumulativeAmount0(roundedTick + tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper, false);
 
             // compute liquidity of the rounded tick that will handle the remainder of the swap
             // below is an illustration of the liquidity of the rounded tick that will handle the remainder of the swap

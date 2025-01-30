@@ -225,13 +225,10 @@ contract BunniTokenTest is Test, Permit2Deployer, FloodDeployer, IUnlockCallback
         assertEq(token.balanceOf(referrer), isToken0 ? claimableAmount0 : claimableAmount1, "balance incorrect");
     }
 
-    function test_distribute_doubleDistro_singleReferrer(
-        bool isToken0,
-        uint256 amountFirst,
-        uint256 amountSecond,
-        address referrer
-    ) public {
-        vm.assume(referrer != address(0));
+    function test_distribute_doubleDistro_singleReferrer(bool isToken0, uint256 amountFirst, uint256 amountSecond)
+        public
+    {
+        address referrer = makeAddr("referrer");
         amountFirst = bound(amountFirst, 1e5, 1e36);
         amountSecond = bound(amountSecond, 1e5, 1e36);
 

@@ -50,15 +50,20 @@ library BunniSwapMath {
         view
         returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount)
     {
-        // initialize input and output amounts based on initial info
+        bool zeroForOne = input.swapParams.zeroForOne;
         bool exactIn = input.swapParams.amountSpecified < 0;
+
+        // initialize input and output amounts based on initial info
         inputAmount = exactIn ? uint256(-input.swapParams.amountSpecified) : 0;
         outputAmount = exactIn ? 0 : uint256(input.swapParams.amountSpecified);
-        bool zeroForOne = input.swapParams.zeroForOne;
+
+        // compute updated rounded tick liquidity
+        uint256 updatedRoundedTickLiquidity = (input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96;
 
         // initialize updatedTick to the current tick
         updatedTick = input.currentTick;
 
+        // bound sqrtPriceLimitX96 by min/max possible values
         uint160 sqrtPriceLimitX96 = input.swapParams.sqrtPriceLimitX96;
         {
             (uint160 minSqrtPrice, uint160 maxSqrtPrice) = (
@@ -70,65 +75,66 @@ library BunniSwapMath {
             {
                 sqrtPriceLimitX96 = zeroForOne ? minSqrtPrice + 1 : maxSqrtPrice - 1;
             }
-
-            // compute updated current tick liquidity
-            uint256 updatedRoundedTickLiquidity = (input.totalLiquidity * input.liquidityDensityOfRoundedTickX96) >> 96;
-
-            // handle the special case when we don't cross rounded ticks
-            if (updatedRoundedTickLiquidity != 0) {
-                // compute the resulting sqrt price assuming no rounded tick is crossed
-                (int24 roundedTick, int24 nextRoundedTick) = roundTick(input.currentTick, input.key.tickSpacing);
-                int24 tickNext = zeroForOne ? roundedTick : nextRoundedTick;
-                uint160 sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(tickNext);
-
-                // use boundary prices as sqrtPriceNextX96 in getSqrtPriceTarget() to let the swap execute as far as possible
-                // we'll check later if the resulting sqrtPrice exceeds sqrtPriceNextX96 to determine if the swap crossed to
-                // the next rounded tick
-                (uint160 naiveSwapResultSqrtPriceX96, uint256 naiveSwapAmountIn, uint256 naiveSwapAmountOut) = SwapMath
-                    .computeSwapStep({
-                    sqrtPriceCurrentX96: input.sqrtPriceX96,
-                    sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(
-                        zeroForOne, zeroForOne ? minSqrtPrice + 1 : maxSqrtPrice - 1, sqrtPriceLimitX96
-                    ),
-                    liquidity: updatedRoundedTickLiquidity,
-                    amountRemaining: input.swapParams.amountSpecified
-                });
-                if (
-                    (zeroForOne && naiveSwapResultSqrtPriceX96 >= sqrtPriceNextX96)
-                        || (!zeroForOne && naiveSwapResultSqrtPriceX96 <= sqrtPriceNextX96)
-                ) {
-                    // swap doesn't cross rounded tick
-                    if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
-                        // Equivalent to `updatedTick = zeroForOne ? tickNext - 1 : tickNext;`
-                        unchecked {
-                            // cannot cast a bool to an int24 in Solidity
-                            int24 _zeroForOne;
-                            assembly {
-                                _zeroForOne := zeroForOne
-                            }
-                            updatedTick = tickNext - _zeroForOne;
-                        }
-                    } else if (naiveSwapResultSqrtPriceX96 != input.sqrtPriceX96) {
-                        // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
-                        updatedTick = TickMath.getTickAtSqrtPrice(naiveSwapResultSqrtPriceX96);
-                    }
-
-                    // naiveSwapAmountOut should be at most the corresponding active balance
-                    // this may be violated due to precision loss
-                    naiveSwapAmountOut = FixedPointMathLib.min(
-                        naiveSwapAmountOut, zeroForOne ? input.currentActiveBalance1 : input.currentActiveBalance0
-                    );
-
-                    // early return
-                    return (naiveSwapResultSqrtPriceX96, updatedTick, naiveSwapAmountIn, naiveSwapAmountOut);
-                }
-            }
         }
 
-        // swap crosses rounded tick
-        // need to use LDF to compute the swap
-        // compute updated sqrt ratio & tick
         {
+            (int24 roundedTick, int24 nextRoundedTick) = roundTick(input.currentTick, input.key.tickSpacing);
+            uint160 naiveSwapResultSqrtPriceX96;
+            uint256 naiveSwapAmountIn;
+            uint256 naiveSwapAmountOut;
+            {
+                // handle the special case when we don't cross rounded ticks
+                if (updatedRoundedTickLiquidity != 0) {
+                    // compute the resulting sqrt price using Uniswap math
+                    int24 tickNext = zeroForOne ? roundedTick : nextRoundedTick;
+                    uint160 sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(tickNext);
+                    (naiveSwapResultSqrtPriceX96, naiveSwapAmountIn, naiveSwapAmountOut) = SwapMath.computeSwapStep({
+                        sqrtPriceCurrentX96: input.sqrtPriceX96,
+                        sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(zeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96),
+                        liquidity: updatedRoundedTickLiquidity,
+                        amountRemaining: input.swapParams.amountSpecified
+                    });
+
+                    // check if naive swap exhausted the specified amount
+                    if (
+                        exactIn
+                            ? naiveSwapAmountIn == uint256(-input.swapParams.amountSpecified)
+                            : naiveSwapAmountOut == uint256(input.swapParams.amountSpecified)
+                    ) {
+                        // swap doesn't cross rounded tick
+
+                        // compute the updated tick
+                        // was initialized earlier as input.currentTick
+                        if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
+                            // Equivalent to `updatedTick = zeroForOne ? tickNext - 1 : tickNext;`
+                            unchecked {
+                                // cannot cast a bool to an int24 in Solidity
+                                int24 _zeroForOne;
+                                assembly {
+                                    _zeroForOne := zeroForOne
+                                }
+                                updatedTick = tickNext - _zeroForOne;
+                            }
+                        } else if (naiveSwapResultSqrtPriceX96 != input.sqrtPriceX96) {
+                            // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
+                            updatedTick = TickMath.getTickAtSqrtPrice(naiveSwapResultSqrtPriceX96);
+                        }
+
+                        // naiveSwapAmountOut should be at most the corresponding active balance
+                        // this may be violated due to precision loss
+                        naiveSwapAmountOut = FixedPointMathLib.min(
+                            naiveSwapAmountOut, zeroForOne ? input.currentActiveBalance1 : input.currentActiveBalance0
+                        );
+
+                        // early return
+                        return (naiveSwapResultSqrtPriceX96, updatedTick, naiveSwapAmountIn, naiveSwapAmountOut);
+                    }
+                }
+            }
+
+            // swap crosses rounded tick
+            // need to use LDF to compute the swap
+            // compute updated sqrt ratio & tick
             uint256 inverseCumulativeAmountFnInput;
             if (exactIn) {
                 // exact input swap
@@ -159,6 +165,44 @@ library BunniSwapMath {
             );
 
             if (success) {
+                // edge case: LDF says we're still in the same rounded tick
+                // or in a rounded tick in the opposite direction as the swap
+                // meaning first naive swap was insufficient but it should have been
+                // use the result from the first naive swap
+                if (zeroForOne ? updatedRoundedTick >= roundedTick : updatedRoundedTick <= roundedTick) {
+                    if (updatedRoundedTickLiquidity == 0) {
+                        // no liquidity, return trivial swap
+                        return (input.sqrtPriceX96, input.currentTick, 0, 0);
+                    }
+
+                    // compute the updated tick
+                    // was initialized earlier as input.currentTick
+                    int24 _tickNext = zeroForOne ? roundedTick : nextRoundedTick;
+                    if (naiveSwapResultSqrtPriceX96 == TickMath.getSqrtPriceAtTick(_tickNext)) {
+                        // Equivalent to `updatedTick = zeroForOne ? _tickNext - 1 : _tickNext;`
+                        unchecked {
+                            // cannot cast a bool to an int24 in Solidity
+                            int24 _zeroForOne;
+                            assembly {
+                                _zeroForOne := zeroForOne
+                            }
+                            updatedTick = _tickNext - _zeroForOne;
+                        }
+                    } else if (naiveSwapResultSqrtPriceX96 != input.sqrtPriceX96) {
+                        // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
+                        updatedTick = TickMath.getTickAtSqrtPrice(naiveSwapResultSqrtPriceX96);
+                    }
+
+                    // naiveSwapAmountOut should be at most the corresponding active balance
+                    // this may be violated due to precision loss
+                    naiveSwapAmountOut = FixedPointMathLib.min(
+                        naiveSwapAmountOut, zeroForOne ? input.currentActiveBalance1 : input.currentActiveBalance0
+                    );
+
+                    // early return
+                    return (naiveSwapResultSqrtPriceX96, updatedTick, naiveSwapAmountIn, naiveSwapAmountOut);
+                }
+
                 // use Uniswap math to compute updated sqrt price
                 // the swap is called "partial swap"
                 // which always has the same exactIn and zeroForOne as the overall swap
@@ -166,16 +210,14 @@ library BunniSwapMath {
                     ? (updatedRoundedTick + input.key.tickSpacing, updatedRoundedTick)
                     : (updatedRoundedTick, updatedRoundedTick + input.key.tickSpacing);
                 uint160 startSqrtPriceX96 = tickStart.getSqrtPriceAtTick();
-                uint160 sqrtPriceNextX96 = tickNext.getSqrtPriceAtTick();
 
-                // initialize updatedTick to tickStart
-                updatedTick = tickStart;
-
-                // handle the case where sqrtPriceLimitX96 has already been reached
+                // make sure the price limit is not reached
                 if (
                     (zeroForOne && sqrtPriceLimitX96 <= startSqrtPriceX96)
                         || (!zeroForOne && sqrtPriceLimitX96 >= startSqrtPriceX96)
                 ) {
+                    uint160 sqrtPriceNextX96 = tickNext.getSqrtPriceAtTick();
+
                     // adjust the cumulativeAmount of the input token to be at least the corresponding currentActiveBalance
                     // we know that we're swapping in a different rounded tick as the starting one (based on the first naive swap)
                     // so this should be true but sometimes isn't due to precision error which is why the adjustment is necessary
@@ -185,9 +227,8 @@ library BunniSwapMath {
                         cumulativeAmount1 = FixedPointMathLib.max(cumulativeAmount1, input.currentActiveBalance1);
                     }
 
-                    uint160 naiveSwapResultSqrtPriceX96;
-                    uint256 naiveSwapAmountIn;
-                    uint256 naiveSwapAmountOut;
+                    // perform naive swap within the updated rounded tick
+                    bool hitSqrtPriceLimit;
                     if (swapLiquidity == 0) {
                         // no liquidity, don't move from the starting price
                         (naiveSwapResultSqrtPriceX96, naiveSwapAmountIn, naiveSwapAmountOut) = (startSqrtPriceX96, 0, 0);
@@ -204,100 +245,128 @@ library BunniSwapMath {
                             liquidity: swapLiquidity,
                             amountRemaining: amountSpecifiedRemaining
                         });
-                    }
-
-                    if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
-                        // Equivalent to `updatedTick = zeroForOne ? tickNext - 1 : tickNext;`
-                        unchecked {
-                            // cannot cast a bool to an int24 in Solidity
-                            int24 _zeroForOne;
-                            assembly {
-                                _zeroForOne := zeroForOne
-                            }
-                            updatedTick = tickNext - _zeroForOne;
+                        if (naiveSwapResultSqrtPriceX96 == sqrtPriceLimitX96 && sqrtPriceLimitX96 != sqrtPriceNextX96) {
+                            // give up if the swap hits the sqrt price limit
+                            hitSqrtPriceLimit = true;
                         }
-                    } else if (naiveSwapResultSqrtPriceX96 != startSqrtPriceX96) {
-                        // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
-                        updatedTick = TickMath.getTickAtSqrtPrice(naiveSwapResultSqrtPriceX96);
                     }
 
-                    updatedSqrtPriceX96 = naiveSwapResultSqrtPriceX96;
+                    if (!hitSqrtPriceLimit) {
+                        // initialize updatedTick to tickStart
+                        updatedTick = tickStart;
 
-                    if (
-                        (zeroForOne && cumulativeAmount1 < naiveSwapAmountOut)
-                            || (!zeroForOne && cumulativeAmount0 < naiveSwapAmountOut)
-                    ) {
-                        // in rare cases the rounding error can cause one of the active balances to be negative
-                        // revert in such cases to avoid leaking value
-                        revert BunniSwapMath__SwapFailed();
+                        // compute updatedTick
+                        if (naiveSwapResultSqrtPriceX96 == sqrtPriceNextX96) {
+                            // Equivalent to `updatedTick = zeroForOne ? tickNext - 1 : tickNext;`
+                            unchecked {
+                                // cannot cast a bool to an int24 in Solidity
+                                int24 _zeroForOne;
+                                assembly {
+                                    _zeroForOne := zeroForOne
+                                }
+                                updatedTick = tickNext - _zeroForOne;
+                            }
+                        } else if (naiveSwapResultSqrtPriceX96 != startSqrtPriceX96) {
+                            // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
+                            updatedTick = TickMath.getTickAtSqrtPrice(naiveSwapResultSqrtPriceX96);
+                        }
+
+                        // set updatedSqrtPriceX96
+                        updatedSqrtPriceX96 = naiveSwapResultSqrtPriceX96;
+
+                        if (
+                            exactIn
+                                ? naiveSwapAmountIn == uint256(-input.swapParams.amountSpecified)
+                                : naiveSwapAmountOut == uint256(input.swapParams.amountSpecified)
+                        ) {
+                            // edge case: the partial swap consumed the entire amount specified
+                            // return the result of the partial swap directly
+
+                            // naiveSwapAmountOut should be at most the corresponding active balance
+                            // this may be violated due to precision loss
+                            naiveSwapAmountOut = FixedPointMathLib.min(
+                                naiveSwapAmountOut,
+                                zeroForOne ? input.currentActiveBalance1 : input.currentActiveBalance0
+                            );
+
+                            return (naiveSwapResultSqrtPriceX96, updatedTick, naiveSwapAmountIn, naiveSwapAmountOut);
+                        }
+
+                        if (
+                            (zeroForOne && cumulativeAmount1 < naiveSwapAmountOut)
+                                || (!zeroForOne && cumulativeAmount0 < naiveSwapAmountOut)
+                        ) {
+                            // in rare cases the rounding error can cause one of the active balances to be negative
+                            // revert in such cases to avoid leaking value
+                            revert BunniSwapMath__SwapFailed();
+                        }
+
+                        (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = zeroForOne
+                            ? (cumulativeAmount0 + naiveSwapAmountIn, cumulativeAmount1 - naiveSwapAmountOut)
+                            : (cumulativeAmount0 - naiveSwapAmountOut, cumulativeAmount1 + naiveSwapAmountIn);
+
+                        // compute input and output token amounts
+                        // NOTE: The rounding direction of all the values involved are correct:
+                        // - cumulative amounts are rounded up
+                        // - naiveSwapAmountIn is rounded up
+                        // - naiveSwapAmountOut is rounded down
+                        // - currentActiveBalance0 and currentActiveBalance1 are rounded down
+                        // Overall this leads to inputAmount being rounded up and outputAmount being rounded down
+                        // which is safe.
+                        // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
+                        // we output 0 instead of reverting.
+                        (inputAmount, outputAmount) = zeroForOne
+                            ? (
+                                updatedActiveBalance0 - input.currentActiveBalance0,
+                                subReLU(input.currentActiveBalance1, updatedActiveBalance1)
+                            )
+                            : (
+                                updatedActiveBalance1 - input.currentActiveBalance1,
+                                subReLU(input.currentActiveBalance0, updatedActiveBalance0)
+                            );
+
+                        return (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount);
                     }
-
-                    (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = zeroForOne
-                        ? (cumulativeAmount0 + naiveSwapAmountIn, cumulativeAmount1 - naiveSwapAmountOut)
-                        : (cumulativeAmount0 - naiveSwapAmountOut, cumulativeAmount1 + naiveSwapAmountIn);
-
-                    // compute input and output token amounts
-                    // NOTE: The rounding direction of all the values involved are correct:
-                    // - cumulative amounts are rounded up
-                    // - naiveSwapAmountIn is rounded up
-                    // - naiveSwapAmountOut is rounded down
-                    // - currentActiveBalance0 and currentActiveBalance1 are rounded down
-                    // Overall this leads to inputAmount being rounded up and outputAmount being rounded down
-                    // which is safe.
-                    // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
-                    // we output 0 instead of reverting.
-                    (inputAmount, outputAmount) = zeroForOne
-                        ? (
-                            updatedActiveBalance0 - input.currentActiveBalance0,
-                            subReLU(input.currentActiveBalance1, updatedActiveBalance1)
-                        )
-                        : (
-                            updatedActiveBalance1 - input.currentActiveBalance1,
-                            subReLU(input.currentActiveBalance0, updatedActiveBalance0)
-                        );
-
-                    return (updatedSqrtPriceX96, updatedTick, inputAmount, outputAmount);
                 }
             }
+        }
 
-            // the sqrt price limit has been reached
-            (updatedSqrtPriceX96, updatedTick) = (
-                sqrtPriceLimitX96,
-                sqrtPriceLimitX96 == input.sqrtPriceX96 ? input.currentTick : sqrtPriceLimitX96.getTickAtSqrtPrice() // recompute tick unless we haven't moved
-            );
+        // the sqrt price limit has been reached
+        (updatedSqrtPriceX96, updatedTick) = (
+            sqrtPriceLimitX96,
+            sqrtPriceLimitX96 == input.sqrtPriceX96 ? input.currentTick : sqrtPriceLimitX96.getTickAtSqrtPrice() // recompute tick unless we haven't moved
+        );
 
-            // Rounding directions:
-            // currentActiveBalance: down
-            // totalDensity: up
-            // updatedActiveBalance: up
-            (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,,,) = queryLDF({
-                key: input.key,
-                sqrtPriceX96: updatedSqrtPriceX96,
-                tick: updatedTick,
-                arithmeticMeanTick: input.arithmeticMeanTick,
-                ldf: input.liquidityDensityFunction,
-                ldfParams: input.ldfParams,
-                ldfState: input.ldfState,
-                balance0: 0,
-                balance1: 0,
-                idleBalance: IdleBalanceLibrary.ZERO
-            });
-            (uint256 updatedActiveBalance0, uint256 updatedActiveBalance1) = (
-                totalDensity0X96.fullMulX96Up(input.totalLiquidity), totalDensity1X96.fullMulX96Up(input.totalLiquidity)
+        // Rounding directions:
+        // currentActiveBalance: down
+        // totalDensity: up
+        // updatedActiveBalance: up
+        (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,,,) = queryLDF({
+            key: input.key,
+            sqrtPriceX96: updatedSqrtPriceX96,
+            tick: updatedTick,
+            arithmeticMeanTick: input.arithmeticMeanTick,
+            ldf: input.liquidityDensityFunction,
+            ldfParams: input.ldfParams,
+            ldfState: input.ldfState,
+            balance0: 0,
+            balance1: 0,
+            idleBalance: IdleBalanceLibrary.ZERO
+        });
+        (uint256 _updatedActiveBalance0, uint256 _updatedActiveBalance1) =
+            (totalDensity0X96.fullMulX96Up(input.totalLiquidity), totalDensity1X96.fullMulX96Up(input.totalLiquidity));
+        // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
+        // we output 0 instead of reverting.
+        if (zeroForOne) {
+            (inputAmount, outputAmount) = (
+                _updatedActiveBalance0 - input.currentActiveBalance0,
+                subReLU(input.currentActiveBalance1, _updatedActiveBalance1)
             );
-            // Use subReLU so that when the computed output is somehow negative (most likely due to precision loss)
-            // we output 0 instead of reverting.
-            if (zeroForOne) {
-                (inputAmount, outputAmount) = (
-                    updatedActiveBalance0 - input.currentActiveBalance0,
-                    subReLU(input.currentActiveBalance1, updatedActiveBalance1)
-                );
-            } else {
-                (inputAmount, outputAmount) = (
-                    updatedActiveBalance1 - input.currentActiveBalance1,
-                    subReLU(input.currentActiveBalance0, updatedActiveBalance0)
-                );
-            }
+        } else {
+            (inputAmount, outputAmount) = (
+                _updatedActiveBalance1 - input.currentActiveBalance1,
+                subReLU(input.currentActiveBalance0, _updatedActiveBalance0)
+            );
         }
     }
 }

@@ -67,11 +67,11 @@ library LibCarpetedGeometricDistribution {
         ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightCarpet);
 
         return LibUniformDistribution.cumulativeAmount0(
-            roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
+            roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, true
         )
             + LibGeometricDistribution.cumulativeAmount0(roundedTick, mainLiquidity, tickSpacing, minTick, length, alphaX96)
             + LibUniformDistribution.cumulativeAmount0(
-                roundedTick, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick
+                roundedTick, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick, true
             );
     }
 
@@ -94,11 +94,11 @@ library LibCarpetedGeometricDistribution {
         ) = getCarpetedLiquidity(totalLiquidity, tickSpacing, minTick, length, weightCarpet);
 
         return LibUniformDistribution.cumulativeAmount1(
-            roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick
+            roundedTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, true
         )
             + LibGeometricDistribution.cumulativeAmount1(roundedTick, mainLiquidity, tickSpacing, minTick, length, alphaX96)
             + LibUniformDistribution.cumulativeAmount1(
-                roundedTick, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick
+                roundedTick, rightCarpetLiquidity, tickSpacing, minTick + length * tickSpacing, maxUsableTick, true
             );
     }
 
@@ -130,7 +130,8 @@ library LibCarpetedGeometricDistribution {
             rightCarpetLiquidity,
             tickSpacing,
             minTick + length * tickSpacing,
-            maxUsableTick
+            maxUsableTick,
+            true
         );
 
         if (cumulativeAmount0_ <= rightCarpetCumulativeAmount0 && rightCarpetLiquidity != 0) {
@@ -185,8 +186,9 @@ library LibCarpetedGeometricDistribution {
         if (cumulativeAmount1_ == 0) {
             return (true, minUsableTick - tickSpacing);
         }
-        uint256 leftCarpetCumulativeAmount1 =
-            LibUniformDistribution.cumulativeAmount1(minTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick);
+        uint256 leftCarpetCumulativeAmount1 = LibUniformDistribution.cumulativeAmount1(
+            minTick, leftCarpetLiquidity, tickSpacing, minUsableTick, minTick, true
+        );
 
         if (cumulativeAmount1_ <= leftCarpetCumulativeAmount1 && leftCarpetLiquidity != 0) {
             // use left carpet

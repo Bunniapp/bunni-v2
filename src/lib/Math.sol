@@ -81,6 +81,7 @@ function roundUpFullMulDivResult(uint256 x, uint256 y, uint256 d, uint256 result
     pure
     returns (uint256 result)
 {
+    result = resultRoundedDown;
     /// @solidity memory-safe-assembly
     assembly {
         if mulmod(x, y, d) {

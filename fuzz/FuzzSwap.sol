@@ -93,6 +93,66 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         }
     }
 
+    // Invariant: THe sqrt price should move in the direction specified by the zeroForOne flag.
+    function swap_should_move_sqrt_price_in_correct_direction(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int64 amountSpecified,
+        uint160 sqrtPriceLimit,
+        int24 currentTick,
+        bool zeroForOne,
+        bytes8 ldfSeed
+    ) public {
+        (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
+
+        if (amountSpecified == 0) return;
+
+        // Set up LDF
+        _setUpLDF(ldfSeed, tickSpacing);
+
+        // Initialize parameters before swapinng
+        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) =
+            _compute_swap(tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, currentTick, zeroForOne);
+
+        // avoid edge case where the active balance of the output token is 0
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+        ) {
+            return;
+        }
+
+        try this.swap(input1) returns (
+            uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount, uint256 outputAmount
+        ) {
+            if (inputAmount == 0 || outputAmount == 0) return;
+            if (zeroForOne) {
+                assertLte(
+                    updatedSqrtPriceX96, currentTick.getSqrtPriceAtTick(), "sqrtPriceX96 should be less than or equal"
+                );
+                assertLte(updatedTick, currentTick, "tick should be less than or equal");
+            } else {
+                assertGte(
+                    updatedSqrtPriceX96,
+                    currentTick.getSqrtPriceAtTick(),
+                    "sqrtPriceX96 should be greater than or equal"
+                );
+                assertGte(updatedTick, currentTick, "tick should be greater than or equal");
+            }
+        } catch Panic(uint256) {
+            // This is executed in case of a panic,
+            // i.e. a serious error like division by zero
+            // or overflow. The error code can be used
+            // to determine the kind of error.
+            //assert(false);
+            return;
+        } catch (bytes memory reason) {
+            emit LogBytes(reason);
+            return;
+        }
+    }
+
     // Invariant: Users should not be able to gain any tokens through round trip swaps.
     // Issue: TOB-BUNNI-16
     // This test fails only if the swap fee is zero.
@@ -141,9 +201,11 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             // apply fee
             bool exactIn = amountSpecified < 0;
             if (exactIn) {
+                inputAmount0 = FixedPointMathLib.max(inputAmount0, uint64(-amountSpecified));
                 uint256 swapFeeAmount = outputAmount0.mulDivUp(fee, SWAP_FEE_BASE);
                 outputAmount0 -= swapFeeAmount;
             } else {
+                outputAmount0 = FixedPointMathLib.min(outputAmount0, uint64(amountSpecified));
                 uint256 swapFeeAmount = inputAmount0.mulDivUp(fee, SWAP_FEE_BASE - fee);
                 inputAmount0 += swapFeeAmount;
             }
@@ -174,7 +236,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             ) {
                 return;
             }
-            input2.swapParams.amountSpecified = amountSpecified < 0 ? -int256(outputAmount0) : int256(inputAmount0);
+            input2.swapParams.amountSpecified = exactIn ? -int256(outputAmount0) : int256(inputAmount0);
 
             if (input2.swapParams.amountSpecified == 0) return;
 
@@ -183,9 +245,11 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
             // apply fee
             if (exactIn) {
+                inputAmount1 = FixedPointMathLib.max(inputAmount1, uint256(-input2.swapParams.amountSpecified));
                 uint256 swapFeeAmount = outputAmount1.mulDivUp(fee, SWAP_FEE_BASE);
                 outputAmount1 -= swapFeeAmount;
             } else {
+                outputAmount1 = FixedPointMathLib.min(outputAmount1, uint256(input2.swapParams.amountSpecified));
                 uint256 swapFeeAmount = inputAmount1.mulDivUp(fee, SWAP_FEE_BASE - fee);
                 inputAmount1 += swapFeeAmount;
             }
@@ -504,6 +568,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         uint8 ldfIdx = uint8(clampBetween(_rng(ldfSeed, 0), 0, NUM_LDFS - 1));
         if (ldfIdx == 0) {
+            console2.log("UniformDistribution");
             ldf =
                 ILiquidityDensityFunction(address(new UniformDistribution(address(this), address(this), address(this))));
             int24 tickLower = roundTickSingle(
@@ -513,7 +578,11 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 int24(clampBetween(int256(_rng(ldfSeed, 2)), tickLower + tickSpacing, maxUsableTick)), tickSpacing
             );
             ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, tickLower, tickUpper));
+
+            console2.log("tickLower", tickLower);
+            console2.log("tickUpper", tickUpper);
         } else if (ldfIdx == 1) {
+            console2.log("GeometricDistribution");
             ldf = ILiquidityDensityFunction(
                 address(new GeometricDistribution(address(this), address(this), address(this)))
             );
@@ -524,7 +593,12 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             int16 length = int16(clampBetween(int256(_rng(ldfSeed, 2)), 1, maxUsableTick / tickSpacing - 2));
             uint32 alpha = uint32(clampBetween(_rng(ldfSeed, 3), MIN_ALPHA, MAX_ALPHA));
             ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, length, alpha));
+
+            console2.log("minTick", minTick);
+            console2.log("length", length);
+            console2.log("alpha", alpha);
         } else if (ldfIdx == 2) {
+            console2.log("DoubleGeometricDistribution");
             ldf = ILiquidityDensityFunction(
                 address(new DoubleGeometricDistribution(address(this), address(this), address(this)))
             );
@@ -540,7 +614,16 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             uint32 weight1 = uint32(clampBetween(_rng(ldfSeed, 7), uint256(1), uint256(1e6)));
             ldfParams =
                 bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, length0, alpha0, weight0, length1, alpha1, weight1));
+
+            console2.log("minTick", minTick);
+            console2.log("length0", length0);
+            console2.log("alpha0", alpha0);
+            console2.log("weight0", weight0);
+            console2.log("length1", length1);
+            console2.log("alpha1", alpha1);
+            console2.log("weight1", weight1);
         } else if (ldfIdx == 3) {
+            console2.log("CarpetedGeometricDistribution");
             ldf = ILiquidityDensityFunction(
                 address(new CarpetedGeometricDistribution(address(this), address(this), address(this)))
             );
@@ -552,7 +635,13 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             uint32 alpha = uint32(clampBetween(_rng(ldfSeed, 3), MIN_ALPHA, MAX_ALPHA));
             uint32 weightCarpet = uint32(clampBetween(_rng(ldfSeed, 4), 1e9, type(uint32).max));
             ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, length, alpha, weightCarpet));
+
+            console2.log("minTick", minTick);
+            console2.log("length", length);
+            console2.log("alpha", alpha);
+            console2.log("weightCarpet", weightCarpet);
         } else if (ldfIdx == 4) {
+            console2.log("CarpetedDoubleGeometricDistribution");
             ldf = ILiquidityDensityFunction(
                 address(new CarpetedDoubleGeometricDistribution(address(this), address(this), address(this)))
             );
@@ -572,6 +661,15 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                     ShiftMode.STATIC, minTick, length0, alpha0, weight0, length1, alpha1, weight1, weightCarpet
                 )
             );
+
+            console2.log("minTick", minTick);
+            console2.log("length0", length0);
+            console2.log("alpha0", alpha0);
+            console2.log("weight0", weight0);
+            console2.log("length1", length1);
+            console2.log("alpha1", alpha1);
+            console2.log("weight1", weight1);
+            console2.log("weightCarpet", weightCarpet);
         }
     }
 
