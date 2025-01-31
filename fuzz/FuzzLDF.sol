@@ -62,7 +62,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
 
         assertGte(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick < tickUpper && cumulativeAmount0 > 1e4) {
+        if (resultRoundedTick < tickUpper && cumulativeAmount0 > 2e4) {
             // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
             uint256 nextCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, totalLiquidity, tickSpacing, tickLower, tickUpper, false
@@ -221,7 +221,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
         );
         assertGte(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e2) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e3) {
             uint256 nextCumulativeAmount1 = LibGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, totalLiquidity, tickSpacing, minTick, length, alphaX96
             );

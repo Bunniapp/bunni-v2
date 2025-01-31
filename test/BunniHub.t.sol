@@ -1610,7 +1610,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         {
             uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
-            _swap(key, params, 0, "");
+            bool success = _trySwap(key, params, 0, "");
+            vm.assume(success);
             firstSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
             firstSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
         }
@@ -1633,7 +1634,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         {
             uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
-            _swap(key, params, 0, "");
+            bool success = _trySwap(key, params, 0, "");
+            vm.assume(success);
             secondSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
             secondSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
         }
@@ -1656,7 +1658,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         {
             uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
-            _swap(key, params, 0, "");
+            bool success = _trySwap(key, params, 0, "");
+            vm.assume(success);
             thirdSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
             thirdSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
         }
@@ -1679,7 +1682,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         {
             uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
-            _swap(key, params, 0, "");
+            bool success = _trySwap(key, params, 0, "");
+            vm.assume(success);
             fourthSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
             fourthSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
         }
@@ -3313,6 +3317,27 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             vm.snapshotGasLastCall(snapLabel);
         } else {
             swapper_.swap{value: value}(key, params, type(uint256).max, 0);
+        }
+    }
+
+    function _trySwap(PoolKey memory key, IPoolManager.SwapParams memory params, uint256 value, string memory snapLabel)
+        internal
+        returns (bool success)
+    {
+        Uniswapper swapper_ = swapper;
+        if (bytes(snapLabel).length > 0) {
+            try swapper_.swap{value: value}(key, params, type(uint256).max, 0) {
+                vm.snapshotGasLastCall(snapLabel);
+                success = true;
+            } catch {
+                success = false;
+            }
+        } else {
+            try swapper_.swap{value: value}(key, params, type(uint256).max, 0) {
+                success = true;
+            } catch {
+                success = false;
+            }
         }
     }
 

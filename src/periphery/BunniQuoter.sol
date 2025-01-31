@@ -146,6 +146,10 @@ contract BunniQuoter is IBunniQuoter {
         if (
             params.zeroForOne && currentActiveBalance1 == 0 || !params.zeroForOne && currentActiveBalance0 == 0
                 || totalLiquidity == 0
+                || (
+                    !exactIn
+                        && uint256(params.amountSpecified) > (params.zeroForOne ? currentActiveBalance1 : currentActiveBalance0)
+                )
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
         }
@@ -178,8 +182,7 @@ contract BunniQuoter is IBunniQuoter {
         if (
             (!exactIn && outputAmount < uint256(params.amountSpecified))
                 || (params.zeroForOne && updatedSqrtPriceX96 > sqrtPriceX96)
-                || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96)
-                || (params.amountSpecified > 0 && inputAmount == 0)
+                || (!params.zeroForOne && updatedSqrtPriceX96 < sqrtPriceX96) || (outputAmount == 0 || inputAmount == 0)
         ) {
             return (false, 0, 0, 0, 0, 0, 0);
         }

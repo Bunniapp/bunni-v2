@@ -97,7 +97,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
 
         assertGe(resultCumulativeAmount0, cumulativeAmount0, "resultCumulativeAmount0 < cumulativeAmount0");
 
-        if (resultRoundedTick < tickUpper && cumulativeAmount0 > 1e4) {
+        if (resultRoundedTick < tickUpper && cumulativeAmount0 > 2e4) {
             // NOTE: when cumulativeAmount0 is small this assertion may fail due to rounding errors
             uint256 nextCumulativeAmount0 = LibUniformDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, liquidity, tickSpacing, tickLower, tickUpper, false

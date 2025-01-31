@@ -43,6 +43,7 @@ import {IHooklet} from "../interfaces/IHooklet.sol";
 import {IBunniHook} from "../interfaces/IBunniHook.sol";
 import {LiquidityAmounts} from "./LiquidityAmounts.sol";
 import {IBunniToken} from "../interfaces/IBunniToken.sol";
+import {ExcessivelySafeTransfer2Lib} from "../lib/ExcessivelySafeTransfer2Lib.sol";
 
 library BunniHubLogic {
     using LibTransient for *;
@@ -58,6 +59,7 @@ library BunniHubLogic {
     using FixedPointMathLib for uint128;
     using FixedPointMathLib for uint256;
     using ClonesWithImmutableArgs for address;
+    using ExcessivelySafeTransfer2Lib for address;
 
     struct Env {
         WETH weth;
@@ -801,7 +803,7 @@ library BunniHubLogic {
         } else {
             // normal ERC20
             token = IERC20(Currency.unwrap(currency));
-            env.permit2.transferFrom(user, address(this), amount.toUint160(), address(token));
+            address(token).excessivelySafeTransferFrom2(user, address(this), amount);
         }
 
         // do vault deposit
