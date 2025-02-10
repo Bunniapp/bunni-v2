@@ -1,6 +1,8 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.19;
+
+import "forge-std/console2.sol";
 
 import "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -78,7 +80,7 @@ library RebalanceLogic {
             bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
 
-        // compute total liquidity and densities
+        // compute total liquidity at spot price
         (uint256 totalLiquidity,,,,,,,) = queryLDF({
             key: input.key,
             sqrtPriceX96: input.updatedSqrtPriceX96,
@@ -91,37 +93,6 @@ library RebalanceLogic {
             balance1: balance1,
             idleBalance: bunniState.idleBalance
         });
-
-        // compute excess liquidity if there's any
-        (uint256 idleBalance, bool willRebalanceToken0) = bunniState.idleBalance.fromIdleBalance();
-        uint256 excessLiquidity = willRebalanceToken0
-            ? idleBalance.divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount0(
-                    input.key,
-                    TickMath.minUsableTick(input.key.tickSpacing),
-                    WAD,
-                    input.arithmeticMeanTick,
-                    input.updatedTick,
-                    bunniState.ldfParams,
-                    input.newLdfState
-                )
-            )
-            : idleBalance.divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount1(
-                    input.key,
-                    TickMath.maxUsableTick(input.key.tickSpacing) - input.key.tickSpacing,
-                    WAD,
-                    input.arithmeticMeanTick,
-                    input.updatedTick,
-                    bunniState.ldfParams,
-                    input.newLdfState
-                )
-            );
-
-        // should rebalance if excessLiquidity / totalLiquidity >= 1 / rebalanceThreshold
-        bool shouldRebalance =
-            excessLiquidity != 0 && excessLiquidity >= totalLiquidity / input.hookParams.rebalanceThreshold;
-        if (!shouldRebalance) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
         // compute target token densities of the excess liquidity after rebalancing
         // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
@@ -149,6 +120,39 @@ library RebalanceLogic {
             balance1: 0,
             idleBalance: IdleBalanceLibrary.ZERO
         });
+
+        // should rebalance if idleBalance / (totalLiquidity * totalDensityX96 / Q96) >= 1 / rebalanceThreshold
+        (uint256 idleBalance, bool willRebalanceToken0) = bunniState.idleBalance.fromIdleBalance();
+        bool shouldRebalance = idleBalance != 0
+            && idleBalance
+                >= totalLiquidity.fullMulX96(willRebalanceToken0 ? totalDensity0X96 : totalDensity1X96)
+                    / input.hookParams.rebalanceThreshold;
+        if (!shouldRebalance) return (false, inputToken, outputToken, inputAmount, outputAmount);
+
+        // compute excess liquidity if there's any
+        uint256 excessLiquidity = willRebalanceToken0
+            ? idleBalance.divWad(
+                bunniState.liquidityDensityFunction.cumulativeAmount0(
+                    input.key,
+                    TickMath.minUsableTick(input.key.tickSpacing),
+                    WAD,
+                    input.arithmeticMeanTick,
+                    input.updatedTick,
+                    bunniState.ldfParams,
+                    input.newLdfState
+                )
+            )
+            : idleBalance.divWad(
+                bunniState.liquidityDensityFunction.cumulativeAmount1(
+                    input.key,
+                    TickMath.maxUsableTick(input.key.tickSpacing) - input.key.tickSpacing,
+                    WAD,
+                    input.arithmeticMeanTick,
+                    input.updatedTick,
+                    bunniState.ldfParams,
+                    input.newLdfState
+                )
+            );
 
         // compute target amounts (i.e. the token amounts of the excess liquidity)
         uint256 targetAmount0 = excessLiquidity.fullMulX96(totalDensity0X96);

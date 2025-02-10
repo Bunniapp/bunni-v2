@@ -48,6 +48,7 @@ import {HookletLib} from "../src/lib/HookletLib.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
 import {IHooklet} from "../src/interfaces/IHooklet.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
+import {MockCarpetedLDF} from "./mocks/MockCarpetedLDF.sol";
 import {IBunniHook} from "../src/interfaces/IBunniHook.sol";
 import {Permit2Deployer} from "./utils/Permit2Deployer.sol";
 import {BunniHookLogic} from "../src/lib/BunniHookLogic.sol";
@@ -1989,12 +1990,167 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         {
             // verify excess liquidity after the rebalance
-            (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity) =
-                quoter.getExcessLiquidity(key);
-            bool shouldRebalance0 = excessLiquidity0 != 0 && excessLiquidity0 >= totalLiquidity / REBALANCE_THRESHOLD;
-            bool shouldRebalance1 = excessLiquidity1 != 0 && excessLiquidity1 >= totalLiquidity / REBALANCE_THRESHOLD;
-            assertFalse(shouldRebalance0, "shouldRebalance0 is still true after rebalance");
-            assertFalse(shouldRebalance1, "shouldRebalance1 is still true after rebalance");
+            (
+                uint256 totalLiquidity,
+                uint256 idleBalance,
+                bool willRebalanceToken0,
+                uint256 thresholdBalance,
+                uint256 excessLiquidity
+            ) = quoter.getExcessLiquidity(key);
+            bool shouldRebalance = idleBalance != 0 && idleBalance >= thresholdBalance / REBALANCE_THRESHOLD;
+            assertFalse(shouldRebalance, "shouldRebalance is still true after rebalance");
+        }
+
+        // verify surge fee is applied
+        (,, uint32 lastSwapTimestamp, uint32 lastSurgeTImestamp) = bunniHook.slot0s(key.toId());
+        assertEq(lastSwapTimestamp, uint32(vm.getBlockTimestamp()), "lastSwapTimestamp incorrect");
+        assertEq(lastSurgeTImestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTImestamp incorrect");
+    }
+
+    function test_rebalance_basicOrderCreationAndFulfillment_carpetedLDF(
+        uint256 swapAmount,
+        bool useVault0,
+        bool useVault1,
+        uint32 alpha,
+        uint256 weightCarpet,
+        uint24 feeMin,
+        uint24 feeMax,
+        uint24 feeQuadraticMultiplier
+    ) external {
+        swapAmount = bound(swapAmount, 1e3, 1e6);
+        feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
+        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
+        alpha = uint32(bound(alpha, 1e3, 12e8));
+        weightCarpet = bound(weightCarpet, 1e9, type(uint32).max);
+
+        MockCarpetedLDF ldf_ = new MockCarpetedLDF(address(hub), address(bunniHook), address(quoter));
+        bytes32 ldfParams =
+            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha, uint32(weightCarpet)));
+        {
+            PoolKey memory key_;
+            key_.tickSpacing = TICK_SPACING;
+            vm.assume(ldf_.isValidParams(key_, TWAP_SECONDS_AGO, ldfParams));
+        }
+        ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault1 ? vault1 : ERC4626(address(0)),
+            ldf_,
+            ldfParams,
+            abi.encodePacked(
+                feeMin,
+                feeMax,
+                feeQuadraticMultiplier,
+                FEE_TWAP_SECONDS_AGO,
+                POOL_MAX_AMAMM_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                true, // amAmmEnabled
+                ORACLE_MIN_INTERVAL,
+                MIN_RENT_MULTIPLIER
+            )
+        );
+
+        // shift liquidity to the right
+        // the LDF will demand more token0, so we'll have too much of token1
+        // the rebalance should swap from token1 to token0
+        ldf_.setMinTick(-20);
+
+        // make small swap to trigger rebalance
+        _mint(key.currency0, address(this), swapAmount);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(swapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        vm.recordLogs();
+        _swap(key, params, 0, "");
+
+        // validate etched order
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        Vm.Log memory orderEtchedLog;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].emitter == address(floodPlain) && logs[i].topics[0] == IOnChainOrders.OrderEtched.selector) {
+                orderEtchedLog = logs[i];
+                break;
+            }
+        }
+        assertEq(orderEtchedLog.emitter, address(floodPlain), "emitter not floodPlain");
+        assertEq(orderEtchedLog.topics[0], IOnChainOrders.OrderEtched.selector, "not OrderEtched event");
+        IFloodPlain.SignedOrder memory signedOrder = abi.decode(orderEtchedLog.data, (IFloodPlain.SignedOrder));
+        IFloodPlain.Order memory order = signedOrder.order;
+        (, bytes32 permit2Hash) = _hashFloodOrder(order);
+        assertEq(
+            bunniHook.isValidSignature(permit2Hash, abi.encode(key.toId())),
+            IERC1271.isValidSignature.selector,
+            "order signature not valid"
+        );
+        assertEq(order.offerer, address(bunniHook), "offerer not bunniHook");
+        assertEq(order.recipient, address(bunniHook), "recipient not bunniHook");
+        assertEq(order.offer[0].token, Currency.unwrap(key.currency1), "offer token not token1");
+        assertEq(order.consideration.token, Currency.unwrap(key.currency0), "consideration token not token0");
+        assertEq(order.deadline, vm.getBlockTimestamp() + REBALANCE_ORDER_TTL, "deadline incorrect");
+        assertEq(order.preHooks[0].target, address(bunniHook), "preHook target not bunniHook");
+        IBunniHook.RebalanceOrderHookArgs memory expectedHookArgs = IBunniHook.RebalanceOrderHookArgs({
+            key: key,
+            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: key.currency1, amount: order.offer[0].amount}),
+            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: key.currency0})
+        });
+        assertEq(
+            order.preHooks[0].data,
+            abi.encodeCall(IBunniHook.rebalanceOrderPreHook, (expectedHookArgs)),
+            "preHook data incorrect"
+        );
+        assertEq(order.postHooks[0].target, address(bunniHook), "postHook target not bunniHook");
+        assertEq(
+            order.postHooks[0].data,
+            abi.encodeCall(IBunniHook.rebalanceOrderPostHook, (expectedHookArgs)),
+            "postHook data incorrect"
+        );
+        assertEq(signedOrder.signature, abi.encode(key.toId()), "signature incorrect");
+
+        // fulfill order
+        _mint(key.currency0, address(this), order.consideration.amount);
+        (uint256 beforeBalance0, uint256 beforeBalance1) = hub.poolBalances(key.toId());
+        uint256 beforeFulfillerBalance0 = key.currency0.balanceOfSelf();
+        floodPlain.fulfillOrder(signedOrder);
+        (uint256 afterBalance0, uint256 afterBalance1) = hub.poolBalances(key.toId());
+
+        // verify balances
+        assertEq(
+            beforeFulfillerBalance0 - key.currency0.balanceOfSelf(),
+            order.consideration.amount,
+            "didn't take currency0 from fulfiller"
+        );
+        assertApproxEqAbs(
+            beforeBalance1 - afterBalance1, order.offer[0].amount, 10, "offer tokens taken from hub incorrect"
+        );
+        assertApproxEqAbs(
+            afterBalance0 - beforeBalance0,
+            order.consideration.amount,
+            10,
+            "consideration tokens given to hub incorrect"
+        );
+
+        {
+            // verify excess liquidity after the rebalance
+            (
+                uint256 totalLiquidity,
+                uint256 idleBalance,
+                bool willRebalanceToken0,
+                uint256 thresholdBalance,
+                uint256 excessLiquidity
+            ) = quoter.getExcessLiquidity(key);
+            bool shouldRebalance = idleBalance != 0 && idleBalance >= thresholdBalance / REBALANCE_THRESHOLD;
+            assertFalse(shouldRebalance, "shouldRebalance is still true after rebalance");
         }
 
         // verify surge fee is applied
