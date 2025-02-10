@@ -34,5 +34,11 @@ interface IBunniQuoter {
     function getExcessLiquidity(PoolKey calldata key)
         external
         view
-        returns (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity);
+        returns (
+            uint256 totalLiquidity,
+            uint256 idleBalance,
+            bool willRebalanceToken0,
+            uint256 thresholdBalance,
+            uint256 excessLiquidity
+        );
 }

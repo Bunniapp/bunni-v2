@@ -26,12 +26,14 @@ import "../lib/AmAmmPayload.sol";
 import "../lib/BunniSwapMath.sol";
 import "../base/SharedStructs.sol";
 import {HookletLib} from "../lib/HookletLib.sol";
+import {FullMathX96} from "../lib/FullMathX96.sol";
 import {BunniHookLogic} from "../lib/BunniHookLogic.sol";
 import {LiquidityAmounts} from "../lib/LiquidityAmounts.sol";
 
 contract BunniQuoter is IBunniQuoter {
     using TickMath for *;
     using SafeCastLib for *;
+    using FullMathX96 for *;
     using FixedPointMathLib for *;
     using HookletLib for IHooklet;
     using PoolIdLibrary for PoolKey;
@@ -405,7 +407,13 @@ contract BunniQuoter is IBunniQuoter {
     function getExcessLiquidity(PoolKey calldata key)
         external
         view
-        returns (uint256 excessLiquidity0, uint256 excessLiquidity1, uint256 totalLiquidity)
+        returns (
+            uint256 totalLiquidity,
+            uint256 idleBalance,
+            bool willRebalanceToken0,
+            uint256 thresholdBalance,
+            uint256 excessLiquidity
+        )
     {
         PoolId id = key.toId();
         IBunniHook hook = IBunniHook(address(key.hooks));
@@ -421,16 +429,13 @@ contract BunniQuoter is IBunniQuoter {
         }
         bytes32 newLdfState = hook.ldfStates(id);
 
-        // compute the ratio (excessLiquidity / totalLiquidity)
-        // excessLiquidity is the minimum amount of liquidity that can be supported by the excess tokens
-
         // get fresh token balances
         (uint256 balance0, uint256 balance1) = (
             bunniState.rawBalance0 + getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
             bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
         );
 
-        // compute total liquidity and densities
+        // compute total liquidity at spot price
         (totalLiquidity,,,,,,,) = queryLDF({
             key: key,
             sqrtPriceX96: updatedSqrtPriceX96,
@@ -445,9 +450,9 @@ contract BunniQuoter is IBunniQuoter {
         });
 
         // compute excess liquidity if there's any
-        (uint256 idleBalance, bool willRebalanceToken0) = bunniState.idleBalance.fromIdleBalance();
-        if (willRebalanceToken0) {
-            excessLiquidity0 = idleBalance.divWad(
+        (idleBalance, willRebalanceToken0) = bunniState.idleBalance.fromIdleBalance();
+        excessLiquidity = willRebalanceToken0
+            ? idleBalance.divWad(
                 bunniState.liquidityDensityFunction.cumulativeAmount0(
                     key,
                     TickMath.minUsableTick(key.tickSpacing),
@@ -457,9 +462,8 @@ contract BunniQuoter is IBunniQuoter {
                     bunniState.ldfParams,
                     newLdfState
                 )
-            );
-        } else {
-            excessLiquidity1 = idleBalance.divWad(
+            )
+            : idleBalance.divWad(
                 bunniState.liquidityDensityFunction.cumulativeAmount1(
                     key,
                     TickMath.maxUsableTick(key.tickSpacing) - key.tickSpacing,
@@ -470,7 +474,28 @@ contract BunniQuoter is IBunniQuoter {
                     newLdfState
                 )
             );
-        }
+
+        // compute target token densities of the excess liquidity after rebalancing
+        // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
+        uint160 rebalanceSpotPriceSqrtRatioX96 = TickMath.getSqrtPriceAtTick(arithmeticMeanTick);
+        // totalDensity0X96 and totalDensity1X96 are the token densities of the excess liquidity
+        // after rebalancing
+        (, uint256 totalDensity0X96, uint256 totalDensity1X96,,,,,) = queryLDF({
+            key: key,
+            sqrtPriceX96: rebalanceSpotPriceSqrtRatioX96,
+            tick: arithmeticMeanTick,
+            arithmeticMeanTick: arithmeticMeanTick,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: newLdfState,
+            balance0: 0,
+            balance1: 0,
+            idleBalance: IdleBalanceLibrary.ZERO
+        });
+
+        // compute the threshold balance
+        // rebalance is triggered if  idleBalance / thresholdBalance >= 1 / rebalanceThreshold
+        thresholdBalance = totalLiquidity.fullMulX96(willRebalanceToken0 ? totalDensity0X96 : totalDensity1X96);
     }
 
     /// -----------------------------------------------------------------------

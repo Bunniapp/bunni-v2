@@ -61,7 +61,7 @@ struct HubStorage {
 /// @member vaultSurgeThreshold1 The threshold for the vault1 share price change to trigger the surge fee. Only used if both vaults are set.
 ///         1 / vaultSurgeThreshold is the minimum percentage change in the vault share price to trigger the surge fee.
 /// @member rebalanceThreshold The threshold for triggering a rebalance from excess liquidity.
-///         1 / rebalanceThreshold is the minimum ratio of excess liquidity to total liquidity to trigger a rebalance.
+///         1 / rebalanceThreshold is the minimum ratio of excess tokens to the target token amount (when the spot price is at TWAP) to trigger a rebalance.
 ///         When set to 0, rebalancing is disabled.
 /// @member rebalanceMaxSlippage The maximum slippage (vs TWAP) allowed during rebalancing, 5 decimals. At most MAX_REBALANCE_MAX_SLIPPAGE.
 /// @member rebalanceTwapSecondsAgo The time window for the TWAP used during rebalancing. At most MAX_REBALANCE_TWAP_SECONDS_AGO.
