@@ -55,6 +55,7 @@ abstract contract LiquidityDensityFunctionTest is Test {
     function _test_query_cumulativeAmounts(int24 currentTick, int24 tickSpacing, bytes32 decodedLDFParams)
         internal
         view
+        virtual
     {
         int24 roundedTick = roundTickSingle(currentTick, tickSpacing);
         PoolKey memory key;

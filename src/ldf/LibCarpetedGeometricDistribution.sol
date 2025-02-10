@@ -17,6 +17,8 @@ library LibCarpetedGeometricDistribution {
 
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
     uint256 internal constant MIN_LIQUIDITY_DENSITY = Q96 / 1e3;
+    uint256 internal constant SCALED_Q96 = 0x10000000000000000000000000; // Q96 << QUERY_SCALE_SHIFT
+    uint8 internal constant QUERY_SCALE_SHIFT = 4;
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
     /// @param roundedTick The rounded tick to query
@@ -40,12 +42,26 @@ library LibCarpetedGeometricDistribution {
         liquidityDensityX96_ = liquidityDensityX96(roundedTick, tickSpacing, minTick, length, alphaX96, weightCarpet);
 
         // compute cumulativeAmount0DensityX96
-        cumulativeAmount0DensityX96 =
-            cumulativeAmount0(roundedTick + tickSpacing, Q96, tickSpacing, minTick, length, alphaX96, weightCarpet);
+        cumulativeAmount0DensityX96 = cumulativeAmount0(
+            roundedTick + tickSpacing,
+            SCALED_Q96, // Q96 << QUERY_SCALE_SHIFT
+            tickSpacing,
+            minTick,
+            length,
+            alphaX96,
+            weightCarpet
+        ) >> QUERY_SCALE_SHIFT;
 
         // compute cumulativeAmount1DensityX96
-        cumulativeAmount1DensityX96 =
-            cumulativeAmount1(roundedTick - tickSpacing, Q96, tickSpacing, minTick, length, alphaX96, weightCarpet);
+        cumulativeAmount1DensityX96 = cumulativeAmount1(
+            roundedTick - tickSpacing,
+            SCALED_Q96, // Q96 << QUERY_SCALE_SHIFT
+            tickSpacing,
+            minTick,
+            length,
+            alphaX96,
+            weightCarpet
+        ) >> QUERY_SCALE_SHIFT;
     }
 
     /// @dev Computes the cumulative amount of token0 in the rounded ticks [roundedTick, tickUpper).
@@ -274,7 +290,7 @@ library LibCarpetedGeometricDistribution {
             }
             uint256 mainLiquidity = Q96.mulWad(WAD - weightCarpet);
             uint256 carpetLiquidity = Q96 - mainLiquidity;
-            return carpetLiquidity / uint24(numRoundedTicksCarpeted);
+            return carpetLiquidity.divUp(uint24(numRoundedTicksCarpeted));
         }
     }
 

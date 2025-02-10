@@ -11,6 +11,7 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
     uint256 internal constant MIN_ALPHA = 1e3;
     uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant INVCUM_MIN_MAX_CUM_AMOUNT = 1e6;
+    uint8 internal constant QUERY_SCALE_SHIFT = 4;
 
     function _setUpLDF() internal override {
         ldf = ILiquidityDensityFunction(
@@ -427,5 +428,62 @@ contract CarpetedDoubleGeometricDistributionTest is LiquidityDensityFunctionTest
         params = LibCarpetedDoubleGeometricDistribution.decodeParams(0, tickSpacing, ldfParams);
         assertEq(params.minTick + (length0 + length1) * tickSpacing, maxUsableTick, "maxTick incorrect");
         assertTrue(params.shiftMode == shiftMode, "shiftMode incorrect");
+    }
+
+    function _test_query_cumulativeAmounts(int24 currentTick, int24 tickSpacing, bytes32 decodedLDFParams)
+        internal
+        view
+        virtual
+        override
+    {
+        int24 roundedTick = roundTickSingle(currentTick, tickSpacing);
+        PoolKey memory key;
+        key.tickSpacing = tickSpacing;
+        (, uint256 cumulativeAmount0DensityX96, uint256 cumulativeAmount1DensityX96,,) =
+            ldf.query(key, roundedTick, 0, currentTick, decodedLDFParams, LDF_STATE);
+        uint256 cumulativeAmount0 = ldf.cumulativeAmount0(
+            key,
+            roundedTick + tickSpacing,
+            FixedPoint96.Q96 << QUERY_SCALE_SHIFT,
+            0,
+            currentTick,
+            decodedLDFParams,
+            LDF_STATE
+        ) >> QUERY_SCALE_SHIFT;
+        uint256 cumulativeAmount1 = ldf.cumulativeAmount1(
+            key,
+            roundedTick - tickSpacing,
+            FixedPoint96.Q96 << QUERY_SCALE_SHIFT,
+            0,
+            currentTick,
+            decodedLDFParams,
+            LDF_STATE
+        ) >> QUERY_SCALE_SHIFT;
+        assertEq(cumulativeAmount0, cumulativeAmount0DensityX96, "cumulativeAmount0 incorrect");
+        assertEq(cumulativeAmount1, cumulativeAmount1DensityX96, "cumulativeAmount1 incorrect");
+        uint256 bruteForceAmount0X96 =
+            _bruteForceCumulativeAmount0Density(roundedTick + tickSpacing, tickSpacing, decodedLDFParams);
+        uint256 bruteForceAmount1X96 =
+            _bruteForceCumulativeAmount1Density(roundedTick - tickSpacing, tickSpacing, decodedLDFParams);
+
+        (, uint256 error0) = absDiff(cumulativeAmount0DensityX96, bruteForceAmount0X96);
+        if (error0 > MIN_ABS_ERROR) {
+            assertApproxEqRel(
+                cumulativeAmount0DensityX96,
+                bruteForceAmount0X96,
+                MAX_ERROR_CUM0,
+                "cumulativeAmount0DensityX96 incorrect"
+            );
+        }
+
+        (, uint256 error1) = absDiff(cumulativeAmount1DensityX96, bruteForceAmount1X96);
+        if (error1 > MIN_ABS_ERROR) {
+            assertApproxEqRel(
+                cumulativeAmount1DensityX96,
+                bruteForceAmount1X96,
+                MAX_ERROR_CUM1,
+                "cumulativeAmount1DensityX96 incorrect"
+            );
+        }
     }
 }

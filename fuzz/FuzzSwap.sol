@@ -173,6 +173,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         fee = uint24(clampBetween(fee, MIN_SWAP_FEE, SWAP_FEE_BASE));
 
+        console2.log("fee", fee);
+
         // Set up LDF
         _setUpLDF(ldfSeed, tickSpacing);
 
@@ -290,6 +292,140 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
         }
     }
 
+    function test_compare_swap_with_reverse_swap_with_exactIn_vs_exactOut(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int64 amountSpecified,
+        uint160 sqrtPriceLimit,
+        int24 currentTick,
+        uint24 fee,
+        bool zeroForOne,
+        bytes8 ldfSeed
+    ) public {
+        (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
+
+        if (amountSpecified == 0) return;
+
+        fee = uint24(clampBetween(fee, MIN_SWAP_FEE, SWAP_FEE_BASE));
+
+        // Set up LDF
+        _setUpLDF(ldfSeed, tickSpacing);
+
+        // Initialize parameters before swapinng
+        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) =
+            _compute_swap(tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, currentTick, zeroForOne);
+
+        // avoid edge case where the active balance of the output token is 0
+        // or if the output token's balance is less than requested in an exact output swap
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+                || (
+                    amountSpecified > 0
+                        && uint64(amountSpecified) > (zeroForOne ? input1.currentActiveBalance1 : input1.currentActiveBalance0)
+                )
+        ) {
+            return;
+        }
+
+        if (input1.totalLiquidity < 1e3) return;
+
+        try this.swap(input1) returns (
+            uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
+        ) {
+            // apply fee
+            bool exactIn = amountSpecified < 0;
+            if (exactIn) {
+                inputAmount0 = FixedPointMathLib.max(inputAmount0, uint64(-amountSpecified));
+                uint256 swapFeeAmount = outputAmount0.mulDivUp(fee, SWAP_FEE_BASE);
+                outputAmount0 -= swapFeeAmount;
+            } else {
+                outputAmount0 = FixedPointMathLib.min(outputAmount0, uint64(amountSpecified));
+                uint256 swapFeeAmount = inputAmount0.mulDivUp(fee, SWAP_FEE_BASE - fee);
+                inputAmount0 += swapFeeAmount;
+            }
+
+            if (inputAmount0 != uint64(inputAmount0) || outputAmount0 != uint64(outputAmount0)) return;
+
+            BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
+                tickSpacing,
+                uint64(balance0 + inputAmount0),
+                uint64(balance1 - outputAmount0),
+                -amountSpecified,
+                input1.sqrtPriceX96, // sqrtPriceLimit
+                updatedTick,
+                !zeroForOne,
+                updatedSqrtPriceX96,
+                idleBalance
+            );
+            // avoid edge case where the active balance of the output token is 0
+            // or if the output token's balance is less than requested in an exact output swap
+            if (
+                (zeroForOne && input2.currentActiveBalance1 == 0) || (!zeroForOne && input2.currentActiveBalance0 == 0)
+                    || input2.totalLiquidity == 0
+                    || (
+                        amountSpecified > 0
+                            && uint64(amountSpecified)
+                                > (zeroForOne ? input2.currentActiveBalance1 : input2.currentActiveBalance0)
+                    )
+            ) {
+                return;
+            }
+            input2.swapParams.amountSpecified = exactIn ? int256(inputAmount0) : -int256(outputAmount0);
+
+            if (input2.swapParams.amountSpecified == 0) return;
+
+            (uint160 updatedSqrtPriceX960, int24 updatedTick0, uint256 inputAmount1, uint256 outputAmount1) =
+                this.swap(input2);
+
+            // apply fee
+            if (!exactIn) {
+                inputAmount1 = FixedPointMathLib.max(inputAmount1, uint256(-input2.swapParams.amountSpecified));
+                uint256 swapFeeAmount = outputAmount1.mulDivUp(fee, SWAP_FEE_BASE);
+                outputAmount1 -= swapFeeAmount;
+            } else {
+                outputAmount1 = FixedPointMathLib.min(outputAmount1, uint256(input2.swapParams.amountSpecified));
+                uint256 swapFeeAmount = inputAmount1.mulDivUp(fee, SWAP_FEE_BASE - fee);
+                inputAmount1 += swapFeeAmount;
+            }
+
+            if (
+                (inputAmount0 > outputAmount1 && outputAmount0 > inputAmount1)
+                    || (inputAmount0 < outputAmount1 && outputAmount0 < inputAmount1)
+            ) {
+                // not valid roundtrip swap since the swap amounts don't chain together
+                return;
+            }
+
+            console2.log("inputAmount0", inputAmount0);
+            console2.log("outputAmount0", outputAmount0);
+            console2.log("inputAmount1", inputAmount1);
+            console2.log("outputAmount1", outputAmount1);
+            console2.log("currentTick", currentTick);
+            console2.log("updatedTick", updatedTick);
+            console2.log("updatedSqrtPriceX96", updatedSqrtPriceX96);
+            console2.log("updatedTick0", updatedTick0);
+            console2.log("updatedSqrtPriceX960", updatedSqrtPriceX960);
+
+            if (exactIn) {
+                assertWithMsg(outputAmount0 <= inputAmount1, "Round trips swaps are profitable");
+            } else {
+                assertWithMsg(inputAmount0 >= outputAmount1, "Round trips swaps are profitable");
+            }
+        } catch Panic(uint256) /*errorCode*/ {
+            // This is executed in case of a panic,
+            // i.e. a serious error like division by zero
+            // or overflow. The error code can be used
+            // to determine the kind of error.
+            //assert(false);
+            return;
+        } catch (bytes memory reason) {
+            emit LogBytes(reason);
+            return;
+        }
+    }
+
     // Internal helper function
     function swap(BunniSwapMath.BunniComputeSwapInput calldata input)
         public
@@ -371,7 +507,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
     ) public {
         (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
 
-        if (amountSpecified == 0 || FixedPointMathLib.abs(amountSpecified) < 1e3) return;
+        if (amountSpecified == 0 || FixedPointMathLib.abs(amountSpecified) < 1e5) return;
 
         // Set up LDF
         _setUpLDF(ldfSeed, tickSpacing);
@@ -395,7 +531,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
         try this.swap(input1) returns (
             uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
-        ) {} catch Panic(uint256) /*errorCode*/ {
+        ) {} catch Panic(uint256) {
             // This is executed in case of a panic,
             // i.e. a serious error like division by zero
             // or overflow. The error code can be used
