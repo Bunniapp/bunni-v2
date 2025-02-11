@@ -229,8 +229,8 @@ library BunniSwapMath {
 
                     // perform naive swap within the updated rounded tick
                     bool hitSqrtPriceLimit;
-                    if (swapLiquidity == 0) {
-                        // no liquidity, don't move from the starting price
+                    if (swapLiquidity == 0 || sqrtPriceLimitX96 == startSqrtPriceX96) {
+                        // don't move from the starting price
                         (naiveSwapResultSqrtPriceX96, naiveSwapAmountIn, naiveSwapAmountOut) = (startSqrtPriceX96, 0, 0);
                     } else {
                         // has swap liquidity, use Uniswap math to compute updated sqrt price and input/output amounts

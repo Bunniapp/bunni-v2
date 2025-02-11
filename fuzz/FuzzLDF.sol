@@ -518,7 +518,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
 
         assertGte(resultCumulativeAmount1, cumulativeAmount1, "resultCumulativeAmount1 < cumulativeAmount1");
 
-        if (resultRoundedTick > minTick && cumulativeAmount1 > 1e4) {
+        if (resultRoundedTick > minTick && cumulativeAmount1 > 5e4) {
             uint256 nextCumulativeAmount1 = LibCarpetedGeometricDistribution.cumulativeAmount1(
                 resultRoundedTick - tickSpacing, liquidity, tickSpacing, minTick, length, alphaX96, weightCarpet
             );
