@@ -45,6 +45,7 @@ import {ERC4626Mock} from "./mocks/ERC4626Mock.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
 import {PoolState} from "../src/types/PoolState.sol";
 import {HookletLib} from "../src/lib/HookletLib.sol";
+import {FullMathX96} from "../src/lib/FullMathX96.sol";
 import {FloodDeployer} from "./utils/FloodDeployer.sol";
 import {IHooklet} from "../src/interfaces/IHooklet.sol";
 import {IBunniHub} from "../src/interfaces/IBunniHub.sol";
@@ -62,6 +63,8 @@ import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistributio
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
 contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
+    using TickMath for *;
+    using FullMathX96 for *;
     using SafeCastLib for *;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
@@ -1865,7 +1868,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         uint32 alpha,
         uint24 feeMin,
         uint24 feeMax,
-        uint24 feeQuadraticMultiplier
+        uint24 feeQuadraticMultiplier,
+        bool zeroForOne
     ) external {
         swapAmount = bound(swapAmount, 1e3, 1e6);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
@@ -1907,10 +1911,14 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             )
         );
 
-        // shift liquidity to the right
-        // the LDF will demand more token0, so we'll have too much of token1
-        // the rebalance should swap from token1 to token0
-        ldf_.setMinTick(-20);
+        // shift liquidity based on direction
+        // for zeroForOne: shift left, LDF will demand more token1, so we'll have too much of token0
+        // for oneForZero: shift right, LDF will demand more token0, so we'll have too much of token1
+        ldf_.setMinTick(zeroForOne ? -40 : -20);
+
+        // Define currencyIn and currencyOut based on direction
+        Currency currencyIn = zeroForOne ? key.currency0 : key.currency1;
+        Currency currencyOut = zeroForOne ? key.currency1 : key.currency0;
 
         // make small swap to trigger rebalance
         _mint(key.currency0, address(this), swapAmount);
@@ -1943,14 +1951,14 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         );
         assertEq(order.offerer, address(bunniHook), "offerer not bunniHook");
         assertEq(order.recipient, address(bunniHook), "recipient not bunniHook");
-        assertEq(order.offer[0].token, Currency.unwrap(key.currency1), "offer token not token1");
-        assertEq(order.consideration.token, Currency.unwrap(key.currency0), "consideration token not token0");
+        assertEq(order.offer[0].token, Currency.unwrap(currencyIn), "offer token incorrect");
+        assertEq(order.consideration.token, Currency.unwrap(currencyOut), "consideration token incorrect");
         assertEq(order.deadline, vm.getBlockTimestamp() + REBALANCE_ORDER_TTL, "deadline incorrect");
         assertEq(order.preHooks[0].target, address(bunniHook), "preHook target not bunniHook");
         IBunniHook.RebalanceOrderHookArgs memory expectedHookArgs = IBunniHook.RebalanceOrderHookArgs({
             key: key,
-            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: key.currency1, amount: order.offer[0].amount}),
-            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: key.currency0})
+            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: currencyIn, amount: order.offer[0].amount}),
+            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: currencyOut})
         });
         assertEq(
             order.preHooks[0].data,
@@ -1964,25 +1972,38 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             "postHook data incorrect"
         );
         assertEq(signedOrder.signature, abi.encode(key.toId()), "signature incorrect");
+        uint256 orderPrice = order.consideration.amount.mulDiv(Q96, order.offer[0].amount);
+        int24 twapTick = 4;
+        uint256 expectedOrderPrice = zeroForOne
+            ? uint256(twapTick.getSqrtPriceAtTick()).fullMulX96(twapTick.getSqrtPriceAtTick())
+            : uint256((-twapTick).getSqrtPriceAtTick()).fullMulX96((-twapTick).getSqrtPriceAtTick());
+        expectedOrderPrice =
+            expectedOrderPrice.mulDiv(REBALANCE_MAX_SLIPPAGE_BASE - REBALANCE_MAX_SLIPPAGE, REBALANCE_MAX_SLIPPAGE_BASE);
+        assertApproxEqRel(orderPrice, expectedOrderPrice, 1e3, "order price incorrect");
 
         // fulfill order
-        _mint(key.currency0, address(this), order.consideration.amount);
+        _mint(currencyOut, address(this), order.consideration.amount);
         (uint256 beforeBalance0, uint256 beforeBalance1) = hub.poolBalances(key.toId());
-        uint256 beforeFulfillerBalance0 = key.currency0.balanceOfSelf();
+        uint256 beforeFulfillerBalance = currencyOut.balanceOfSelf();
         floodPlain.fulfillOrder(signedOrder);
         (uint256 afterBalance0, uint256 afterBalance1) = hub.poolBalances(key.toId());
 
         // verify balances
         assertEq(
-            beforeFulfillerBalance0 - key.currency0.balanceOfSelf(),
+            beforeFulfillerBalance - currencyOut.balanceOfSelf(),
             order.consideration.amount,
-            "didn't take currency0 from fulfiller"
+            "didn't take consideration currency from fulfiller"
+        );
+        uint256 beforeBalanceIn = zeroForOne ? beforeBalance0 : beforeBalance1;
+        uint256 afterBalanceIn = zeroForOne ? afterBalance0 : afterBalance1;
+        uint256 beforeBalanceOut = zeroForOne ? beforeBalance1 : beforeBalance0;
+        uint256 afterBalanceOut = zeroForOne ? afterBalance1 : afterBalance0;
+
+        assertApproxEqAbs(
+            beforeBalanceIn - afterBalanceIn, order.offer[0].amount, 10, "offer tokens taken from hub incorrect"
         );
         assertApproxEqAbs(
-            beforeBalance1 - afterBalance1, order.offer[0].amount, 10, "offer tokens taken from hub incorrect"
-        );
-        assertApproxEqAbs(
-            afterBalance0 - beforeBalance0,
+            afterBalanceOut - beforeBalanceOut,
             order.consideration.amount,
             10,
             "consideration tokens given to hub incorrect"
@@ -1990,21 +2011,14 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         {
             // verify excess liquidity after the rebalance
-            (
-                uint256 totalLiquidity,
-                uint256 idleBalance,
-                bool willRebalanceToken0,
-                uint256 thresholdBalance,
-                uint256 excessLiquidity
-            ) = quoter.getExcessLiquidity(key);
-            bool shouldRebalance = idleBalance != 0 && idleBalance >= thresholdBalance / REBALANCE_THRESHOLD;
+            (,,, bool shouldRebalance,,,) = quoter.getExcessLiquidity(key);
             assertFalse(shouldRebalance, "shouldRebalance is still true after rebalance");
         }
 
         // verify surge fee is applied
-        (,, uint32 lastSwapTimestamp, uint32 lastSurgeTImestamp) = bunniHook.slot0s(key.toId());
+        (,, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp) = bunniHook.slot0s(key.toId());
         assertEq(lastSwapTimestamp, uint32(vm.getBlockTimestamp()), "lastSwapTimestamp incorrect");
-        assertEq(lastSurgeTImestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTImestamp incorrect");
+        assertEq(lastSurgeTimestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTimestamp incorrect");
     }
 
     function test_rebalance_basicOrderCreationAndFulfillment_carpetedLDF(
@@ -2015,7 +2029,8 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         uint256 weightCarpet,
         uint24 feeMin,
         uint24 feeMax,
-        uint24 feeQuadraticMultiplier
+        uint24 feeQuadraticMultiplier,
+        bool zeroForOne
     ) external {
         swapAmount = bound(swapAmount, 1e3, 1e6);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
@@ -2059,10 +2074,14 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             )
         );
 
-        // shift liquidity to the right
-        // the LDF will demand more token0, so we'll have too much of token1
-        // the rebalance should swap from token1 to token0
-        ldf_.setMinTick(-20);
+        // shift liquidity based on direction
+        // for zeroForOne: shift left, LDF will demand more token1, so we'll have too much of token0
+        // for oneForZero: shift right, LDF will demand more token0, so we'll have too much of token1
+        ldf_.setMinTick(zeroForOne ? -40 : -20);
+
+        // Define currencyIn and currencyOut based on direction
+        Currency currencyIn = zeroForOne ? key.currency0 : key.currency1;
+        Currency currencyOut = zeroForOne ? key.currency1 : key.currency0;
 
         // make small swap to trigger rebalance
         _mint(key.currency0, address(this), swapAmount);
@@ -2095,14 +2114,14 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         );
         assertEq(order.offerer, address(bunniHook), "offerer not bunniHook");
         assertEq(order.recipient, address(bunniHook), "recipient not bunniHook");
-        assertEq(order.offer[0].token, Currency.unwrap(key.currency1), "offer token not token1");
-        assertEq(order.consideration.token, Currency.unwrap(key.currency0), "consideration token not token0");
+        assertEq(order.offer[0].token, Currency.unwrap(currencyIn), "offer token incorrect");
+        assertEq(order.consideration.token, Currency.unwrap(currencyOut), "consideration token incorrect");
         assertEq(order.deadline, vm.getBlockTimestamp() + REBALANCE_ORDER_TTL, "deadline incorrect");
         assertEq(order.preHooks[0].target, address(bunniHook), "preHook target not bunniHook");
         IBunniHook.RebalanceOrderHookArgs memory expectedHookArgs = IBunniHook.RebalanceOrderHookArgs({
             key: key,
-            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: key.currency1, amount: order.offer[0].amount}),
-            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: key.currency0})
+            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: currencyIn, amount: order.offer[0].amount}),
+            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: currencyOut})
         });
         assertEq(
             order.preHooks[0].data,
@@ -2116,25 +2135,38 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
             "postHook data incorrect"
         );
         assertEq(signedOrder.signature, abi.encode(key.toId()), "signature incorrect");
+        uint256 orderPrice = order.consideration.amount.mulDiv(Q96, order.offer[0].amount);
+        int24 twapTick = 4;
+        uint256 expectedOrderPrice = zeroForOne
+            ? uint256(twapTick.getSqrtPriceAtTick()).fullMulX96(twapTick.getSqrtPriceAtTick())
+            : uint256((-twapTick).getSqrtPriceAtTick()).fullMulX96((-twapTick).getSqrtPriceAtTick());
+        expectedOrderPrice =
+            expectedOrderPrice.mulDiv(REBALANCE_MAX_SLIPPAGE_BASE - REBALANCE_MAX_SLIPPAGE, REBALANCE_MAX_SLIPPAGE_BASE);
+        assertApproxEqRel(orderPrice, expectedOrderPrice, 1e3, "order price incorrect");
 
         // fulfill order
-        _mint(key.currency0, address(this), order.consideration.amount);
+        _mint(currencyOut, address(this), order.consideration.amount);
         (uint256 beforeBalance0, uint256 beforeBalance1) = hub.poolBalances(key.toId());
-        uint256 beforeFulfillerBalance0 = key.currency0.balanceOfSelf();
+        uint256 beforeFulfillerBalance = currencyOut.balanceOfSelf();
         floodPlain.fulfillOrder(signedOrder);
         (uint256 afterBalance0, uint256 afterBalance1) = hub.poolBalances(key.toId());
 
         // verify balances
         assertEq(
-            beforeFulfillerBalance0 - key.currency0.balanceOfSelf(),
+            beforeFulfillerBalance - currencyOut.balanceOfSelf(),
             order.consideration.amount,
-            "didn't take currency0 from fulfiller"
+            "didn't take consideration currency from fulfiller"
+        );
+        uint256 beforeBalanceIn = zeroForOne ? beforeBalance0 : beforeBalance1;
+        uint256 afterBalanceIn = zeroForOne ? afterBalance0 : afterBalance1;
+        uint256 beforeBalanceOut = zeroForOne ? beforeBalance1 : beforeBalance0;
+        uint256 afterBalanceOut = zeroForOne ? afterBalance1 : afterBalance0;
+
+        assertApproxEqAbs(
+            beforeBalanceIn - afterBalanceIn, order.offer[0].amount, 10, "offer tokens taken from hub incorrect"
         );
         assertApproxEqAbs(
-            beforeBalance1 - afterBalance1, order.offer[0].amount, 10, "offer tokens taken from hub incorrect"
-        );
-        assertApproxEqAbs(
-            afterBalance0 - beforeBalance0,
+            afterBalanceOut - beforeBalanceOut,
             order.consideration.amount,
             10,
             "consideration tokens given to hub incorrect"
@@ -2142,21 +2174,14 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         {
             // verify excess liquidity after the rebalance
-            (
-                uint256 totalLiquidity,
-                uint256 idleBalance,
-                bool willRebalanceToken0,
-                uint256 thresholdBalance,
-                uint256 excessLiquidity
-            ) = quoter.getExcessLiquidity(key);
-            bool shouldRebalance = idleBalance != 0 && idleBalance >= thresholdBalance / REBALANCE_THRESHOLD;
+            (,,, bool shouldRebalance,,,) = quoter.getExcessLiquidity(key);
             assertFalse(shouldRebalance, "shouldRebalance is still true after rebalance");
         }
 
         // verify surge fee is applied
-        (,, uint32 lastSwapTimestamp, uint32 lastSurgeTImestamp) = bunniHook.slot0s(key.toId());
+        (,, uint32 lastSwapTimestamp, uint32 lastSurgeTimestamp) = bunniHook.slot0s(key.toId());
         assertEq(lastSwapTimestamp, uint32(vm.getBlockTimestamp()), "lastSwapTimestamp incorrect");
-        assertEq(lastSurgeTImestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTImestamp incorrect");
+        assertEq(lastSurgeTimestamp, uint32(vm.getBlockTimestamp()), "lastSurgeTimestamp incorrect");
     }
 
     function test_bunniToken_multicall() external {

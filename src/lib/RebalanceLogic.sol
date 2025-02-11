@@ -2,8 +2,6 @@
 
 pragma solidity ^0.8.19;
 
-import "forge-std/console2.sol";
-
 import "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
@@ -129,49 +127,47 @@ library RebalanceLogic {
                     / input.hookParams.rebalanceThreshold;
         if (!shouldRebalance) return (false, inputToken, outputToken, inputAmount, outputAmount);
 
-        // compute excess liquidity if there's any
-        uint256 excessLiquidity = willRebalanceToken0
-            ? idleBalance.divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount0(
-                    input.key,
-                    TickMath.minUsableTick(input.key.tickSpacing),
-                    WAD,
-                    input.arithmeticMeanTick,
-                    input.updatedTick,
-                    bunniState.ldfParams,
-                    input.newLdfState
-                )
-            )
-            : idleBalance.divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount1(
-                    input.key,
-                    TickMath.maxUsableTick(input.key.tickSpacing) - input.key.tickSpacing,
-                    WAD,
-                    input.arithmeticMeanTick,
-                    input.updatedTick,
-                    bunniState.ldfParams,
-                    input.newLdfState
-                )
-            );
+        // Let x be the idle balance, d be the input amount, and y be the output amount.
+        // We want the resulting ratio (x - d) / y = r = totalDensityX / totalDensityY.
+        // Given the price of the output token in terms of the input token, p, we have the following relationship:
+        // (x - d) / (d / p) = r
+        // => d = px / (p + r), y = d/p = x / (p + r)
+        uint256 p; // price of output token in terms of the input token
+        uint256 r; // desired ratio of the resulting input token amount to the output token amount
+        if (willRebalanceToken0) {
+            // zero for one
+            uint256 rebalanceSpotPriceInvSqrtRatioX96 = TickMath.getSqrtPriceAtTick(-rebalanceSpotPriceTick);
+            p = rebalanceSpotPriceInvSqrtRatioX96.fullMulX96(rebalanceSpotPriceInvSqrtRatioX96);
 
-        // compute target amounts (i.e. the token amounts of the excess liquidity)
-        uint256 targetAmount0 = excessLiquidity.fullMulX96(totalDensity0X96);
-        uint256 targetAmount1 = excessLiquidity.fullMulX96(totalDensity1X96);
+            if (totalDensity1X96 == 0) {
+                // should never happen
+                return (false, inputToken, outputToken, inputAmount, outputAmount);
+            }
+            r = totalDensity0X96.fullMulDiv(Q96, totalDensity1X96);
+
+            (inputToken, outputToken) = (input.key.currency0, input.key.currency1);
+        } else {
+            // one for zero
+            p = rebalanceSpotPriceSqrtRatioX96.fullMulX96(rebalanceSpotPriceSqrtRatioX96);
+
+            if (totalDensity0X96 == 0) {
+                // should never happen
+                return (false, inputToken, outputToken, inputAmount, outputAmount);
+            }
+            r = totalDensity1X96.fullMulDiv(Q96, totalDensity0X96);
+
+            (inputToken, outputToken) = (input.key.currency1, input.key.currency0);
+        }
+
+        // apply slippage to price
+        // normally slippage is applied to the price of the input token in terms of the output token, but here we use the inverse
+        // so p := p / (1 - slippage)
+        p = p.mulDiv(REBALANCE_MAX_SLIPPAGE_BASE, REBALANCE_MAX_SLIPPAGE_BASE - input.hookParams.rebalanceMaxSlippage);
 
         // determine input & output
-        (inputToken, outputToken) = willRebalanceToken0
-            ? (input.key.currency0, input.key.currency1)
-            : (input.key.currency1, input.key.currency0);
-        uint256 inputTokenTarget = willRebalanceToken0 ? targetAmount0 : targetAmount1;
-        uint256 outputTokenTarget = willRebalanceToken0 ? targetAmount1 : targetAmount0;
-        if (idleBalance < inputTokenTarget) {
-            // should never happen
-            return (false, inputToken, outputToken, inputAmount, outputAmount);
-        }
-        inputAmount = idleBalance - inputTokenTarget;
-        outputAmount = outputTokenTarget.mulDivUp(
-            REBALANCE_MAX_SLIPPAGE_BASE - input.hookParams.rebalanceMaxSlippage, REBALANCE_MAX_SLIPPAGE_BASE
-        );
+        uint256 pPlusR = p + r;
+        inputAmount = idleBalance.mulDiv(p, pPlusR);
+        outputAmount = idleBalance.mulDivUp(Q96, pPlusR);
 
         success = true;
     }

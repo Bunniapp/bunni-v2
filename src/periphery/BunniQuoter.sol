@@ -411,8 +411,10 @@ contract BunniQuoter is IBunniQuoter {
             uint256 totalLiquidity,
             uint256 idleBalance,
             bool willRebalanceToken0,
+            bool shouldRebalance,
             uint256 thresholdBalance,
-            uint256 excessLiquidity
+            uint256 inputAmount,
+            uint256 outputAmount
         )
     {
         PoolId id = key.toId();
@@ -420,6 +422,18 @@ contract BunniQuoter is IBunniQuoter {
 
         // load fresh state
         PoolState memory bunniState = hub.poolState(id);
+        uint16 rebalanceThreshold;
+        uint16 rebalanceMaxSlippage;
+        {
+            bytes memory hookParams = bunniState.hookParams;
+            bytes32 firstWord;
+            /// @solidity memory-safe-assembly
+            assembly {
+                firstWord := mload(add(hookParams, 32))
+            }
+            rebalanceThreshold = uint16(bytes2(firstWord << 184));
+            rebalanceMaxSlippage = uint16(bytes2(firstWord << 200));
+        }
 
         (uint160 updatedSqrtPriceX96, int24 updatedTick,,) = hook.slot0s(id);
 
@@ -449,31 +463,7 @@ contract BunniQuoter is IBunniQuoter {
             idleBalance: bunniState.idleBalance
         });
 
-        // compute excess liquidity if there's any
         (idleBalance, willRebalanceToken0) = bunniState.idleBalance.fromIdleBalance();
-        excessLiquidity = willRebalanceToken0
-            ? idleBalance.divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount0(
-                    key,
-                    TickMath.minUsableTick(key.tickSpacing),
-                    WAD,
-                    arithmeticMeanTick,
-                    updatedTick,
-                    bunniState.ldfParams,
-                    newLdfState
-                )
-            )
-            : idleBalance.divWad(
-                bunniState.liquidityDensityFunction.cumulativeAmount1(
-                    key,
-                    TickMath.maxUsableTick(key.tickSpacing) - key.tickSpacing,
-                    WAD,
-                    arithmeticMeanTick,
-                    updatedTick,
-                    bunniState.ldfParams,
-                    newLdfState
-                )
-            );
 
         // compute target token densities of the excess liquidity after rebalancing
         // this is done by querying the LDF using a TWAP as the spot price to prevent manipulation
@@ -494,8 +484,37 @@ contract BunniQuoter is IBunniQuoter {
         });
 
         // compute the threshold balance
-        // rebalance is triggered if  idleBalance / thresholdBalance >= 1 / rebalanceThreshold
-        thresholdBalance = totalLiquidity.fullMulX96(willRebalanceToken0 ? totalDensity0X96 : totalDensity1X96);
+        // rebalance is triggered if idleBalance >= thresholdBalance
+        thresholdBalance =
+            totalLiquidity.fullMulX96(willRebalanceToken0 ? totalDensity0X96 : totalDensity1X96) / rebalanceThreshold;
+        shouldRebalance = idleBalance != 0 && idleBalance >= thresholdBalance;
+
+        // Let x be the idle balance, d be the input amount, and y be the output amount.
+        // We want the resulting ratio (x - d) / y = r = totalDensityX / totalDensityY.
+        // Given the price of the output token in terms of the input token, p, we have the following relationship:
+        // (x - d) / (d / p) = r
+        // => d = px / (p + r), y = d/p = x / (p + r)
+        uint256 p; // price of output token in terms of the input token
+        uint256 r; // desired ratio of the resulting input token amount to the output token amount
+        if (willRebalanceToken0) {
+            // zero for one
+            uint256 rebalanceSpotPriceInvSqrtRatioX96 = TickMath.getSqrtPriceAtTick(-arithmeticMeanTick);
+            p = rebalanceSpotPriceInvSqrtRatioX96.fullMulX96(rebalanceSpotPriceInvSqrtRatioX96);
+            r = totalDensity0X96.fullMulDiv(Q96, totalDensity1X96);
+        } else {
+            // one for zero
+            p = rebalanceSpotPriceSqrtRatioX96.fullMulX96(rebalanceSpotPriceSqrtRatioX96);
+            r = totalDensity1X96.fullMulDiv(Q96, totalDensity0X96);
+        }
+
+        // apply slippage to price
+        // normally slippage is applied to the price of the input token in terms of the output token, but here we use the inverse
+        // so p := p / (1 - slippage)
+        p = p.mulDiv(REBALANCE_MAX_SLIPPAGE_BASE, REBALANCE_MAX_SLIPPAGE_BASE - rebalanceMaxSlippage);
+
+        // determine input & output
+        inputAmount = idleBalance.mulDiv(p, p + r);
+        outputAmount = idleBalance.mulDivUp(Q96, p + r);
     }
 
     /// -----------------------------------------------------------------------

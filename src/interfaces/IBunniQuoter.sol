@@ -38,7 +38,9 @@ interface IBunniQuoter {
             uint256 totalLiquidity,
             uint256 idleBalance,
             bool willRebalanceToken0,
+            bool shouldRebalance,
             uint256 thresholdBalance,
-            uint256 excessLiquidity
+            uint256 inputAmount,
+            uint256 outputAmount
         );
 }
