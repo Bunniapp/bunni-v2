@@ -24,6 +24,10 @@ library BunniSwapMath {
     using SafeCastLib for uint256;
     using FixedPointMathLib for uint256;
 
+    /// @dev An infinitesimal fee rate is applied to naive swaps to protect against exact input vs exact output rate mismatches when swap amounts/liquidity are small.
+    /// The current value corresponds to 0.001%.
+    uint24 private constant EPSILON_FEE = 1e1;
+
     struct BunniComputeSwapInput {
         PoolKey key;
         uint256 totalLiquidity;
@@ -92,7 +96,8 @@ library BunniSwapMath {
                         sqrtPriceCurrentX96: input.sqrtPriceX96,
                         sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(zeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96),
                         liquidity: updatedRoundedTickLiquidity,
-                        amountRemaining: input.swapParams.amountSpecified
+                        amountRemaining: input.swapParams.amountSpecified,
+                        feePips: EPSILON_FEE
                     });
 
                     // check if naive swap exhausted the specified amount
@@ -243,7 +248,8 @@ library BunniSwapMath {
                             sqrtPriceCurrentX96: startSqrtPriceX96,
                             sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(zeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96),
                             liquidity: swapLiquidity,
-                            amountRemaining: amountSpecifiedRemaining
+                            amountRemaining: amountSpecifiedRemaining,
+                            feePips: EPSILON_FEE
                         });
                         if (naiveSwapResultSqrtPriceX96 == sqrtPriceLimitX96 && sqrtPriceLimitX96 != sqrtPriceNextX96) {
                             // give up if the swap hits the sqrt price limit

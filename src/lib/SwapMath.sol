@@ -3,11 +3,18 @@ pragma solidity ^0.8.20;
 
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
+
 import {SqrtPriceMath} from "./SqrtPriceMath.sol";
 
 /// @title Computes the result of a swap within ticks
 /// @notice Contains methods for computing the result of a swap within a single tick price range, i.e., a single tick.
 library SwapMath {
+    uint24 internal constant MAX_SWAP_FEE = 1e6;
+
+    /// @dev A minimum fee amount is applied to protect against exact input vs exact output rate mismatches when swap amounts/liquidity are small.
+    uint256 internal constant MIN_FEE_AMOUNT = 1e3;
+
     /// @notice Computes the sqrt price target for the next swap step
     /// @param zeroForOne The direction of the swap, true for currency0 to currency1, false for currency1 to currency0
     /// @param sqrtPriceNextX96 The Q64.96 sqrt price for the next initialized tick
@@ -39,33 +46,48 @@ library SwapMath {
     /// @param sqrtPriceTargetX96 The price that cannot be exceeded, from which the direction of the swap is inferred
     /// @param liquidity The usable liquidity
     /// @param amountRemaining How much input or output amount is remaining to be swapped in/out
+    /// @param feePips The fee taken from the input amount, expressed in hundredths of a bip
     /// @return sqrtPriceNextX96 The price after swapping the amount in/out, not to exceed the price target
     /// @return amountIn The amount to be swapped in, of either currency0 or currency1, based on the direction of the swap
     /// @return amountOut The amount to be received, of either currency0 or currency1, based on the direction of the swap
+    /// @dev feePips must be no larger than MAX_SWAP_FEE for this function. We ensure that before setting a fee using LPFeeLibrary.isValid.
     function computeSwapStep(
         uint160 sqrtPriceCurrentX96,
         uint160 sqrtPriceTargetX96,
         uint256 liquidity,
-        int256 amountRemaining
+        int256 amountRemaining,
+        uint24 feePips
     ) internal pure returns (uint160 sqrtPriceNextX96, uint256 amountIn, uint256 amountOut) {
         unchecked {
+            uint256 _feePips = feePips; // upcast once and cache
             bool zeroForOne = sqrtPriceCurrentX96 >= sqrtPriceTargetX96;
             bool exactIn = amountRemaining < 0;
+            uint256 feeAmount;
 
             if (exactIn) {
-                uint256 amountRemainingAbs = uint256(-amountRemaining);
+                uint256 amountRemainingLessFee = FixedPointMathLib.min(
+                    FullMath.mulDiv(uint256(-amountRemaining), MAX_SWAP_FEE - _feePips, MAX_SWAP_FEE),
+                    uint256(-amountRemaining) - MIN_FEE_AMOUNT
+                );
                 amountIn = zeroForOne
                     ? SqrtPriceMath.getAmount0Delta(sqrtPriceTargetX96, sqrtPriceCurrentX96, liquidity, true)
                     : SqrtPriceMath.getAmount1Delta(sqrtPriceCurrentX96, sqrtPriceTargetX96, liquidity, true);
-                if (amountRemainingAbs >= amountIn) {
+                if (amountRemainingLessFee >= amountIn) {
                     // `amountIn` is capped by the target price
                     sqrtPriceNextX96 = sqrtPriceTargetX96;
+                    feeAmount = _feePips == MAX_SWAP_FEE
+                        ? amountIn // amountIn is always 0 here, as amountRemainingLessFee == 0 and amountRemainingLessFee >= amountIn
+                        : FixedPointMathLib.max(
+                            FullMath.mulDivRoundingUp(amountIn, _feePips, MAX_SWAP_FEE - _feePips), MIN_FEE_AMOUNT
+                        );
                 } else {
                     // exhaust the remaining amount
-                    amountIn = amountRemainingAbs;
+                    amountIn = amountRemainingLessFee;
                     sqrtPriceNextX96 = SqrtPriceMath.getNextSqrtPriceFromInput(
-                        sqrtPriceCurrentX96, liquidity, amountRemainingAbs, zeroForOne
+                        sqrtPriceCurrentX96, liquidity, amountRemainingLessFee, zeroForOne
                     );
+                    // we didn't reach the target, so take the remainder of the maximum input as fee
+                    feeAmount = uint256(-amountRemaining) - amountIn;
                 }
                 amountOut = zeroForOne
                     ? SqrtPriceMath.getAmount1Delta(sqrtPriceNextX96, sqrtPriceCurrentX96, liquidity, false)
@@ -86,7 +108,13 @@ library SwapMath {
                 amountIn = zeroForOne
                     ? SqrtPriceMath.getAmount0Delta(sqrtPriceNextX96, sqrtPriceCurrentX96, liquidity, true)
                     : SqrtPriceMath.getAmount1Delta(sqrtPriceCurrentX96, sqrtPriceNextX96, liquidity, true);
+                // `feePips` cannot be `MAX_SWAP_FEE` for exact out
+                feeAmount = FixedPointMathLib.max(
+                    FullMath.mulDivRoundingUp(amountIn, _feePips, MAX_SWAP_FEE - _feePips), MIN_FEE_AMOUNT
+                );
             }
+
+            amountIn += feeAmount;
         }
     }
 }

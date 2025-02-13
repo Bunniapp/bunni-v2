@@ -89,6 +89,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// @notice The FloodZone contract used in rebalance orders.
     IZone internal floodZone;
 
+    /// @dev canWithdraw() returns false when a rebalance order is active. If rebalance orders don't get filled, withdrawals
+    /// will continue to be blocked until the rebalance order is fulfilled since there is order resubmission. This allows
+    /// the hook owner to manually unblock withdrawals for a pool.
+    mapping(PoolId => bool) internal withdrawalUnblocked;
+
     /// -----------------------------------------------------------------------
     /// Constructor
     /// -----------------------------------------------------------------------
@@ -309,6 +314,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         emit SetModifiers(newHookFeeModifier, newReferralRewardModifier);
     }
 
+    /// @inheritdoc IBunniHook
+    function setWithdrawalUnblocked(PoolId id, bool unblocked) external onlyOwner {
+        withdrawalUnblocked[id] = unblocked;
+        emit SetWithdrawalUnblocked(id, unblocked);
+    }
+
     /// -----------------------------------------------------------------------
     /// View functions
     /// -----------------------------------------------------------------------
@@ -375,7 +386,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     /// @inheritdoc IBunniHook
     function canWithdraw(PoolId id) external view returns (bool) {
-        return block.timestamp > s.rebalanceOrderDeadline[id];
+        return block.timestamp > s.rebalanceOrderDeadline[id] || withdrawalUnblocked[id];
     }
 
     /// @inheritdoc IBunniHook

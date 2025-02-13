@@ -57,6 +57,7 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     event SetZone(IZone zone);
     event SetHookFeeRecipient(address hookFeeRecipient);
     event SetModifiers(uint32 indexed hookFeeModifier, uint32 indexed referrerRewardModifier);
+    event SetWithdrawalUnblocked(PoolId indexed id, bool unblocked);
     event ClaimProtocolFees(Currency[] currencyList, address indexed recipient);
 
     /// -----------------------------------------------------------------------
@@ -223,6 +224,11 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm {
     /// @param newHookFeeModifier The new hook fee modifier. 6 decimals.
     /// @param newReferralRewardModifier The new referral reward modifier. 6 decimals.
     function setModifiers(uint32 newHookFeeModifier, uint32 newReferralRewardModifier) external;
+
+    /// @notice Set whether withdrawals are unblocked for the given pool. Only callable by the owner.
+    /// @param id The pool id
+    /// @param unblocked Whether withdrawals are unblocked for the given pool when a rebalance order is active
+    function setWithdrawalUnblocked(PoolId id, bool unblocked) external;
 
     /// -----------------------------------------------------------------------
     /// Rebalance functions

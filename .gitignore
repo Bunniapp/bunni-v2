@@ -13,3 +13,5 @@ out/
 .vscode
 medusa/
 crytic-export/
+
+*.log

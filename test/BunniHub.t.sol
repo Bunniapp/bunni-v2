@@ -397,7 +397,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         ldf_.setMinTick(-20);
 
         // make small swap to trigger rebalance
-        uint256 swapAmount = 1e3;
+        uint256 swapAmount = 1e6;
         _mint(key.currency0, address(this), swapAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -419,6 +419,15 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         vm.startPrank(address(0x6969));
         vm.expectRevert(BunniHub__WithdrawalPaused.selector);
         hub.withdraw(withdrawParams);
+        vm.stopPrank();
+
+        // unblock withdrawals
+        bunniHook.setWithdrawalUnblocked(key.toId(), true);
+
+        // try withdrawing again
+        vm.startPrank(address(0x6969));
+        hub.withdraw(withdrawParams);
+        assertEq(bunniToken.balanceOf(address(0x6969)), 0, "didn't withdraw");
         vm.stopPrank();
     }
 
@@ -1871,7 +1880,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         uint24 feeQuadraticMultiplier,
         bool zeroForOne
     ) external {
-        swapAmount = bound(swapAmount, 1e3, 1e6);
+        swapAmount = bound(swapAmount, 1e6, 1e9);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
@@ -2032,7 +2041,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         uint24 feeQuadraticMultiplier,
         bool zeroForOne
     ) external {
-        swapAmount = bound(swapAmount, 1e3, 1e6);
+        swapAmount = bound(swapAmount, 1e6, 1e9);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
         feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
         alpha = uint32(bound(alpha, 1e3, 12e8));
@@ -2605,7 +2614,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         ldf_.setMinTick(-20);
 
         // make swap to update state
-        uint256 swapAmount = 1e3;
+        uint256 swapAmount = 1e6;
         _mint(key.currency0, address(this), swapAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -2633,7 +2642,7 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
         ldf_.setMinTick(-20);
 
         // make swap to trigger rebalance
-        uint256 swapAmount = 1e3;
+        uint256 swapAmount = 1e6;
         _mint(key.currency0, address(this), swapAmount);
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,

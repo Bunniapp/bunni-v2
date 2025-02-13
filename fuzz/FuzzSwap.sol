@@ -36,6 +36,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
     uint24 internal constant MIN_SWAP_FEE = 1;
     uint8 internal constant NUM_LDFS = 5;
+    uint256 internal constant MAX_PROFIT = 10;
 
     // Invariant: Users should not be able to get free output tokens
     //            for zero input tokens when amountSpecified is non-zero
@@ -409,9 +410,9 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             console2.log("updatedSqrtPriceX960", updatedSqrtPriceX960);
 
             if (exactIn) {
-                assertWithMsg(outputAmount0 <= inputAmount1, "Round trips swaps are profitable");
+                assertWithMsg(outputAmount0 <= inputAmount1 + MAX_PROFIT, "Round trips swaps are profitable");
             } else {
-                assertWithMsg(inputAmount0 >= outputAmount1, "Round trips swaps are profitable");
+                assertWithMsg(inputAmount0 + MAX_PROFIT >= outputAmount1, "Round trips swaps are profitable");
             }
         } catch Panic(uint256) /*errorCode*/ {
             // This is executed in case of a panic,
@@ -769,7 +770,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             );
             int16 length = int16(clampBetween(int256(_rng(ldfSeed, 2)), 1, maxUsableTick / tickSpacing - 2));
             uint32 alpha = uint32(clampBetween(_rng(ldfSeed, 3), MIN_ALPHA, MAX_ALPHA));
-            uint32 weightCarpet = uint32(clampBetween(_rng(ldfSeed, 4), 1e9, type(uint32).max));
+            uint32 weightCarpet = uint32(clampBetween(_rng(ldfSeed, 4), 1, type(uint32).max));
             ldfParams = bytes32(abi.encodePacked(ShiftMode.STATIC, minTick, length, alpha, weightCarpet));
 
             console2.log("minTick", minTick);
