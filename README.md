@@ -80,7 +80,7 @@ The Create3 salts for the following contracts are required in the `.env` file:
 FOUNDRY_PROFILE=gas forge script script/DeployLibraries.s.sol -f [network]
 FOUNDRY_PROFILE=gas forge script script/DeployLDFs.s.sol -f [network]
 forge script script/DeployCore.s.sol -f [network] --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress]
-forge script script/DeployBunniQuoter.s.sol -f [network]
+forge script script/DeployBunniQuoter.s.sol -f [network] --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress] --libraries src/lib/BunniHookLogic.sol:BunniHookLogic:[hookLogicLibAddress]
 ```
 
 ### Live
@@ -89,5 +89,5 @@ forge script script/DeployBunniQuoter.s.sol -f [network]
 FOUNDRY_PROFILE=gas forge script script/DeployLibraries.s.sol -f [network] --verify --broadcast --slow
 FOUNDRY_PROFILE=gas forge script script/DeployLDFs.s.sol -f [network] --verify --broadcast --slow
 forge script script/DeployCore.s.sol -f [network] --verify --broadcast --slow --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress]
-forge script script/DeployBunniQuoter.s.sol -f [network] --verify --broadcast --slow
+forge script script/DeployBunniQuoter.s.sol -f [network] --verify --broadcast --slow --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress] --libraries src/lib/BunniHookLogic.sol:BunniHookLogic:[hookLogicLibAddress]
 ```
