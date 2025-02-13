@@ -5,6 +5,7 @@ import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
+import {subReLU} from "./Math.sol";
 import {SqrtPriceMath} from "./SqrtPriceMath.sol";
 
 /// @title Computes the result of a swap within ticks
@@ -58,16 +59,17 @@ library SwapMath {
         int256 amountRemaining,
         uint24 feePips
     ) internal pure returns (uint160 sqrtPriceNextX96, uint256 amountIn, uint256 amountOut) {
+        bool exactIn = amountRemaining < 0;
+        uint256 feeAmount;
+
         unchecked {
             uint256 _feePips = feePips; // upcast once and cache
             bool zeroForOne = sqrtPriceCurrentX96 >= sqrtPriceTargetX96;
-            bool exactIn = amountRemaining < 0;
-            uint256 feeAmount;
 
             if (exactIn) {
                 uint256 amountRemainingLessFee = FixedPointMathLib.min(
                     FullMath.mulDiv(uint256(-amountRemaining), MAX_SWAP_FEE - _feePips, MAX_SWAP_FEE),
-                    uint256(-amountRemaining) - MIN_FEE_AMOUNT
+                    subReLU(uint256(-amountRemaining), MIN_FEE_AMOUNT)
                 );
                 amountIn = zeroForOne
                     ? SqrtPriceMath.getAmount0Delta(sqrtPriceTargetX96, sqrtPriceCurrentX96, liquidity, true)
@@ -87,7 +89,7 @@ library SwapMath {
                         sqrtPriceCurrentX96, liquidity, amountRemainingLessFee, zeroForOne
                     );
                     // we didn't reach the target, so take the remainder of the maximum input as fee
-                    feeAmount = uint256(-amountRemaining) - amountIn;
+                    feeAmount = FixedPointMathLib.max(uint256(-amountRemaining) - amountIn, MIN_FEE_AMOUNT);
                 }
                 amountOut = zeroForOne
                     ? SqrtPriceMath.getAmount1Delta(sqrtPriceNextX96, sqrtPriceCurrentX96, liquidity, false)
@@ -113,8 +115,11 @@ library SwapMath {
                     FullMath.mulDivRoundingUp(amountIn, _feePips, MAX_SWAP_FEE - _feePips), MIN_FEE_AMOUNT
                 );
             }
-
-            amountIn += feeAmount;
         }
+
+        // add fee back into amountIn
+        // ensure that amountIn <= |amountRemaining| if exactIn
+        if (exactIn) amountIn = FixedPointMathLib.min(amountIn + feeAmount, uint256(-amountRemaining));
+        else amountIn += feeAmount;
     }
 }

@@ -97,7 +97,7 @@ library BunniSwapMath {
                         sqrtPriceTargetX96: SwapMath.getSqrtPriceTarget(zeroForOne, sqrtPriceNextX96, sqrtPriceLimitX96),
                         liquidity: updatedRoundedTickLiquidity,
                         amountRemaining: input.swapParams.amountSpecified,
-                        feePips: EPSILON_FEE
+                        feePips: 0
                     });
 
                     // check if naive swap exhausted the specified amount

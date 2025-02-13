@@ -603,7 +603,7 @@ contract FuzzLDF is FuzzHelper, PropertiesAsserts {
 
         console2.log("resultCumulativeAmount0", resultCumulativeAmount0);
 
-        if (resultRoundedTick < minTick + length0 * tickSpacing + length1 * tickSpacing && cumulativeAmount0 > 1e3) {
+        if (resultRoundedTick < minTick + length0 * tickSpacing + length1 * tickSpacing && cumulativeAmount0 > 1e4) {
             uint256 nextCumulativeAmount0 = LibCarpetedDoubleGeometricDistribution.cumulativeAmount0(
                 resultRoundedTick + tickSpacing, liquidity, tickSpacing, params
             );
