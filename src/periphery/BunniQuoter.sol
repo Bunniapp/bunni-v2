@@ -404,6 +404,42 @@ contract BunniQuoter is IBunniQuoter {
     }
 
     /// @inheritdoc IBunniQuoter
+    function getTotalLiquidity(PoolKey calldata key) external view returns (uint256 totalLiquidity) {
+        PoolId id = key.toId();
+        IBunniHook hook = IBunniHook(address(key.hooks));
+
+        // load fresh state
+        PoolState memory bunniState = hub.poolState(id);
+        (uint160 updatedSqrtPriceX96, int24 updatedTick,,) = hook.slot0s(id);
+
+        int24 arithmeticMeanTick;
+        if (bunniState.twapSecondsAgo != 0) {
+            arithmeticMeanTick = _getTwap(key, bunniState.twapSecondsAgo);
+        }
+        bytes32 newLdfState = hook.ldfStates(id);
+
+        // get fresh token balances
+        (uint256 balance0, uint256 balance1) = (
+            bunniState.rawBalance0 + getReservesInUnderlying(bunniState.reserve0, bunniState.vault0),
+            bunniState.rawBalance1 + getReservesInUnderlying(bunniState.reserve1, bunniState.vault1)
+        );
+
+        // compute total liquidity
+        (totalLiquidity,,,,,,,) = queryLDF({
+            key: key,
+            sqrtPriceX96: updatedSqrtPriceX96,
+            tick: updatedTick,
+            arithmeticMeanTick: arithmeticMeanTick,
+            ldf: bunniState.liquidityDensityFunction,
+            ldfParams: bunniState.ldfParams,
+            ldfState: newLdfState,
+            balance0: balance0,
+            balance1: balance1,
+            idleBalance: bunniState.idleBalance
+        });
+    }
+
+    /// @inheritdoc IBunniQuoter
     function getExcessLiquidity(PoolKey calldata key)
         external
         view

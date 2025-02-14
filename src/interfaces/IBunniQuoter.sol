@@ -31,6 +31,8 @@ interface IBunniQuoter {
         view
         returns (bool success, uint256 amount0, uint256 amount1);
 
+    function getTotalLiquidity(PoolKey calldata key) external view returns (uint256 totalLiquidity);
+
     function getExcessLiquidity(PoolKey calldata key)
         external
         view

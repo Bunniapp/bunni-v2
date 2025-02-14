@@ -2020,8 +2020,9 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         {
             // verify excess liquidity after the rebalance
-            (,,, bool shouldRebalance,,,) = quoter.getExcessLiquidity(key);
+            (uint256 totalLiquidity,,, bool shouldRebalance,,,) = quoter.getExcessLiquidity(key);
             assertFalse(shouldRebalance, "shouldRebalance is still true after rebalance");
+            assertEq(totalLiquidity, quoter.getTotalLiquidity(key), "totalLiquidity incorrect");
         }
 
         // verify surge fee is applied
@@ -2183,8 +2184,9 @@ contract BunniHubTest is Test, Permit2Deployer, FloodDeployer {
 
         {
             // verify excess liquidity after the rebalance
-            (,,, bool shouldRebalance,,,) = quoter.getExcessLiquidity(key);
+            (uint256 totalLiquidity,,, bool shouldRebalance,,,) = quoter.getExcessLiquidity(key);
             assertFalse(shouldRebalance, "shouldRebalance is still true after rebalance");
+            assertEq(totalLiquidity, quoter.getTotalLiquidity(key), "totalLiquidity incorrect");
         }
 
         // verify surge fee is applied
