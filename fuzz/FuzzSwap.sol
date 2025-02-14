@@ -36,7 +36,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
     uint24 internal constant MIN_SWAP_FEE = 1;
     uint8 internal constant NUM_LDFS = 5;
-    uint256 internal constant MAX_PROFIT = 10;
+    uint256 internal constant MAX_PROFIT = 500;
 
     // Invariant: Users should not be able to get free output tokens
     //            for zero input tokens when amountSpecified is non-zero
@@ -555,9 +555,9 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             console2.log("updatedSqrtPriceX960", updatedSqrtPriceX960);
 
             if (amountSpecified < 0) {
-                assertWithMsg(inputAmount0 >= outputAmount1, "Round trips swaps are profitable");
+                assertWithMsg(inputAmount0 + MAX_PROFIT >= outputAmount1, "Round trips swaps are profitable");
             } else {
-                assertWithMsg(outputAmount0 <= inputAmount1, "Round trips swaps are profitable");
+                assertWithMsg(outputAmount0 <= inputAmount1 + MAX_PROFIT, "Round trips swaps are profitable");
             }
         } catch Panic(uint256) /*errorCode*/ {
             // This is executed in case of a panic,

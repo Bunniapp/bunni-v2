@@ -25,8 +25,8 @@ library BunniSwapMath {
     using FixedPointMathLib for uint256;
 
     /// @dev An infinitesimal fee rate is applied to naive swaps to protect against exact input vs exact output rate mismatches when swap amounts/liquidity are small.
-    /// The current value corresponds to 0.001%.
-    uint24 private constant EPSILON_FEE = 1e1;
+    /// The current value corresponds to 0.003%.
+    uint24 private constant EPSILON_FEE = 30;
 
     struct BunniComputeSwapInput {
         PoolKey key;
