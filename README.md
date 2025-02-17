@@ -69,10 +69,18 @@ Please create a `.env` file before deployment. An example can be found in `.env.
 
 The Create3 salts for the following contracts are required in the `.env` file:
 
+- `BunniSwapMath`
+- `RebalanceLogic`
 - `BunniHub`
-- `BunniZone`
 - `BunniHook`
+- `BunniZone`
 - `BunniQuoter`
+- `GeometricDistribution`
+- `DoubleGeometricDistribution`
+- `CarpetedGeometricDistribution`
+- `CarpetedDoubleGeometricDistribution`
+- `UniformDistribution`
+- `BuyTheDipGeometricDistribution`
 
 #### Dryrun
 
