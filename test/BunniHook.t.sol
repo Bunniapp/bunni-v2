@@ -1040,7 +1040,8 @@ contract BunniHookTest is BaseTest {
         uint24 feeMin,
         uint24 feeMax,
         uint24 feeQuadraticMultiplier,
-        bool zeroForOne
+        bool zeroForOne,
+        bool useETH
     ) external {
         swapAmount = bound(swapAmount, 1e6, 1e9);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
@@ -1056,9 +1057,9 @@ contract BunniHookTest is BaseTest {
         }
         ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            Currency.wrap(address(token0)),
+            useETH ? CurrencyLibrary.ADDRESS_ZERO : Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
-            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault0 ? (useETH ? vaultWeth : vault0) : ERC4626(address(0)),
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
@@ -1088,8 +1089,10 @@ contract BunniHookTest is BaseTest {
         ldf_.setMinTick(zeroForOne ? -40 : -20);
 
         // Define currencyIn and currencyOut based on direction
-        Currency currencyIn = zeroForOne ? key.currency0 : key.currency1;
-        Currency currencyOut = zeroForOne ? key.currency1 : key.currency0;
+        Currency currencyIn = zeroForOne ? (useETH ? Currency.wrap(address(weth)) : key.currency0) : key.currency1;
+        Currency currencyOut = zeroForOne ? key.currency1 : (useETH ? Currency.wrap(address(weth)) : key.currency0);
+        Currency currencyInRaw = zeroForOne ? key.currency0 : key.currency1;
+        Currency currencyOutRaw = zeroForOne ? key.currency1 : key.currency0;
 
         // make small swap to trigger rebalance
         _mint(key.currency0, address(this), swapAmount);
@@ -1099,7 +1102,7 @@ contract BunniHookTest is BaseTest {
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
         vm.recordLogs();
-        _swap(key, params, 0, "");
+        _swap(key, params, useETH ? swapAmount : 0, "");
 
         // validate etched order
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -1128,8 +1131,8 @@ contract BunniHookTest is BaseTest {
         assertEq(order.preHooks[0].target, address(bunniHook), "preHook target not bunniHook");
         IBunniHook.RebalanceOrderHookArgs memory expectedHookArgs = IBunniHook.RebalanceOrderHookArgs({
             key: key,
-            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: currencyIn, amount: order.offer[0].amount}),
-            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: currencyOut})
+            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: currencyInRaw, amount: order.offer[0].amount}),
+            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: currencyOutRaw})
         });
         assertEq(
             order.preHooks[0].data,
@@ -1202,7 +1205,8 @@ contract BunniHookTest is BaseTest {
         uint24 feeMin,
         uint24 feeMax,
         uint24 feeQuadraticMultiplier,
-        bool zeroForOne
+        bool zeroForOne,
+        bool useETH
     ) external {
         swapAmount = bound(swapAmount, 1e6, 1e9);
         feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
@@ -1220,9 +1224,9 @@ contract BunniHookTest is BaseTest {
         }
         ldf_.setMinTick(-30); // minTick of MockLDFs need initialization
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            Currency.wrap(address(token0)),
+            useETH ? CurrencyLibrary.ADDRESS_ZERO : Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
-            useVault0 ? vault0 : ERC4626(address(0)),
+            useVault0 ? (useETH ? vaultWeth : vault0) : ERC4626(address(0)),
             useVault1 ? vault1 : ERC4626(address(0)),
             ldf_,
             ldfParams,
@@ -1252,8 +1256,10 @@ contract BunniHookTest is BaseTest {
         ldf_.setMinTick(zeroForOne ? -40 : -20);
 
         // Define currencyIn and currencyOut based on direction
-        Currency currencyIn = zeroForOne ? key.currency0 : key.currency1;
-        Currency currencyOut = zeroForOne ? key.currency1 : key.currency0;
+        Currency currencyIn = zeroForOne ? (useETH ? Currency.wrap(address(weth)) : key.currency0) : key.currency1;
+        Currency currencyOut = zeroForOne ? key.currency1 : (useETH ? Currency.wrap(address(weth)) : key.currency0);
+        Currency currencyInRaw = zeroForOne ? key.currency0 : key.currency1;
+        Currency currencyOutRaw = zeroForOne ? key.currency1 : key.currency0;
 
         // make small swap to trigger rebalance
         _mint(key.currency0, address(this), swapAmount);
@@ -1263,7 +1269,7 @@ contract BunniHookTest is BaseTest {
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
         vm.recordLogs();
-        _swap(key, params, 0, "");
+        _swap(key, params, useETH ? swapAmount : 0, "");
 
         // validate etched order
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -1292,8 +1298,8 @@ contract BunniHookTest is BaseTest {
         assertEq(order.preHooks[0].target, address(bunniHook), "preHook target not bunniHook");
         IBunniHook.RebalanceOrderHookArgs memory expectedHookArgs = IBunniHook.RebalanceOrderHookArgs({
             key: key,
-            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: currencyIn, amount: order.offer[0].amount}),
-            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: currencyOut})
+            preHookArgs: IBunniHook.RebalanceOrderPreHookArgs({currency: currencyInRaw, amount: order.offer[0].amount}),
+            postHookArgs: IBunniHook.RebalanceOrderPostHookArgs({currency: currencyOutRaw})
         });
         assertEq(
             order.preHooks[0].data,
