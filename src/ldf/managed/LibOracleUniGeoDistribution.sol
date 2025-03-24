@@ -18,8 +18,6 @@ library LibOracleUniGeoDistribution {
         GEOMETRIC
     }
 
-    uint256 internal constant MIN_ALPHA = 1e3;
-    uint256 internal constant MAX_ALPHA = 12e8;
     uint256 internal constant ALPHA_BASE = 1e8; // alpha uses 8 decimals in ldfParams
 
     /// @dev Queries the liquidity density and the cumulative amounts at the given rounded tick.
@@ -446,10 +444,13 @@ library LibOracleUniGeoDistribution {
         // - uniform LDF params are valid
         // - shiftMode is static
         // - distributionType is valid
+        // - oracleTickOffset is aligned to tickSpacing
+        // - nonOracleTick is aligned to tickSpacing
         return LibGeometricDistribution.isValidParams(tickSpacing, 0, geometricLdfParams)
             && tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower >= minUsableTick
             && tickUpper <= maxUsableTick && shiftMode == uint8(ShiftMode.STATIC)
-            && distributionType <= uint8(type(DistributionType).max);
+            && distributionType <= uint8(type(DistributionType).max) && oracleTickOffset % tickSpacing == 0
+            && nonOracleTick % tickSpacing == 0;
     }
 
     /// @return tickLower The lower tick of the distribution

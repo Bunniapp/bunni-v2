@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.19;
 
-import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {PoolKey} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 import {Ownable} from "solady/auth/Ownable.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
-import {roundTickSingle} from "../../lib/Math.sol";
 import {IOracle} from "./IOracle.sol";
+import {ShiftMode} from "../ShiftMode.sol";
+import {WAD} from "../../base/Constants.sol";
 import {Guarded} from "../../base/Guarded.sol";
+import {roundTickSingle} from "../../lib/Math.sol";
 import {LibOracleUniGeoDistribution} from "./LibOracleUniGeoDistribution.sol";
 import {ILiquidityDensityFunction} from "../../interfaces/ILiquidityDensityFunction.sol";
 
@@ -20,19 +25,41 @@ import {ILiquidityDensityFunction} from "../../interfaces/ILiquidityDensityFunct
 /// The alpha of the geometric distribution can also be set by the owner.
 contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable {
     using TickMath for *;
+    using SafeCastLib for *;
+    using FixedPointMathLib for *;
     using PoolIdLibrary for PoolKey;
-
-    uint256 internal constant INITIALIZED_STATE = 1 << 248;
 
     IOracle public immutable oracle;
 
-    mapping(PoolId => uint256) public lastParamUpdateBlockOfPool;
+    bool public immutable bondLtStablecoin;
+    Currency public immutable bond;
+    Currency public immutable stablecoin;
 
-    constructor(address hub_, address hook_, address quoter_, address initialOwner_, IOracle oracle_)
-        Guarded(hub_, hook_, quoter_)
-    {
+    struct LdfParamsOverride {
+        bool overridden;
+        bytes12 ldfParams;
+    }
+
+    mapping(PoolId => LdfParamsOverride) public ldfParamsOverride;
+
+    event SetLdfParamsOverride(PoolId indexed id, bytes32 indexed ldfParams);
+
+    error InvalidLdfParams();
+
+    constructor(
+        address hub_,
+        address hook_,
+        address quoter_,
+        address initialOwner_,
+        IOracle oracle_,
+        Currency bond_,
+        Currency stablecoin_
+    ) Guarded(hub_, hook_, quoter_) {
         _initializeOwner(initialOwner_);
         oracle = oracle_;
+        bond = bond_;
+        stablecoin = stablecoin_;
+        bondLtStablecoin = bond_ < stablecoin_;
     }
 
     /// @inheritdoc ILiquidityDensityFunction
@@ -56,6 +83,14 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
             bool shouldSurge
         )
     {
+        // override ldf params if needed
+        PoolId id = key.toId();
+        LdfParamsOverride memory ldfParamsOverride_ = ldfParamsOverride[id];
+        if (ldfParamsOverride_.overridden) {
+            ldfParams = bytes32(ldfParamsOverride_.ldfParams);
+        }
+
+        // decode ldf params and check surge
         int24 oracleRick = floorPriceToRick(oracle.getFloorPrice(), key.tickSpacing);
         (
             int24 tickLower,
@@ -67,14 +102,13 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
             oracleTick: oracleRick,
             tickSpacing: key.tickSpacing
         });
-        (bool initialized, int24 lastOracleRick, uint256 lastParamUpdateBlock) = _decodeState(ldfState);
-        uint256 newLastParamUpdateBlock = 0; // init to 0 if uninitialized since lastParamUpdateBlockOfPool would be 0
+        (bool initialized, int24 lastOracleRick, bytes32 lastLdfParams) = _decodeState(ldfState);
         if (initialized) {
             // should surge if param was updated or oracle rick has updated
-            newLastParamUpdateBlock = lastParamUpdateBlockOfPool[key.toId()];
-            shouldSurge = lastParamUpdateBlock != newLastParamUpdateBlock || oracleRick != lastOracleRick;
+            shouldSurge = lastLdfParams != ldfParams || oracleRick != lastOracleRick;
         }
 
+        // compute results
         (liquidityDensityX96_, cumulativeAmount0DensityX96, cumulativeAmount1DensityX96) = LibOracleUniGeoDistribution
             .query({
             roundedTick: roundedTick,
@@ -84,7 +118,9 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
             alphaX96: alphaX96,
             distributionType: distributionType
         });
-        newLdfState = _encodeState(oracleRick, newLastParamUpdateBlock);
+
+        // update ldf state
+        newLdfState = _encodeState(oracleRick, ldfParams);
     }
 
     /// @inheritdoc ILiquidityDensityFunction
@@ -94,7 +130,7 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
         uint256 totalLiquidity,
         bool zeroForOne,
         bool exactIn,
-        int24 twapTick,
+        int24, /* twapTick */
         int24, /* spotPriceTick */
         bytes32 ldfParams,
         bytes32 /* ldfState */
@@ -111,6 +147,14 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
             uint256 swapLiquidity
         )
     {
+        // override ldf params if needed
+        PoolId id = key.toId();
+        LdfParamsOverride memory ldfParamsOverride_ = ldfParamsOverride[id];
+        if (ldfParamsOverride_.overridden) {
+            ldfParams = bytes32(ldfParamsOverride_.ldfParams);
+        }
+
+        // decode ldf params
         int24 oracleRick = floorPriceToRick(oracle.getFloorPrice(), key.tickSpacing);
         (
             int24 tickLower,
@@ -146,6 +190,14 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
         bytes32 ldfParams,
         bytes32 /* ldfState */
     ) external view override guarded returns (uint256) {
+        // override ldf params if needed
+        PoolId id = key.toId();
+        LdfParamsOverride memory ldfParamsOverride_ = ldfParamsOverride[id];
+        if (ldfParamsOverride_.overridden) {
+            ldfParams = bytes32(ldfParamsOverride_.ldfParams);
+        }
+
+        // decode ldf params
         int24 oracleRick = floorPriceToRick(oracle.getFloorPrice(), key.tickSpacing);
         (
             int24 tickLower,
@@ -179,6 +231,14 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
         bytes32 ldfParams,
         bytes32 /* ldfState */
     ) external view override guarded returns (uint256) {
+        // override ldf params if needed
+        PoolId id = key.toId();
+        LdfParamsOverride memory ldfParamsOverride_ = ldfParamsOverride[id];
+        if (ldfParamsOverride_.overridden) {
+            ldfParams = bytes32(ldfParamsOverride_.ldfParams);
+        }
+
+        // decode ldf params
         int24 oracleRick = floorPriceToRick(oracle.getFloorPrice(), key.tickSpacing);
         (
             int24 tickLower,
@@ -203,60 +263,107 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
     }
 
     /// @inheritdoc ILiquidityDensityFunction
-    function isValidParams(PoolKey calldata key, uint24 twapSecondsAgo, bytes32 ldfParams)
+    function isValidParams(PoolKey calldata key, uint24, /* twapSecondsAgo */ bytes32 ldfParams)
         external
         view
         override
         returns (bool)
     {
+        // only allow the bond-stablecoin pairing
+        (Currency currency0, Currency currency1) = bond < stablecoin ? (bond, stablecoin) : (stablecoin, bond);
+
         return LibOracleUniGeoDistribution.isValidParams(
             key.tickSpacing, ldfParams, floorPriceToRick(oracle.getFloorPrice(), key.tickSpacing)
+        ) && key.currency0 == currency0 && key.currency1 == currency1;
+    }
+
+    /// @notice Sets the ldf params for the given pool. Only callable by the owner.
+    /// @param key The PoolKey of the Uniswap v4 pool
+    /// @param distributionType The distribution type, either UNIFORM or GEOMETRIC
+    /// @param oracleIsTickLower Whether the oracle tick is used to compute the lower bound of the distribution
+    /// @param oracleTickOffset The offset applied to the oracle tick to compute the lower bound of the distribution
+    /// @param nonOracleTick The non-oracle tick
+    /// @param alpha The alpha of the geometric distribution, scaled by 1e8
+    function setLdfParams(
+        PoolKey calldata key,
+        LibOracleUniGeoDistribution.DistributionType distributionType,
+        bool oracleIsTickLower,
+        int16 oracleTickOffset,
+        int24 nonOracleTick,
+        uint32 alpha
+    ) public {
+        // onlyOwner check is done in setLdfParams(PoolKey calldata key, bytes32 ldfParams)
+        setLdfParams(key, encodeLdfParams(distributionType, oracleIsTickLower, oracleTickOffset, nonOracleTick, alpha));
+    }
+
+    /// @notice Sets the ldf params for the given pool. Only callable by the owner.
+    /// @param key The PoolKey of the Uniswap v4 pool
+    /// @param ldfParams The ldf params
+    function setLdfParams(PoolKey calldata key, bytes32 ldfParams) public onlyOwner {
+        // ensure new params are valid
+        bool isValid = LibOracleUniGeoDistribution.isValidParams(
+            key.tickSpacing, ldfParams, floorPriceToRick(oracle.getFloorPrice(), key.tickSpacing)
+        );
+        if (!isValid) {
+            revert InvalidLdfParams();
+        }
+
+        // override ldf params
+        PoolId id = key.toId();
+        ldfParamsOverride[id] = LdfParamsOverride({overridden: true, ldfParams: bytes12(ldfParams)});
+        emit SetLdfParamsOverride(id, ldfParams);
+    }
+
+    /// @notice Encodes the ldf params using the given parameters.
+    /// @param distributionType The distribution type, either UNIFORM or GEOMETRIC
+    /// @param oracleIsTickLower Whether the oracle tick is used to compute the lower bound of the distribution
+    /// @param oracleTickOffset The offset applied to the oracle tick to compute the lower bound of the distribution
+    /// @param nonOracleTick The non-oracle tick
+    /// @param alpha The alpha of the geometric distribution, scaled by 1e8
+    /// @return ldfParams The encoded ldf params
+    function encodeLdfParams(
+        LibOracleUniGeoDistribution.DistributionType distributionType,
+        bool oracleIsTickLower,
+        int16 oracleTickOffset,
+        int24 nonOracleTick,
+        uint32 alpha
+    ) public pure returns (bytes32 ldfParams) {
+        return bytes32(
+            abi.encodePacked(
+                ShiftMode.STATIC, distributionType, oracleIsTickLower, oracleTickOffset, nonOracleTick, alpha
+            )
         );
     }
 
-    function setDistribution(PoolKey calldata key, LibOracleUniGeoDistribution.DistributionType distributionType)
-        external
-        onlyOwner
-    {
-        // TODO
-    }
-
-    function setAlpha(PoolKey calldata key, uint32 alpha) external onlyOwner {
-        // TODO
-    }
-
-    function setLdfParams(PoolKey calldata key, bytes32 ldfParams) external onlyOwner {
-        // TODO
-    }
-
-    function floorPriceToRick(uint256 floorPriceWad, int24 tickSpacing) public pure returns (int24 rick) {
+    /// @notice Computes the rick that the given floor price corresponds to.
+    /// @param floorPriceWad The price of the bond token in stablecoin terms, scaled by WAD (1e18)
+    /// @param tickSpacing The tick spacing of the Uniswap v4 pool
+    /// @return rick The rounded tick that the given floor price corresponds to
+    function floorPriceToRick(uint256 floorPriceWad, int24 tickSpacing) public view returns (int24 rick) {
         // convert floor price to sqrt price
-        uint160 sqrtPriceX96; // TODO
+        // assume bond is currency0, floor price's unit is (currency1 / currency0)
+        // unscale by WAD then rescale by 2**(96*2), then take the sqrt to get sqrt(floorPrice) * 2**96
+        uint160 sqrtPriceX96 = (floorPriceWad << 192 / WAD).sqrt().toUint160();
 
         // convert sqrt price to rick
-        rick = roundTickSingle(sqrtPriceX96.getTickAtSqrtPrice(), tickSpacing);
+        rick = sqrtPriceX96.getTickAtSqrtPrice();
+        rick = bondLtStablecoin ? rick : -rick; // need to invert the sqrt price if bond is currency1
+        rick = roundTickSingle(rick, tickSpacing);
     }
 
     function _decodeState(bytes32 ldfState)
         internal
         pure
-        returns (bool initialized, int24 lastOracleRick, uint256 lastParamUpdateBlock)
+        returns (bool initialized, int24 lastOracleRick, bytes32 lastLdfParams)
     {
-        // | initialized - 1 byte | lastOracleRick - 3 bytes | lastParamUpdateBlock - 28 bytes |
-        initialized = uint8(bytes1(ldfState)) == 1;
+        // | initialized - 1 byte | lastOracleRick - 3 bytes | lastLdfParams - 12 bytes |
+        initialized = uint8(bytes1(ldfState)) != 0;
         lastOracleRick = int24(uint24(bytes3(ldfState << 8)));
-        lastParamUpdateBlock = uint224(bytes28(ldfState << 32));
+        lastLdfParams = ldfState << 32;
     }
 
-    function _encodeState(int24 lastOracleRick, uint256 lastParamUpdateBlock)
-        internal
-        pure
-        returns (bytes32 ldfState)
-    {
-        // unsafe cast of lastParamUpdateBlock to uint224, we only use it for comparison so it's fine
-        // plus it will take millions of years to overflow
-        // | initialized - 1 byte | lastOracleRick - 3 bytes | lastParamUpdateBlock - 28 bytes |
-        ldfState =
-            bytes32(INITIALIZED_STATE + uint256(uint24(lastOracleRick)) << 224 + uint256(uint224(lastParamUpdateBlock)));
+    function _encodeState(int24 lastOracleRick, bytes32 lastLdfParams) internal pure returns (bytes32 ldfState) {
+        // | initialized - 1 byte | lastOracleRick - 3 bytes | lastLdfParams - 12 bytes |
+        ldfState = bytes32(abi.encodePacked(true, lastOracleRick, bytes12(lastLdfParams)));
     }
 }
