@@ -420,7 +420,7 @@ library LibOracleUniGeoDistribution {
         bool oracleIsTickLower = uint8(bytes1(ldfParams << 16)) != 0;
         int24 oracleTickOffset = int24(int16(uint16(bytes2(ldfParams << 24))));
         int24 nonOracleTick = int24(uint24(bytes3(ldfParams << 40)));
-        uint256 alpha = uint32(bytes4(ldfParams << 64));
+        uint32 alpha = uint32(bytes4(ldfParams << 64));
 
         oracleTick += oracleTickOffset; // apply offset to oracle tick
         (int24 tickLower, int24 tickUpper) =

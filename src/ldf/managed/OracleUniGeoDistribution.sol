@@ -66,8 +66,8 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
     function query(
         PoolKey calldata key,
         int24 roundedTick,
-        int24, /* twapTick */
-        int24, /* spotPriceTick */
+        int24 twapTick,
+        int24 spotPriceTick,
         bytes32 ldfParams,
         bytes32 ldfState
     )
@@ -264,7 +264,7 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
 
     /// @inheritdoc ILiquidityDensityFunction
     function isValidParams(PoolKey calldata key, uint24, /* twapSecondsAgo */ bytes32 ldfParams)
-        external
+        public
         view
         override
         returns (bool)
@@ -280,9 +280,9 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
     /// @notice Sets the ldf params for the given pool. Only callable by the owner.
     /// @param key The PoolKey of the Uniswap v4 pool
     /// @param distributionType The distribution type, either UNIFORM or GEOMETRIC
-    /// @param oracleIsTickLower Whether the oracle tick is used to compute the lower bound of the distribution
-    /// @param oracleTickOffset The offset applied to the oracle tick to compute the lower bound of the distribution
-    /// @param nonOracleTick The non-oracle tick
+    /// @param oracleIsTickLower Whether the oracle tick is used to compute the lower bound of the distribution (or the upper bound)
+    /// @param oracleTickOffset The offset applied to the oracle tick to compute the lower bound of the distribution (or the upper bound)
+    /// @param nonOracleTick The boundary tick that's not computed from the oracle tick, AKA the fixed boundary.
     /// @param alpha The alpha of the geometric distribution, scaled by 1e8
     function setLdfParams(
         PoolKey calldata key,
@@ -301,9 +301,7 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
     /// @param ldfParams The ldf params
     function setLdfParams(PoolKey calldata key, bytes32 ldfParams) public onlyOwner {
         // ensure new params are valid
-        bool isValid = LibOracleUniGeoDistribution.isValidParams(
-            key.tickSpacing, ldfParams, floorPriceToRick(oracle.getFloorPrice(), key.tickSpacing)
-        );
+        bool isValid = isValidParams(key, 0, ldfParams);
         if (!isValid) {
             revert InvalidLdfParams();
         }
@@ -343,7 +341,7 @@ contract OracleUniGeoDistribution is ILiquidityDensityFunction, Guarded, Ownable
         // convert floor price to sqrt price
         // assume bond is currency0, floor price's unit is (currency1 / currency0)
         // unscale by WAD then rescale by 2**(96*2), then take the sqrt to get sqrt(floorPrice) * 2**96
-        uint160 sqrtPriceX96 = (floorPriceWad << 192 / WAD).sqrt().toUint160();
+        uint160 sqrtPriceX96 = ((floorPriceWad << 192) / WAD).sqrt().toUint160();
 
         // convert sqrt price to rick
         rick = sqrtPriceX96.getTickAtSqrtPrice();
