@@ -29,7 +29,7 @@ import {IERC20} from "./interfaces/IERC20.sol";
 import {BunniHubLogic} from "./lib/BunniHubLogic.sol";
 import {IBunniHook} from "./interfaces/IBunniHook.sol";
 import {IBunniToken} from "./interfaces/IBunniToken.sol";
-import {ReentrancyGuard} from "./base/ReentrancyGuard.sol";
+import {PoolwiseReentrancyGuard} from "./base/PoolwiseReentrancyGuard.sol";
 import {PoolState, getPoolState, getPoolParams} from "./types/PoolState.sol";
 import {ExcessivelySafeTransfer2Lib} from "./lib/ExcessivelySafeTransfer2Lib.sol";
 
@@ -38,7 +38,7 @@ import {ExcessivelySafeTransfer2Lib} from "./lib/ExcessivelySafeTransfer2Lib.sol
 /// @notice The main contract LPs interact with. Each BunniKey corresponds to a BunniToken,
 /// which is the ERC20 LP token for the Uniswap V4 position specified by the BunniKey.
 /// Use deposit()/withdraw() to mint/burn LP tokens.
-contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
+contract BunniHub is IBunniHub, Ownable, PoolwiseReentrancyGuard {
     using SafeCastLib for *;
     using LibTransient for *;
     using SSTORE2 for address;
@@ -124,7 +124,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         payable
         virtual
         override
-        nonReentrant
+        poolwiseNonReentrant(params.poolKey.toId())
         checkDeadline(params.deadline)
         notPaused(0)
         returns (uint256 shares, uint256 amount0, uint256 amount1)
@@ -142,7 +142,13 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IBunniHub
-    function queueWithdraw(QueueWithdrawParams calldata params) external virtual override nonReentrant notPaused(1) {
+    function queueWithdraw(QueueWithdrawParams calldata params)
+        external
+        virtual
+        override
+        poolwiseNonReentrant(params.poolKey.toId())
+        notPaused(1)
+    {
         BunniHubLogic.queueWithdraw(s, params);
     }
 
@@ -151,7 +157,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         external
         virtual
         override
-        nonReentrant
+        poolwiseNonReentrant(params.poolKey.toId())
         checkDeadline(params.deadline)
         notPaused(2)
         returns (uint256 amount0, uint256 amount1)
@@ -192,13 +198,15 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     function hookHandleSwap(PoolKey calldata key, bool zeroForOne, uint256 inputAmount, uint256 outputAmount)
         external
         override
-        nonReentrant
         notPaused(4)
     {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
 
-        // load state
+        // reentrancy guard
         PoolId poolId = key.toId();
+        _poolwiseNonReentrantBefore(poolId);
+
+        // load state
         PoolState memory state = getPoolState(s, poolId);
         (Currency inputToken, Currency outputToken) =
             zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
@@ -263,6 +271,9 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
         if (address(state.vault1) != address(0) && initialReserve1 != state.reserve1) {
             s.reserve1[poolId] = state.reserve1;
         }
+
+        // reentrancy guard
+        _poolwiseNonReentrantAfter(poolId);
     }
 
     /// @inheritdoc IBunniHub
@@ -273,16 +284,18 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
 
     /// @inheritdoc IBunniHub
     function lockForRebalance(PoolKey calldata key) external notPaused(6) {
-        if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+        PoolId id = key.toId();
+        if (address(_getBunniTokenOfPool(id)) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
-        _nonReentrantBefore();
+        _poolwiseNonReentrantBefore(id);
     }
 
     /// @inheritdoc IBunniHub
     function unlockForRebalance(PoolKey calldata key) external notPaused(7) {
-        if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+        PoolId id = key.toId();
+        if (address(_getBunniTokenOfPool(id)) == address(0)) revert BunniHub__BunniTokenNotInitialized();
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
-        _nonReentrantAfter();
+        _poolwiseNonReentrantAfter(id);
     }
 
     receive() external payable {}
