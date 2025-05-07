@@ -490,6 +490,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         RebalanceOrderPreHookArgs calldata args = hookArgs.preHookArgs;
 
+        // cache the order input balance before the order execution
+        uint256 inputBalanceBefore =
+            args.currency.isAddressZero() ? weth.balanceOf(address(this)) : args.currency.balanceOfSelf();
+
         // store the order output balance before the order execution in transient storage
         // this is used to compute the order output amount
         uint256 outputBalanceBefore = hookArgs.postHookArgs.currency.isAddressZero()
@@ -509,8 +513,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
             )
         );
 
-        // ensure we have at least args.amount tokens so that there is enough input for the order
-        if (args.currency.balanceOfSelf() < args.amount) {
+        // ensure we received at least args.amount tokens so that there is enough input for the order
+        if (args.currency.balanceOfSelf() - inputBalanceBefore < args.amount) {
             revert BunniHook__PrehookPostConditionFailed();
         }
 
