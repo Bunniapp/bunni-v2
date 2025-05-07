@@ -279,10 +279,20 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IBunniHub
-    function unlockForRebalance(PoolKey calldata key) external notPaused(7) {
-        if (address(_getBunniTokenOfPool(key.toId())) == address(0)) revert BunniHub__BunniTokenNotInitialized();
+    function hookGive(PoolKey calldata key, bool isCurrency0, uint256 amount) external override notPaused(7) {
         if (msg.sender != address(key.hooks)) revert BunniHub__Unauthorized();
-        _nonReentrantAfter();
+        if (amount == 0) return; // no-op if amount is zero
+
+        PoolId poolId = key.toId();
+
+        // pull claim tokens from hook
+        if (isCurrency0) {
+            s.poolState[poolId].rawBalance0 += amount; // effect
+            poolManager.transferFrom(address(key.hooks), address(this), key.currency0.toId(), amount); // interaction
+        } else {
+            s.poolState[poolId].rawBalance1 += amount; // effect
+            poolManager.transferFrom(address(key.hooks), address(this), key.currency1.toId(), amount); // interaction
+        }
     }
 
     receive() external payable {}

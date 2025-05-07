@@ -275,6 +275,18 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @param newIdleBalance The new idle balance of the pool
     function hookSetIdleBalance(PoolKey calldata key, IdleBalance newIdleBalance) external;
 
+    /// @notice Called by the hook to give assets to a Bunni pool it manages.
+    /// The assets are given in the form of PoolManager ERC-6909 claim tokens.
+    /// @dev This function does NOT use nonReentrant in order to support rebalancing.
+    /// Thus it is kept as simple as possible, the only external call it makes is to PoolManager,
+    /// and it follows the checks-effects-interactions pattern.
+    /// It only updates the raw balance and thus could push the raw balance ratio beyond the max,
+    /// but we're OK with it since the next user swap will fix it. This decision is also to maximize simplicity.
+    /// @param key The PoolKey of the Uniswap V4 pool
+    /// @param isCurrency0 True if the amount is for currency0, false if it's for currency1
+    /// @param amount The amount of currency to give to the pool
+    function hookGive(PoolKey calldata key, bool isCurrency0, uint256 amount) external;
+
     /// @notice Sets the address of the recipient of referral rewards belonging to the default referrer address(0). Only callable by the owner.
     /// @param newReferralRewardRecipient The new address of the recipient of referral rewards
     function setReferralRewardRecipient(address newReferralRewardRecipient) external;
@@ -295,10 +307,6 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @notice Called by key.hooks to lock BunniHub before a rebalance order's execution.
     /// @param key The PoolKey of the Uniswap v4 pool
     function lockForRebalance(PoolKey calldata key) external;
-
-    /// @notice Called by key.hooks to unlock BunniHub after a rebalance order's execution.
-    /// @param key The PoolKey of the Uniswap v4 pool
-    function unlockForRebalance(PoolKey calldata key) external;
 
     /// @notice The state of a Bunni pool.
     function poolState(PoolId poolId) external view returns (PoolState memory);
