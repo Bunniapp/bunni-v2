@@ -156,6 +156,9 @@ contract RebalanceAttackTest is BaseTest {
 
         address customHook = address(new CustomHook{salt: salt}());
 
+        // whitelist the malicious hook to show that this attack is impossible even with a whitelisted hook
+        hub.setHookWhitelist(BunniHook(payable(customHook)), true);
+
         (, PoolKey memory maliciousKey) = hub.deployBunniToken(
             IBunniHub.DeployBunniTokenParams({
                 currency0: Currency.wrap(address(token0)),

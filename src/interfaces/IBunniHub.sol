@@ -82,6 +82,10 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     event SetPauseFlags(uint8 indexed pauseFlags);
     /// @notice Emitted when the pause fuse is burned
     event BurnPauseFuse();
+    /// @notice Emitted when a hook is whitelisted or blacklisted
+    /// @param hook The hook that was whitelisted or blacklisted
+    /// @param whitelisted True if the hook was whitelisted, false if it was blacklisted
+    event SetHookWhitelist(IBunniHook indexed hook, bool indexed whitelisted);
 
     /// @param poolKey The PoolKey of the Uniswap V4 pool
     /// @param recipient The recipient of the minted share tokens
@@ -229,6 +233,7 @@ interface IBunniHub is IUnlockCallback, IOwnable {
 
     /// @notice Deploys the BunniToken contract for a Bunni position. This token
     /// represents a user's share in the Uniswap V4 LP position.
+    /// Only whitelisted hooks may be used.
     /// @dev The BunniToken is deployed via CREATE3, which allows for a deterministic address.
     /// @param params The input parameters
     /// currency0 The token0 of the Uniswap V4 pool
@@ -304,6 +309,12 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// All functions are permanently unpaused after this function is called.
     function burnPauseFuse() external;
 
+    /// @notice Whitelists or blacklists a hook. Only callable by the owner.
+    /// Only whitelisted hooks may be used when creating a new Bunni pool.
+    /// @param hook The hook to whitelist or blacklist
+    /// @param whitelisted True if the hook should be whitelisted, false if it should be blacklisted
+    function setHookWhitelist(IBunniHook hook, bool whitelisted) external;
+
     /// @notice Called by key.hooks to lock BunniHub before a rebalance order's execution.
     /// @param key The PoolKey of the Uniswap v4 pool
     function lockForRebalance(PoolKey calldata key) external;
@@ -346,4 +357,8 @@ interface IBunniHub is IUnlockCallback, IOwnable {
     /// @notice The init data of a Bunni pool. Stored in transient storage and used
     /// during the IHooks.afterInitialize() call.
     function poolInitData() external view returns (bytes memory);
+
+    /// @notice Whether the given hook is whitelisted.
+    /// @param hook The hook to check
+    function hookIsWhitelisted(IBunniHook hook) external view returns (bool);
 }

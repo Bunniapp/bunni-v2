@@ -2,6 +2,7 @@
 pragma solidity ^0.8.15;
 
 import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import "./BaseTest.sol";
@@ -977,6 +978,59 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
         hub.setPauseFlags(pauseFlags);
     }
 
+    function test_hookWhitelist_authChecks(IBunniHook hook) external {
+        // owner can set hook whitelist
+        hub.setHookWhitelist(hook, true);
+        assertTrue(hub.hookIsWhitelisted(hook), "hook not whitelisted by owner");
+        hub.setHookWhitelist(hook, false); // reset
+        assertFalse(hub.hookIsWhitelisted(hook), "hook not blacklisted by owner");
+
+        // others cannot set hook whitelist
+        address others = makeAddr("others");
+        vm.prank(others);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        hub.setHookWhitelist(hook, true);
+    }
+
+    function test_hookWhitelist_cannotDeployPoolWithBlacklistedHook() external {
+        // deploy pool
+        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        // blacklist hook
+        hub.setHookWhitelist(bunniHook, false);
+
+        // cannot deploy pool
+        vm.expectRevert(BunniHub__HookNotWhitelisted.selector);
+        hub.deployBunniToken(
+            IBunniHub.DeployBunniTokenParams({
+                currency0: key.currency0,
+                currency1: key.currency1,
+                tickSpacing: TICK_SPACING,
+                twapSecondsAgo: 7 days,
+                liquidityDensityFunction: ldf,
+                hooklet: IHooklet(address(0)),
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
+                ldfParams: bytes32(0),
+                hooks: bunniHook,
+                hookParams: bytes(""),
+                vault0: ERC4626(address(0)),
+                vault1: ERC4626(address(0)),
+                minRawTokenRatio0: 0.08e6,
+                targetRawTokenRatio0: 0.1e6,
+                maxRawTokenRatio0: 0.12e6,
+                minRawTokenRatio1: 0.08e6,
+                targetRawTokenRatio1: 0.1e6,
+                maxRawTokenRatio1: 0.12e6,
+                sqrtPriceX96: uint160(Q96),
+                name: "BunniToken",
+                symbol: "BUNNI-LP",
+                owner: address(this),
+                metadataURI: "metadataURI",
+                salt: bytes32(0)
+            })
+        );
+    }
+
     function test_revert_BunniHubDrainingRawBalances() public {
         // 1. Create the malicious pool linked to the malicious hook
         bytes32 salt;
@@ -1000,6 +1054,8 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
         _mint(Currency.wrap(address(token1)), address(maliciousVault), 1 ether);
 
         // 3. Register the malicious pool
+        // we whitelist the pool to show that this attack is impossible even with a whitelisted pool
+        hub.setHookWhitelist(BunniHook(payable(customHook)), true);
         (, PoolKey memory maliciousKey) = hub.deployBunniToken(
             IBunniHub.DeployBunniTokenParams({
                 currency0: Currency.wrap(address(token0)),
@@ -1082,6 +1138,8 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
         _mint(Currency.wrap(address(token1)), address(maliciousVault), 1 ether);
 
         // 3. Register the malicious pool
+        // we whitelist the pool to show that this attack is impossible even with a whitelisted pool
+        hub.setHookWhitelist(BunniHook(payable(customHook)), true);
         (, PoolKey memory maliciousKey) = hub.deployBunniToken(
             IBunniHub.DeployBunniTokenParams({
                 currency0: Currency.wrap(address(token0)),

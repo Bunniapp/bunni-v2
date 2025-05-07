@@ -187,7 +187,8 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         swapper = new Uniswapper(poolManager);
 
         // initialize bunni hub
-        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this), address(this));
+        IBunniHook[] memory hookWhitelist = new IBunniHook[](0);
+        hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this), address(this), hookWhitelist);
 
         // deploy zone
         zone = new BunniZone(address(this));
@@ -232,6 +233,9 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
             K
         );
         vm.label(address(bunniHook), "BunniHook");
+
+        // whitelist hook
+        hub.setHookWhitelist(bunniHook, true);
 
         // deploy quoter
         quoter = new BunniQuoter(hub);
