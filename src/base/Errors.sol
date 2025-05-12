@@ -7,7 +7,6 @@ error BunniHub__Paused();
 error BunniHub__ZeroInput();
 error BunniHub__PastDeadline();
 error BunniHub__Unauthorized();
-error BunniHub__InvalidReferrer();
 error BunniHub__LDFCannotBeZero();
 error BunniHub__MaxNonceReached();
 error BunniHub__SlippageTooHigh();
@@ -33,7 +32,6 @@ error BunniHub__MsgValueNotZeroWhenPoolKeyHasNoNativeToken();
 
 error BunniToken__NotBunniHub();
 error BunniToken__NotPoolManager();
-error BunniToken__ReferrerAddressIsZero();
 
 error BunniHook__InvalidK();
 error BunniHook__InvalidSwap();
