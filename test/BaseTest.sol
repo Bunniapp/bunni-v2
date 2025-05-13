@@ -287,8 +287,6 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         uint256 value;
         if (key_.currency0.isAddressZero()) {
             value = depositAmount0;
-        } else if (key_.currency1.isAddressZero()) {
-            value = depositAmount1;
         }
         _mint(key_.currency0, depositor, depositAmount0);
         _mint(key_.currency1, depositor, depositAmount1);
@@ -329,8 +327,6 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         uint256 value;
         if (key_.currency0.isAddressZero()) {
             value = depositAmount0.divWadUp(WAD - vaultFee0);
-        } else if (key_.currency1.isAddressZero()) {
-            value = depositAmount1.divWadUp(WAD - vaultFee1);
         }
         _mint(key_.currency0, depositor, depositAmount0.divWadUp(WAD - vaultFee0));
         _mint(key_.currency1, depositor, depositAmount1.divWadUp(WAD - vaultFee1));
