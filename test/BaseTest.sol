@@ -57,9 +57,9 @@ import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {OrderHashMemory} from "../src/lib/OrderHashMemory.sol";
 import {ReentrancyGuard} from "../src/base/ReentrancyGuard.sol";
 import {ERC4626WithFeeMock} from "./mocks/ERC4626WithFeeMock.sol";
-import {ERC4626Mock, MaliciousERC4626} from "./mocks/ERC4626Mock.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
+import {ERC4626Mock, MaliciousERC4626, ERC4626FeeMock} from "./mocks/ERC4626Mock.sol";
 import {ILiquidityDensityFunction} from "../src/interfaces/ILiquidityDensityFunction.sol";
 
 abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
