@@ -240,27 +240,30 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
 
         // update raw token balances if we're using vaults and the (rawBalance / balance) ratio is outside the bounds
         // skip depositing into vaults if we're surging since we need to use raw tokens for rebalancing anyways
-        if (address(state.vault0) != address(0) && !(shouldSurge && zeroForOne)) {
-            (state.reserve0, state.rawBalance0) = _updateRawBalanceIfNeeded(
-                key.currency0,
-                state.vault0,
-                state.rawBalance0,
-                state.reserve0,
-                state.minRawTokenRatio0,
-                state.maxRawTokenRatio0,
-                state.targetRawTokenRatio0
-            );
-        }
-        if (address(state.vault1) != address(0) && !(shouldSurge && !zeroForOne)) {
-            (state.reserve1, state.rawBalance1) = _updateRawBalanceIfNeeded(
-                key.currency1,
-                state.vault1,
-                state.rawBalance1,
-                state.reserve1,
-                state.minRawTokenRatio1,
-                state.maxRawTokenRatio1,
-                state.targetRawTokenRatio1
-            );
+        // skip withdrawing from vaults if we're surging as well since after receiving raw tokens from the rebalance order it may become unnecessary
+        if (!shouldSurge) {
+            if (address(state.vault0) != address(0)) {
+                (state.reserve0, state.rawBalance0) = _updateRawBalanceIfNeeded(
+                    key.currency0,
+                    state.vault0,
+                    state.rawBalance0,
+                    state.reserve0,
+                    state.minRawTokenRatio0,
+                    state.maxRawTokenRatio0,
+                    state.targetRawTokenRatio0
+                );
+            }
+            if (address(state.vault1) != address(0)) {
+                (state.reserve1, state.rawBalance1) = _updateRawBalanceIfNeeded(
+                    key.currency1,
+                    state.vault1,
+                    state.rawBalance1,
+                    state.reserve1,
+                    state.minRawTokenRatio1,
+                    state.maxRawTokenRatio1,
+                    state.targetRawTokenRatio1
+                );
+            }
         }
 
         // update state
