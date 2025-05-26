@@ -371,8 +371,9 @@ library BunniHookLogic {
         // by setting the swap fee to max and offering a proxy swap contract
         // that sets the Bunni swap fee to 0 during such swaps and charging swap fees
         // independently
+        // surge fee will still be applied if feeOverride is lower in order to protect LPs from MEV bots
         uint24 hookFeesBaseSwapFee = feeOverridden
-            ? feeOverride
+            ? uint24(FixedPointMathLib.max(feeOverride, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife)))
             : computeDynamicSwapFee(
                 updatedSqrtPriceX96,
                 feeMeanTick,
