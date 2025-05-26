@@ -399,11 +399,16 @@ library BunniHookLogic {
                 hookFeesAmount = outputAmount.mulDivUp(hookFeesBaseSwapFee, SWAP_FEE_BASE).mulDivUp(
                     env.hookFeeModifier, MODIFIER_BASE
                 );
-
-                // it's possible that swapFeeAmount + hookFeesAmount > outputAmount
-                // in this case, we just take the entire output amount
-                if (swapFeeAmount + hookFeesAmount > outputAmount) {
-                    hookFeesAmount = outputAmount - swapFeeAmount;
+                // the case when swapFee = computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife)
+                if (swapFee != amAmmSwapFee) {
+                    // am-Amm manager's fee is in range [amAmmSwapFee, 100% - hookFeesBaseSwapFee.mulDivUp(env.hookFeeModifier, MODIFIER_BASE)]
+                    uint24 swapFeeAdjusted = uint24(
+                        FixedPointMathLib.max(
+                            amAmmSwapFee, swapFee - hookFeesBaseSwapFee.mulDivUp(env.hookFeeModifier, MODIFIER_BASE)
+                        )
+                    );
+                    // recalculate swapFeeAmount
+                    swapFeeAmount = outputAmount.mulDivUp(swapFeeAdjusted, SWAP_FEE_BASE);
                 }
             } else {
                 hookFeesAmount = swapFeeAmount.mulDivUp(env.hookFeeModifier, MODIFIER_BASE);
