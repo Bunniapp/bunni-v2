@@ -9,6 +9,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import "./ShiftMode.sol";
 import "../lib/Math.sol";
 import "../base/Constants.sol";
+import {LDFType} from "../types/LDFType.sol";
 import {FullMathX96} from "../lib/FullMathX96.sol";
 import {SqrtPriceMath} from "../lib/SqrtPriceMath.sol";
 
@@ -432,7 +433,11 @@ library LibUniformDistribution {
         }
     }
 
-    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams) internal pure returns (bool) {
+    function isValidParams(int24 tickSpacing, uint24 twapSecondsAgo, bytes32 ldfParams, LDFType ldfType)
+        internal
+        pure
+        returns (bool)
+    {
         uint8 shiftMode = uint8(bytes1(ldfParams)); // use uint8 since we don't know if the value is in range yet
         (int24 minUsableTick, int24 maxUsableTick) =
             (TickMath.minUsableTick(tickSpacing), TickMath.maxUsableTick(tickSpacing));
@@ -442,16 +447,18 @@ library LibUniformDistribution {
             int24 offset = int24(uint24(bytes3(ldfParams << 8))); // offset (in rounded ticks) of tickLower from the twap tick
             int24 length = int24(uint24(bytes3(ldfParams << 32))); // length of the position in rounded ticks
 
-            return twapSecondsAgo != 0 && length > 0 && offset % tickSpacing == 0
+            return twapSecondsAgo != 0 && ldfType == LDFType.DYNAMIC_AND_STATEFUL && length > 0
+                && offset % tickSpacing == 0 && int256(length) * int256(tickSpacing) <= type(int24).max
                 && int256(length) * int256(tickSpacing) <= (maxUsableTick - minUsableTick)
-                && int256(length) * int256(tickSpacing) <= type(int24).max && shiftMode <= uint8(type(ShiftMode).max);
+                && shiftMode <= uint8(type(ShiftMode).max);
         } else {
             // Static
             // | shiftMode - 1 byte | tickLower - 3 bytes | tickUpper - 3 bytes |
             int24 tickLower = int24(uint24(bytes3(ldfParams << 8)));
             int24 tickUpper = int24(uint24(bytes3(ldfParams << 32)));
-            return tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0 && tickLower < tickUpper
-                && tickLower >= minUsableTick && tickUpper <= maxUsableTick;
+
+            return ldfType == LDFType.STATIC && tickLower % tickSpacing == 0 && tickUpper % tickSpacing == 0
+                && tickLower < tickUpper && tickLower >= minUsableTick && tickUpper <= maxUsableTick;
         }
     }
 
