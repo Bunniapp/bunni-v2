@@ -601,6 +601,7 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
         assertEq(state.vault0Decimals, vault0.decimals(), "vault0Decimals incorrect");
         assertEq(state.vault1Decimals, 0, "vault1Decimals incorrect");
         assertEq(address(state.hooklet), address(hooklet_), "hooklet incorrect");
+        assertEq(address(hub.hookletOfPool(id)), address(hooklet_), "hub.hookletOfPool() incorrect");
 
         // verify decoded hookParams
         DecodedHookParams memory p = BunniHookLogic.decodeHookParams(hookParams);
