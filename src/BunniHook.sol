@@ -320,9 +320,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
     /// @inheritdoc IBunniHook
     function setModifiers(uint32 newHookFeeModifier, uint32 newReferralRewardModifier) external onlyOwner {
-        // hook fee can't be turned off once turned on, and cannot exceed 50%
+        // hook fee can't be turned off once turned on, and cannot exceed 50% and cannot be less than 10%
         if (
-            newHookFeeModifier > MODIFIER_BASE / 2 || newHookFeeModifier == 0
+            newHookFeeModifier > MODIFIER_BASE / 2 || newHookFeeModifier < MODIFIER_BASE / 10
                 || newReferralRewardModifier > MODIFIER_BASE
         ) {
             revert BunniHook__InvalidModifier();

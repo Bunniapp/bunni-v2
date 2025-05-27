@@ -1787,13 +1787,17 @@ contract BunniHookTest is BaseTest {
         vm.expectRevert(BunniHook__InvalidModifier.selector);
         bunniHook.setModifiers(0.5e6 + 1, REFERRAL_REWARD_MODIFIER);
 
+        // cannot set hook fee modifier to below 10%
+        vm.expectRevert(BunniHook__InvalidModifier.selector);
+        bunniHook.setModifiers(0.1e6 - 1, REFERRAL_REWARD_MODIFIER);
+
         // can set hook fee modifier to different non-zero value after set
-        bunniHook.setModifiers(HOOK_FEE_MODIFIER / 2, REFERRAL_REWARD_MODIFIER / 2);
+        bunniHook.setModifiers(HOOK_FEE_MODIFIER * 2, REFERRAL_REWARD_MODIFIER * 2);
         (hookFeeModifier_, referralRewardModifier_) = bunniHook.getModifiers();
-        assertEq(hookFeeModifier_, HOOK_FEE_MODIFIER / 2, "hook fee modifier should be updated after set");
+        assertEq(hookFeeModifier_, HOOK_FEE_MODIFIER * 2, "hook fee modifier should be updated after set");
         assertEq(
             referralRewardModifier_,
-            REFERRAL_REWARD_MODIFIER / 2,
+            REFERRAL_REWARD_MODIFIER * 2,
             "referral reward modifier should be updated after set"
         );
     }
