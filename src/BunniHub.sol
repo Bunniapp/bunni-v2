@@ -534,6 +534,9 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
             uint256 poolManagerReserve = currency.balanceOf(address(poolManager));
             absAmount = FixedPointMathLib.min(FixedPointMathLib.min(absAmount, maxDepositAmount), poolManagerReserve);
 
+            // If the amount to deposit is zero, ignore the deposit execution
+            if (absAmount == 0) return (0, 0);
+
             // burn claim tokens from this
             poolManager.burn(address(this), currency.toId(), absAmount);
 
@@ -625,7 +628,7 @@ contract BunniHub is IBunniHub, Ownable, ReentrancyGuard {
     function _getHookParams(PoolId poolId) internal view returns (bytes memory result) {
         address ptr = s.poolState[poolId].immutableParamsPointer;
         if (ptr == address(0)) return bytes("");
-        result = ptr.read({start: 156});
+        result = ptr.read({start: 160});
     }
 
     function _updateBalance(uint256 balance, int256 delta) internal pure returns (uint256) {
