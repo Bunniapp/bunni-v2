@@ -57,6 +57,7 @@ import {IBunniToken} from "../src/interfaces/IBunniToken.sol";
 import {OrderHashMemory} from "../src/lib/OrderHashMemory.sol";
 import {ReentrancyGuard} from "../src/base/ReentrancyGuard.sol";
 import {ERC4626WithFeeMock} from "./mocks/ERC4626WithFeeMock.sol";
+import {ERC4626TakeLessMock} from "./mocks/ERC4626TakeLessMock.sol";
 import {GeometricDistribution} from "../src/ldf/GeometricDistribution.sol";
 import {DoubleGeometricDistribution} from "../src/ldf/DoubleGeometricDistribution.sol";
 import {ERC4626Mock, MaliciousERC4626, ERC4626FeeMock} from "./mocks/ERC4626Mock.sol";
@@ -117,6 +118,7 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
     ERC4626WithFeeMock internal vault0WithFee;
     ERC4626WithFeeMock internal vault1WithFee;
     ERC4626WithFeeMock internal vaultWethWithFee;
+    ERC4626TakeLessMock internal vault0TakeLess;
     IBunniHub internal hub;
     BunniHook internal bunniHook;
     BunniQuoter internal quoter;
@@ -153,6 +155,7 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         vault0WithFee = new ERC4626WithFeeMock(token0);
         vault1WithFee = new ERC4626WithFeeMock(token1);
         vaultWethWithFee = new ERC4626WithFeeMock(IERC20(address(weth)));
+        vault0TakeLess = new ERC4626TakeLessMock(token0);
 
         // mint some initial tokens to the vaults to change the share price
         _mint(Currency.wrap(address(token0)), address(this), 2 ether);
@@ -628,10 +631,14 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         PERMIT2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
         PERMIT2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
-        uint256 vaultFee0 = address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
-            || address(vault0_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
-        uint256 vaultFee1 = address(vault1_) == address(vault0WithFee) || address(vault1_) == address(vault1WithFee)
-            || address(vault1_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
+        uint256 vaultFee0 = (
+            address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
+                || address(vault0_) == address(vaultWethWithFee)
+        ) ? VAULT_FEE : (address(vault0_) == address(vault0TakeLess) ? 0.5e18 : 0);
+        uint256 vaultFee1 = (
+            address(vault1_) == address(vault0WithFee) || address(vault1_) == address(vault1WithFee)
+                || address(vault1_) == address(vaultWethWithFee)
+        ) ? VAULT_FEE : 0;
         _makeDepositWithFee(key, depositAmount0, depositAmount1, address(0x6969), vaultFee0, vaultFee1, "");
     }
 
@@ -687,10 +694,14 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         PERMIT2.approve(address(token1), address(hub), type(uint160).max, type(uint48).max);
         PERMIT2.approve(address(weth), address(hub), type(uint160).max, type(uint48).max);
         vm.stopPrank();
-        uint256 vaultFee0 = address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
-            || address(vault0_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
-        uint256 vaultFee1 = address(vault1_) == address(vault0WithFee) || address(vault1_) == address(vault1WithFee)
-            || address(vault1_) == address(vaultWethWithFee) ? VAULT_FEE : 0;
+        uint256 vaultFee0 = (
+            address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
+                || address(vault0_) == address(vaultWethWithFee)
+        ) ? VAULT_FEE : (address(vault0_) == address(vault0TakeLess) ? 0.5e18 : 0);
+        uint256 vaultFee1 = (
+            address(vault1_) == address(vault0WithFee) || address(vault1_) == address(vault1WithFee)
+                || address(vault1_) == address(vaultWethWithFee)
+        ) ? VAULT_FEE : 0;
         _makeDepositWithFee(key, depositAmount0, depositAmount1, address(0x6969), vaultFee0, vaultFee1, "");
     }
 

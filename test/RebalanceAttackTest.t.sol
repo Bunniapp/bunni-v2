@@ -167,7 +167,7 @@ contract RebalanceAttackTest is BaseTest {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: new MockLDF(address(hub), address(customHook), address(quoter)),
                 hooklet: IHooklet(address(0)),
-                ldfType: LDFType.STATIC,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
                 hooks: BunniHook(payable(customHook)),
                 hookParams: "",

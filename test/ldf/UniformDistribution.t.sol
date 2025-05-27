@@ -207,11 +207,7 @@ contract UniformDistributionTest is LiquidityDensityFunctionTest {
         // invalid params when minTick < minUsableTick and maxTick > maxUsableTick
         (offset, length) = (minUsableTick - tickSpacing, (maxUsableTick - minUsableTick) / tickSpacing + 2);
         ldfParams = bytes32(abi.encodePacked(shiftMode, offset, length));
-        assertTrue(ldf.isValidParams(key, 1, ldfParams, LDFType.DYNAMIC_AND_STATEFUL), "invalid params 2");
-        (tickLower, tickUpper, decodedShiftMode) = LibUniformDistribution.decodeParams(0, tickSpacing, ldfParams);
-        assertEq(tickLower, minUsableTick, "tickLower incorrect");
-        assertEq(tickUpper, maxUsableTick, "tickUpper incorrect");
-        assertTrue(decodedShiftMode == shiftMode, "shiftMode incorrect");
+        assertFalse(ldf.isValidParams(key, 1, ldfParams, LDFType.DYNAMIC_AND_STATEFUL), "invalid params 2");
     }
 
     function test_poc_shiftmode() external virtual {

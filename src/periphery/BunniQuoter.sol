@@ -350,7 +350,7 @@ contract BunniQuoter is IBunniQuoter {
             shares = WAD - MIN_INITIAL_SHARES;
         } else {
             // given that the position may become single-sided, we need to handle the case where one of the existingAmount values is zero
-            if (existingAmount0 == 0 && existingAmount1 == 0) return (false, 0, 0, 0);
+            if (depositReturnData.balance0 == 0 && depositReturnData.balance1 == 0) return (false, 0, 0, 0);
             shares = FixedPointMathLib.min(
                 depositReturnData.balance0 == 0
                     ? type(uint256).max

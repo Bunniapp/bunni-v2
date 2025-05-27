@@ -11,7 +11,11 @@ import {ERC4626CustomDecimalsMock} from "./mocks/ERC4626CustomDecimalsMock.sol";
 import "./BaseTest.sol";
 import {ERC4626TakeLessMock} from "./mocks/ERC4626TakeLessMock.sol";
 import {UniformDistribution} from "../src/ldf/UniformDistribution.sol";
-import {BunniHub__GracePeriodExpired, BunniHub__NoExpiredWithdrawal, BunniHub__VaultFeeIncorrect} from "../src/base/Errors.sol";
+import {
+    BunniHub__GracePeriodExpired,
+    BunniHub__NoExpiredWithdrawal,
+    BunniHub__VaultFeeIncorrect
+} from "../src/base/Errors.sol";
 
 contract BunniHubTest is BaseTest, IUnlockCallback {
     using TickMath for *;
@@ -44,9 +48,17 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
             _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         // make deposit
+        uint256 vaultFee0 = (
+            address(vault0_) == address(vault0WithFee) || address(vault0_) == address(vault1WithFee)
+                || address(vault0_) == address(vaultWethWithFee)
+        ) ? VAULT_FEE : (address(vault0_) == address(vault0TakeLess) ? 0.5e18 : 0);
+        uint256 vaultFee1 = (
+            address(vault1_) == address(vault0WithFee) || address(vault1_) == address(vault1WithFee)
+                || address(vault1_) == address(vaultWethWithFee)
+        ) ? VAULT_FEE : 0;
         (uint256 beforeBalance0, uint256 beforeBalance1) = hub.poolBalances(key.toId());
         (uint256 shares, uint256 amount0, uint256 amount1) =
-            _makeDeposit(key, depositAmount0, depositAmount1, address(this), snapLabel);
+            _makeDepositWithFee(key, depositAmount0, depositAmount1, address(this), vaultFee0, vaultFee1, snapLabel);
         (uint256 afterBalance0, uint256 afterBalance1) = hub.poolBalances(key.toId());
 
         // check return values
@@ -1046,12 +1058,9 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
     }
 
     function test_vaultTakeLess_duringSwap() public {
-        // deploy vault
-        ERC4626TakeLessMock vault = new ERC4626TakeLessMock(token0);
-
         // deploy pool
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            Currency.wrap(address(token0)), Currency.wrap(address(token1)), vault, ERC4626(address(0))
+            Currency.wrap(address(token0)), Currency.wrap(address(token1)), vault0TakeLess, ERC4626(address(0))
         );
         (uint256 beforeBalance0,) = hub.poolBalances(key.toId());
 
@@ -1066,18 +1075,15 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
         _swap(key, params, 0, "");
 
         assertEq(token0.balanceOf(address(hub)), 0, "hub should have no token0 ERC20 balance");
-        assertEq(token0.allowance(address(hub), address(vault)), 0, "hub should have no allowance to vault");
+        assertEq(token0.allowance(address(hub), address(vault0TakeLess)), 0, "hub should have no allowance to vault");
         (uint256 afterBalance0,) = hub.poolBalances(key.toId());
         assertEq(afterBalance0 - beforeBalance0, swapAmount, "pool balance change incorrect");
     }
 
     function test_vaultTakeLess_duringDeposit() public {
-        // deploy vault
-        ERC4626TakeLessMock vault = new ERC4626TakeLessMock(token0);
-
         // deploy pool
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
-            Currency.wrap(address(token0)), Currency.wrap(address(token1)), vault, ERC4626(address(0))
+            Currency.wrap(address(token0)), Currency.wrap(address(token1)), vault0TakeLess, ERC4626(address(0))
         );
         (uint256 beforeBalance0,) = hub.poolBalances(key.toId());
 
@@ -1102,7 +1108,7 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
         hub.deposit(depositParams);
 
         assertEq(token0.balanceOf(address(hub)), 0, "hub should have no token0 ERC20 balance");
-        assertEq(token0.allowance(address(hub), address(vault)), 0, "hub should have no allowance to vault");
+        assertEq(token0.allowance(address(hub), address(vault0TakeLess)), 0, "hub should have no allowance to vault");
         (uint256 afterBalance0,) = hub.poolBalances(key.toId());
         assertEq(afterBalance0 - beforeBalance0, depositAmount, "pool balance change incorrect");
         assertEq(beforeThisBalance0 - token0.balanceOf(address(this)), depositAmount, "user deposited amount incorrect");
@@ -1243,7 +1249,7 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: uniformDistribution,
                 hooklet: IHooklet(address(0)),
-                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
+                ldfType: LDFType.STATIC,
                 ldfParams: bytes32(abi.encodePacked(ShiftMode.STATIC, int24(-5) * TICK_SPACING, int24(5) * TICK_SPACING)),
                 hooks: bunniHook,
                 hookParams: abi.encodePacked(
@@ -1445,7 +1451,7 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: new MockLDF(address(hub), address(customHook), address(quoter)),
                 hooklet: IHooklet(address(0)),
-                ldfType: LDFType.STATIC,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
                 hooks: BunniHook(payable(customHook)),
                 hookParams: "",
@@ -1529,7 +1535,7 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
                 twapSecondsAgo: TWAP_SECONDS_AGO,
                 liquidityDensityFunction: new MockLDF(address(hub), address(customHook), address(quoter)),
                 hooklet: IHooklet(address(0)),
-                ldfType: LDFType.STATIC,
+                ldfType: LDFType.DYNAMIC_AND_STATEFUL,
                 ldfParams: bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
                 hooks: BunniHook(payable(customHook)),
                 hookParams: "",
@@ -1674,9 +1680,9 @@ contract CustomHook {
             uint256 deltaAmount = poolManager.settle();
             poolManager.mint(address(this), Currency.wrap(token).toId(), deltaAmount);
         } else if (mode == 1) {
-            hub.hookHandleSwap(key, zeroForOne, amount, 0);
+            hub.hookHandleSwap(key, zeroForOne, amount, 0, false);
         } else if (mode == 2) {
-            hub.hookHandleSwap(key, false, 1, amountOfReservesToWithdraw);
+            hub.hookHandleSwap(key, false, 1, amountOfReservesToWithdraw, false);
         }
     }
 
@@ -1699,7 +1705,7 @@ contract CustomHook {
             iterationsCounter++;
             disableReentrancyGuard();
             hub.hookHandleSwap(
-                key, false, 1, /* amountToDeposit to trigger the updateIfNeeded */ amountOfReservesToWithdraw
+                key, false, 1, /* amountToDeposit to trigger the updateIfNeeded */ amountOfReservesToWithdraw, false
             );
         }
     }
