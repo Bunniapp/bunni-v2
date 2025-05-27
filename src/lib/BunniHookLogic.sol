@@ -387,7 +387,7 @@ library BunniHookLogic {
             : hookFeesBaseSwapFee;
         uint256 hookFeesAmount;
         uint256 hookHandleSwapInputAmount;
-        uint256 hookHandleSwapOutoutAmount;
+        uint256 hookHandleSwapOutputAmount;
         if (exactIn) {
             // compute the swap fee and the hook fee (i.e. protocol fee)
             // swap fee is taken by decreasing the output amount
@@ -434,7 +434,7 @@ library BunniHookLogic {
             });
 
             // if am-AMM is used, the swap fee needs to be taken from BunniHub, else it stays in BunniHub with the LPs
-            (hookHandleSwapInputAmount, hookHandleSwapOutoutAmount) = (
+            (hookHandleSwapInputAmount, hookHandleSwapOutputAmount) = (
                 inputAmount, useAmAmmFee ? outputAmount + swapFeeAmount + hookFeesAmount : outputAmount + hookFeesAmount
             );
         } else {
@@ -474,7 +474,7 @@ library BunniHookLogic {
             });
 
             // if am-AMM is not used, the swap fee needs to be sent to BunniHub to the LPs, else it stays in BunniHook with the am-AMM manager
-            (hookHandleSwapInputAmount, hookHandleSwapOutoutAmount) = (
+            (hookHandleSwapInputAmount, hookHandleSwapOutputAmount) = (
                 useAmAmmFee ? inputAmount - swapFeeAmount - hookFeesAmount : inputAmount - hookFeesAmount, outputAmount
             );
         }
@@ -487,7 +487,7 @@ library BunniHookLogic {
         // - push output tokens to pool manager and mint claim tokens to hook
         // - update raw token balances
         env.hub.hookHandleSwap(
-            key, params.zeroForOne, hookHandleSwapInputAmount, hookHandleSwapOutoutAmount, shouldSurge
+            key, params.zeroForOne, hookHandleSwapInputAmount, hookHandleSwapOutputAmount, shouldSurge
         );
 
         // burn output claim tokens
