@@ -220,7 +220,6 @@ contract BunniHookTest is BaseTest {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION / 10;
-        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -230,7 +229,7 @@ contract BunniHookTest is BaseTest {
             sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(9)
         });
 
-        _swap(key, params, value, snapLabel);
+        _swap(key, params, 0, snapLabel);
     }
 
     function test_swap_oneForZero_noTickCrossing_multiple() public {
@@ -252,7 +251,6 @@ contract BunniHookTest is BaseTest {
 
         uint256 numSwaps = 10;
         uint256 inputAmount = PRECISION / 1000;
-        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: false,
@@ -264,9 +262,9 @@ contract BunniHookTest is BaseTest {
             _mint(key.currency1, address(this), inputAmount);
 
             if (i == numSwaps - 1) {
-                _swap(key, params, value, snapLabel);
+                _swap(key, params, 0, snapLabel);
             } else {
-                _swap(key, params, value, "");
+                _swap(key, params, 0, "");
             }
         }
     }
@@ -289,7 +287,6 @@ contract BunniHookTest is BaseTest {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION * 2;
-        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -302,7 +299,7 @@ contract BunniHookTest is BaseTest {
             sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(19)
         });
 
-        _swap(key, params, value, snapLabel);
+        _swap(key, params, 0, snapLabel);
 
         (, currentTick,,) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
@@ -325,7 +322,6 @@ contract BunniHookTest is BaseTest {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = PRECISION * 2;
-        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -338,7 +334,7 @@ contract BunniHookTest is BaseTest {
             sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(29)
         });
 
-        _swap(key, params, value, snapLabel);
+        _swap(key, params, 0, snapLabel);
 
         (, currentTick,,) = bunniHook.slot0s(key.toId());
         int24 afterRoundedTick = roundTickSingle(currentTick, key.tickSpacing);
@@ -363,7 +359,6 @@ contract BunniHookTest is BaseTest {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
         uint256 inputAmount = 2.5e17;
-        uint256 value = key.currency1.isAddressZero() ? inputAmount : 0;
 
         _mint(key.currency1, address(this), inputAmount);
 
@@ -377,7 +372,7 @@ contract BunniHookTest is BaseTest {
             sqrtPriceLimitX96: sqrtPriceLimitX96
         });
 
-        _swap(key, params, value, snapLabel);
+        _swap(key, params, 0, snapLabel);
 
         uint160 sqrtPriceX96;
         (sqrtPriceX96, currentTick,,) = bunniHook.slot0s(key.toId());
@@ -433,16 +428,15 @@ contract BunniHookTest is BaseTest {
 
             // one to zero swap
             _mint(key.currency1, address(this), inputAmount);
-            value = key.currency1.isAddressZero() ? inputAmount : 0;
             if (i == numSwaps - 1) {
                 _swap(
                     key,
                     paramsOneToZero,
-                    value,
+                    0,
                     string.concat("swap oneForZero oneTickCrossing, subsequent swap", snapLabel)
                 );
             } else {
-                _swap(key, paramsOneToZero, value, "");
+                _swap(key, paramsOneToZero, 0, "");
             }
         }
 
@@ -471,13 +465,7 @@ contract BunniHookTest is BaseTest {
             fee0,
             "protocol fee0 not collected"
         );
-        assertEq(
-            key.currency1.isAddressZero()
-                ? weth.balanceOf(HOOK_FEE_RECIPIENT)
-                : key.currency1.balanceOf(HOOK_FEE_RECIPIENT),
-            fee1,
-            "protocol fee1 not collected"
-        );
+        assertEq(key.currency1.balanceOf(HOOK_FEE_RECIPIENT), fee1, "protocol fee1 not collected");
     }
 
     function test_hookHasInsufficientTokens() external {
