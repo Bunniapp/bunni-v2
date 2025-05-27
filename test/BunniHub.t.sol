@@ -9,8 +9,8 @@ import {ERC20CustomDecimalsMock} from "./mocks/ERC20CustomDecimalsMock.sol";
 import {ERC4626CustomDecimalsMock} from "./mocks/ERC4626CustomDecimalsMock.sol";
 
 import "./BaseTest.sol";
-import {BunniHub__VaultFeeIncorrect} from "../src/base/Errors.sol";
 import {UniformDistribution} from "../src/ldf/UniformDistribution.sol";
+import {BunniHub__GracePeriodExpired, BunniHub__NoExpiredWithdrawal, BunniHub__VaultFeeIncorrect} from "../src/base/Errors.sol";
 
 contract BunniHubTest is BaseTest, IUnlockCallback {
     using TickMath for *;
@@ -1042,6 +1042,123 @@ contract BunniHubTest is BaseTest, IUnlockCallback {
         vm.prank(guy);
         vm.expectRevert(BunniHub__Unauthorized.selector);
         hub.setPauseFlags(pauseFlags);
+    }
+
+    function test_queueWithdrawPoC1() public {
+        uint256 depositAmount0 = 1 ether;
+        uint256 depositAmount1 = 1 ether;
+        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        // make deposit
+        (uint256 shares,,) = _makeDepositWithFee({
+            key_: key,
+            depositAmount0: depositAmount0,
+            depositAmount1: depositAmount1,
+            depositor: address(this),
+            vaultFee0: 0,
+            vaultFee1: 0,
+            snapLabel: ""
+        });
+
+        // bid in am-AMM auction
+        PoolId id = key.toId();
+        bunniToken.approve(address(bunniHook), type(uint256).max);
+        uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
+        uint128 rentDeposit = minRent * 2 days;
+        bunniHook.bid(id, address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), minRent * 2, rentDeposit);
+        shares -= rentDeposit;
+
+        // wait until address(this) is the manager
+        skipBlocks(K);
+        assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
+
+        vm.warp(type(uint56).max - 1 minutes);
+
+        // queue withdraw
+        bunniToken.approve(address(hub), type(uint256).max);
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
+        assertEqDecimal(bunniToken.balanceOf(address(hub)), shares, DECIMALS, "didn't take shares");
+
+        // wait 1 minute
+        skip(1 minutes);
+
+        // withdraw
+        IBunniHub.WithdrawParams memory withdrawParams = IBunniHub.WithdrawParams({
+            poolKey: key,
+            recipient: address(this),
+            shares: shares,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline: block.timestamp,
+            useQueuedWithdrawal: true
+        });
+        // should revert due to unlockTimestamp + WITHDRAW_GRACE_PERIOD overflowing uint56
+        // user just needs to requeue
+        vm.expectRevert(BunniHub__GracePeriodExpired.selector);
+        hub.withdraw(withdrawParams);
+
+        // requeue
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
+
+        // wait 1 minute
+        skip(1 minutes);
+
+        // withdraw
+        hub.withdraw(
+            IBunniHub.WithdrawParams({
+                poolKey: key,
+                recipient: address(this),
+                shares: shares,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp,
+                useQueuedWithdrawal: true
+            })
+        );
+    }
+
+    function test_queueWithdrawPoC2() public {
+        uint256 depositAmount0 = 1 ether;
+        uint256 depositAmount1 = 1 ether;
+        (IBunniToken bunniToken, PoolKey memory key) = _deployPoolAndInitLiquidity();
+
+        // make deposit
+        (uint256 shares,,) = _makeDepositWithFee({
+            key_: key,
+            depositAmount0: depositAmount0,
+            depositAmount1: depositAmount1,
+            depositor: address(this),
+            vaultFee0: 0,
+            vaultFee1: 0,
+            snapLabel: ""
+        });
+
+        // bid in am-AMM auction
+        PoolId id = key.toId();
+        bunniToken.approve(address(bunniHook), type(uint256).max);
+        uint128 minRent = uint128(bunniToken.totalSupply() * MIN_RENT_MULTIPLIER / 1e18);
+        uint128 rentDeposit = minRent * 2 days;
+        bunniHook.bid(id, address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), minRent * 2, rentDeposit);
+        shares -= rentDeposit;
+
+        // wait until address(this) is the manager
+        skipBlocks(K);
+        assertEq(bunniHook.getTopBid(id).manager, address(this), "not manager yet");
+
+        vm.warp(type(uint56).max);
+
+        // queue withdraw
+        bunniToken.approve(address(hub), type(uint256).max);
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
+        assertEqDecimal(bunniToken.balanceOf(address(hub)), shares, DECIMALS, "didn't take shares");
+
+        // wait 1 minute
+        skip(1 minutes);
+
+        // re-queue before expiry
+        // should revert
+        vm.expectRevert(BunniHub__NoExpiredWithdrawal.selector);
+        hub.queueWithdraw(IBunniHub.QueueWithdrawParams({poolKey: key, shares: shares.toUint200()}));
     }
 
     function test_WrongIdleBalanceComputation() public {
