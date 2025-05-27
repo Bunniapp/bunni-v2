@@ -1801,4 +1801,17 @@ contract BunniHookTest is BaseTest {
             "referral reward modifier should be updated after set"
         );
     }
+
+    function test_protocolFeeSwitch_ownerCanSetRecipientAfter90Days() public {
+        // owner can't set recipient beforehand
+        vm.expectRevert(BunniHook__Unauthorized.selector);
+        bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
+
+        // fast forward 90 days
+        skip(90 days);
+
+        // owner can set recipient after 90 days
+        bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
+        assertEq(bunniHook.getHookFeeRecipient(), HOOK_FEE_RECIPIENT, "hook fee recipient should be set");
+    }
 }

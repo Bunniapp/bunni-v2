@@ -65,6 +65,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     IFloodPlain internal immutable floodPlain;
     /// @dev The address with the right to permanently set the hook fee recipient
     address internal immutable hookFeeRecipientController;
+    /// @dev The Unix timestamp in seconds when this contract was deployed
+    uint256 internal immutable deployTimestamp;
 
     /// -----------------------------------------------------------------------
     /// Transient storage variables
@@ -139,6 +141,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
 
         _initializeOwner(owner_);
         poolManager_.setOperator(address(hub_), true);
+
+        deployTimestamp = block.timestamp;
     }
 
     /// -----------------------------------------------------------------------
@@ -309,7 +313,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// @inheritdoc IBunniHook
     function setHookFeeRecipient(address newHookFeeRecipient) external {
         // hook recipient is set by the controller instead of the owner
-        if (msg.sender != hookFeeRecipientController) revert BunniHook__Unauthorized();
+        // but owner can set it 90 days after contract deployment if it hasn't been set already
+        if (
+            !(
+                msg.sender == hookFeeRecipientController
+                    || (msg.sender == owner() && block.timestamp >= deployTimestamp + 90 days)
+            )
+        ) revert BunniHook__Unauthorized();
 
         // hook recipient can only be set once
         if (hookFeeRecipient != address(0)) revert BunniHook__HookFeeRecipientAlreadySet();
