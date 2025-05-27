@@ -428,13 +428,11 @@ library BunniHubLogic {
             if (params.shares == 0) revert BunniHub__ZeroInput();
             s.queuedWithdrawals[id][msgSender] =
                 QueuedWithdrawal({shareAmount: params.shares, unlockTimestamp: newUnlockTimestamp});
-        }
 
-        /// -----------------------------------------------------------------------
-        /// External calls
-        /// -----------------------------------------------------------------------
+            /// -----------------------------------------------------------------------
+            /// External calls
+            /// -----------------------------------------------------------------------
 
-        if (queued.shareAmount == 0) {
             // transfer shares from msgSender to address(this)
             bunniToken.transferFrom(msgSender, address(this), params.shares);
         }
