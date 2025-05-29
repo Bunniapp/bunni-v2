@@ -253,6 +253,17 @@ contract BunniQuoter is IBunniQuoter {
                 (uint32 hookFeeModifier,) = hook.getModifiers();
                 uint256 hookFeesAmount =
                     outputAmount.mulDivUp(hookFeesBaseSwapFee, SWAP_FEE_BASE).mulDivUp(hookFeeModifier, MODIFIER_BASE);
+                // the case when swapFee = computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife)
+                if (swapFee != amAmmSwapFee) {
+                    // am-Amm manager's fee is in range [amAmmSwapFee, 100% - hookFeesBaseSwapFee.mulDivUp(env.hookFeeModifier, MODIFIER_BASE)]
+                    swapFee = uint24(
+                        FixedPointMathLib.max(
+                            amAmmSwapFee, swapFee - hookFeesBaseSwapFee.mulDivUp(hookFeeModifier, MODIFIER_BASE)
+                        )
+                    );
+                    // recalculate swapFeeAmount
+                    swapFeeAmount = outputAmount.mulDivUp(swapFee, SWAP_FEE_BASE);
+                }
                 swapFeeAmount += hookFeesAmount; // add hook fees to swapFeeAmount since we're only using it for computing inputAmount
                 swapFee += uint24(hookFeesBaseSwapFee.mulDivUp(hookFeeModifier, MODIFIER_BASE)); // modify effective swap fee for swapper
             }
