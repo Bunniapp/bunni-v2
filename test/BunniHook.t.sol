@@ -1814,4 +1814,10 @@ contract BunniHookTest is BaseTest {
         bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
         assertEq(bunniHook.getHookFeeRecipient(), HOOK_FEE_RECIPIENT, "hook fee recipient should be set");
     }
+
+    function test_protocolFeeSwitch_cannotClaimFeesIfRecipientNotSet() public {
+        // cannot claim fees if recipient not set
+        vm.expectRevert(BunniHook__HookFeeRecipientNotSet.selector);
+        bunniHook.claimProtocolFees(new Currency[](0));
+    }
 }

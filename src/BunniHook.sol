@@ -267,6 +267,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         Currency[] memory currencyList = abi.decode(callbackData, (Currency[]));
         address recipient = hookFeeRecipient;
 
+        if (recipient == address(0)) revert BunniHook__HookFeeRecipientNotSet();
+
         // claim protocol fees
         for (uint256 i; i < currencyList.length; i++) {
             Currency currency = currencyList[i];
