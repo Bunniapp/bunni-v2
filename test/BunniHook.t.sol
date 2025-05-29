@@ -1802,15 +1802,15 @@ contract BunniHookTest is BaseTest {
         );
     }
 
-    function test_protocolFeeSwitch_ownerCanSetRecipientAfter90Days() public {
+    function test_protocolFeeSwitch_ownerCanSetRecipientAfter180Days() public {
         // owner can't set recipient beforehand
         vm.expectRevert(BunniHook__Unauthorized.selector);
         bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
 
-        // fast forward 90 days
-        skip(90 days);
+        // fast forward 180 days
+        skip(180 days);
 
-        // owner can set recipient after 90 days
+        // owner can set recipient after 180 days
         bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
         assertEq(bunniHook.getHookFeeRecipient(), HOOK_FEE_RECIPIENT, "hook fee recipient should be set");
     }

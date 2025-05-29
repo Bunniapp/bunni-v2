@@ -315,11 +315,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     /// @inheritdoc IBunniHook
     function setHookFeeRecipient(address newHookFeeRecipient) external {
         // hook recipient is set by the controller instead of the owner
-        // but owner can set it 90 days after contract deployment if it hasn't been set already
+        // but owner can set it 180 days after contract deployment if it hasn't been set already
         if (
             !(
                 msg.sender == hookFeeRecipientController
-                    || (msg.sender == owner() && block.timestamp >= deployTimestamp + 90 days)
+                    || (msg.sender == owner() && block.timestamp >= deployTimestamp + 180 days)
             )
         ) revert BunniHook__Unauthorized();
 
