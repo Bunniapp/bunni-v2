@@ -29,12 +29,8 @@ contract DeployCoreScript is CREATE3Script {
 
         address poolManager = vm.envAddress(string.concat("POOL_MANAGER_", block.chainid.toString()));
         address weth = vm.envAddress(string.concat("WETH_", block.chainid.toString()));
-        address permit2 = vm.envAddress("PERMIT2");
         address owner = vm.envAddress("OWNER");
-        address hookFeeRecipient = vm.envAddress("HOOK_FEE_RECIPIENT");
-        uint32 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint32();
-        uint32 referralRewardModifier = vm.envUint("REFERRAL_REWARD_MODIFIER").toUint32();
-        address floodPlain = vm.envAddress("FLOOD_PLAIN");
+        address hookFeeRecipientController = vm.envAddress("HOOK_FEE_RECIPIENT_CONTROLLER");
         uint48 k = vm.envUint(string.concat("AMAMM_K_", block.chainid.toString())).toUint48();
 
         hubSalt = getCreate3SaltFromEnv("BunniHub");
@@ -52,7 +48,9 @@ contract DeployCoreScript is CREATE3Script {
                     hubSalt,
                     bytes.concat(
                         type(BunniHub).creationCode,
-                        abi.encode(poolManager, weth, permit2, new BunniToken(), owner, hookFeeRecipient, hookWhitelist)
+                        abi.encode(
+                            poolManager, weth, vm.envAddress("PERMIT2"), new BunniToken(), owner, owner, hookWhitelist
+                        )
                     )
                 )
             )
@@ -77,13 +75,11 @@ contract DeployCoreScript is CREATE3Script {
                         abi.encode(
                             poolManager,
                             hub,
-                            floodPlain,
+                            vm.envAddress("FLOOD_PLAIN"),
                             weth,
                             zone,
                             owner,
-                            hookFeeRecipient,
-                            hookFeeModifier,
-                            referralRewardModifier,
+                            hookFeeRecipientController,
                             k
                         )
                     )

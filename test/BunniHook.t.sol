@@ -394,6 +394,11 @@ contract BunniHookTest is BaseTest {
         ERC4626 vault1_,
         string memory snapLabel
     ) internal {
+        // enable protocol fees
+        vm.prank(HOOK_FEE_RECIPIENT_CONTROLLER);
+        bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
+        bunniHook.setModifiers(HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER);
+
         // create new bunni token
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(currency0, currency1, vault0_, vault1_);
 
@@ -1745,5 +1750,74 @@ contract BunniHookTest is BaseTest {
         (, deposit0, deposit1) = hub.deposit(depositParams);
 
         return order.consideration.amount;
+    }
+
+    function test_protocolFeeSwitchBehavior() public {
+        // initial hook fee recipient and fee modifier are zero
+        assertEq(bunniHook.getHookFeeRecipient(), address(0), "hook fee recipient should be zero initially");
+        (uint32 hookFeeModifier_, uint32 referralRewardModifier_) = bunniHook.getModifiers();
+        assertEq(hookFeeModifier_, 0, "hook fee modifier should be zero initially");
+        assertEq(referralRewardModifier_, 0, "referral reward modifier should be zero initially");
+
+        // cannot change fee before hook recipient is set
+        vm.expectRevert(BunniHook__HookFeeRecipientNotSet.selector);
+        bunniHook.setModifiers(HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER);
+
+        // set hook fee recipient
+        vm.prank(HOOK_FEE_RECIPIENT_CONTROLLER);
+        bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
+        assertEq(bunniHook.getHookFeeRecipient(), HOOK_FEE_RECIPIENT, "hook fee recipient should be set");
+
+        // cannot change hook fee recipient after set
+        vm.expectRevert(BunniHook__HookFeeRecipientAlreadySet.selector);
+        vm.prank(HOOK_FEE_RECIPIENT_CONTROLLER);
+        bunniHook.setHookFeeRecipient(address(0x1234));
+
+        // can now change fee modifier
+        bunniHook.setModifiers(HOOK_FEE_MODIFIER, REFERRAL_REWARD_MODIFIER);
+        (hookFeeModifier_, referralRewardModifier_) = bunniHook.getModifiers();
+        assertEq(hookFeeModifier_, HOOK_FEE_MODIFIER, "hook fee modifier should be set");
+        assertEq(referralRewardModifier_, REFERRAL_REWARD_MODIFIER, "referral reward modifier should be set");
+
+        // cannot set hook fee modifier to zero after set
+        vm.expectRevert(BunniHook__InvalidModifier.selector);
+        bunniHook.setModifiers(0, REFERRAL_REWARD_MODIFIER);
+
+        // cannot set hook fee modifier to above 50%
+        vm.expectRevert(BunniHook__InvalidModifier.selector);
+        bunniHook.setModifiers(0.5e6 + 1, REFERRAL_REWARD_MODIFIER);
+
+        // cannot set hook fee modifier to below 10%
+        vm.expectRevert(BunniHook__InvalidModifier.selector);
+        bunniHook.setModifiers(0.1e6 - 1, REFERRAL_REWARD_MODIFIER);
+
+        // can set hook fee modifier to different non-zero value after set
+        bunniHook.setModifiers(HOOK_FEE_MODIFIER * 2, REFERRAL_REWARD_MODIFIER * 2);
+        (hookFeeModifier_, referralRewardModifier_) = bunniHook.getModifiers();
+        assertEq(hookFeeModifier_, HOOK_FEE_MODIFIER * 2, "hook fee modifier should be updated after set");
+        assertEq(
+            referralRewardModifier_,
+            REFERRAL_REWARD_MODIFIER * 2,
+            "referral reward modifier should be updated after set"
+        );
+    }
+
+    function test_protocolFeeSwitch_ownerCanSetRecipientAfter180Days() public {
+        // owner can't set recipient beforehand
+        vm.expectRevert(BunniHook__Unauthorized.selector);
+        bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
+
+        // fast forward 180 days
+        skip(180 days);
+
+        // owner can set recipient after 180 days
+        bunniHook.setHookFeeRecipient(HOOK_FEE_RECIPIENT);
+        assertEq(bunniHook.getHookFeeRecipient(), HOOK_FEE_RECIPIENT, "hook fee recipient should be set");
+    }
+
+    function test_protocolFeeSwitch_cannotClaimFeesIfRecipientNotSet() public {
+        // cannot claim fees if recipient not set
+        vm.expectRevert(BunniHook__HookFeeRecipientNotSet.selector);
+        bunniHook.claimProtocolFees(new Currency[](0));
     }
 }

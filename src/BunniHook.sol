@@ -63,6 +63,10 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
     IBunniHub internal immutable hub;
     address internal immutable permit2;
     IFloodPlain internal immutable floodPlain;
+    /// @dev The address with the right to permanently set the hook fee recipient
+    address internal immutable hookFeeRecipientController;
+    /// @dev The Unix timestamp in seconds when this contract was deployed
+    uint256 internal immutable deployTimestamp;
 
     /// -----------------------------------------------------------------------
     /// Transient storage variables
@@ -118,34 +122,27 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         WETH weth_,
         IZone floodZone_,
         address owner_,
-        address hookFeeRecipient_,
-        uint32 hookFeeModifier_,
-        uint32 referralRewardModifier_,
+        address hookFeeRecipientController_,
         uint48 k_
     ) BaseHook(poolManager_) {
-        if (hookFeeModifier_ > MODIFIER_BASE || referralRewardModifier_ > MODIFIER_BASE) {
-            revert BunniHook__InvalidModifier();
-        }
-
         hub = hub_;
         floodPlain = floodPlain_;
         permit2 = address(floodPlain_.PERMIT2());
         weth = weth_;
+        hookFeeRecipientController = hookFeeRecipientController_;
         require(
             address(hub_) != address(0) && address(floodPlain_) != address(0) && address(permit2) != address(0)
-                && address(weth_) != address(0) && owner_ != address(0) && k_ != 0
+                && address(weth_) != address(0) && hookFeeRecipientController_ != address(0) && owner_ != address(0)
+                && k_ != 0
         );
 
-        hookFeeRecipient = hookFeeRecipient_;
-        hookFeeModifier = hookFeeModifier_;
-        referralRewardModifier = referralRewardModifier_;
         floodZone = floodZone_;
         _K = k_;
 
         _initializeOwner(owner_);
         poolManager_.setOperator(address(hub_), true);
 
-        emit SetModifiers(hookFeeModifier_, referralRewardModifier_);
+        deployTimestamp = block.timestamp;
     }
 
     /// -----------------------------------------------------------------------
@@ -270,6 +267,8 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         Currency[] memory currencyList = abi.decode(callbackData, (Currency[]));
         address recipient = hookFeeRecipient;
 
+        if (recipient == address(0)) revert BunniHook__HookFeeRecipientNotSet();
+
         // claim protocol fees
         for (uint256 i; i < currencyList.length; i++) {
             Currency currency = currencyList[i];
@@ -313,15 +312,36 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm {
         emit SetZone(zone);
     }
 
-    function setHookFeeRecipient(address newHookFeeRecipient) external onlyOwner {
+    /// @inheritdoc IBunniHook
+    function setHookFeeRecipient(address newHookFeeRecipient) external {
+        // hook recipient is set by the controller instead of the owner
+        // but owner can set it 180 days after contract deployment if it hasn't been set already
+        if (
+            !(
+                msg.sender == hookFeeRecipientController
+                    || (msg.sender == owner() && block.timestamp >= deployTimestamp + 180 days)
+            )
+        ) revert BunniHook__Unauthorized();
+
+        // hook recipient can only be set once
+        if (hookFeeRecipient != address(0)) revert BunniHook__HookFeeRecipientAlreadySet();
+
         hookFeeRecipient = newHookFeeRecipient;
         emit SetHookFeeRecipient(newHookFeeRecipient);
     }
 
     /// @inheritdoc IBunniHook
     function setModifiers(uint32 newHookFeeModifier, uint32 newReferralRewardModifier) external onlyOwner {
-        if (newHookFeeModifier > MODIFIER_BASE || newReferralRewardModifier > MODIFIER_BASE) {
+        // hook fee can't be turned off once turned on, and cannot exceed 50% and cannot be less than 10%
+        if (
+            newHookFeeModifier > MODIFIER_BASE / 2 || newHookFeeModifier < MODIFIER_BASE / 10
+                || newReferralRewardModifier > MODIFIER_BASE
+        ) {
             revert BunniHook__InvalidModifier();
+        }
+        // hook fee can only be turned on if hook fee recipient is set
+        if (hookFeeRecipient == address(0)) {
+            revert BunniHook__HookFeeRecipientNotSet();
         }
 
         hookFeeModifier = newHookFeeModifier;

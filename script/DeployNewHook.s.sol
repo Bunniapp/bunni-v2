@@ -11,7 +11,6 @@ import {CREATE3Script} from "./base/CREATE3Script.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniZone} from "../src/BunniZone.sol";
 import {BunniHook} from "../src/BunniHook.sol";
-import {BunniToken} from "../src/BunniToken.sol";
 
 contract DeployNewHookScript is CREATE3Script {
     using LibString for uint256;
@@ -27,9 +26,7 @@ contract DeployNewHookScript is CREATE3Script {
         address poolManager = vm.envAddress(string.concat("POOL_MANAGER_", block.chainid.toString()));
         address weth = vm.envAddress(string.concat("WETH_", block.chainid.toString()));
         address owner = vm.envAddress("OWNER");
-        address hookFeeRecipient = vm.envAddress("HOOK_FEE_RECIPIENT");
-        uint32 hookFeeModifier = vm.envUint("HOOK_FEE_MODIFIER").toUint32();
-        uint32 referralRewardModifier = vm.envUint("REFERRAL_REWARD_MODIFIER").toUint32();
+        address hookFeeRecipientController = vm.envAddress("HOOK_FEE_RECIPIENT_CONTROLLER");
         address floodPlain = vm.envAddress("FLOOD_PLAIN");
         uint48 k = vm.envUint(string.concat("AMAMM_K_", block.chainid.toString())).toUint48();
 
@@ -53,18 +50,7 @@ contract DeployNewHookScript is CREATE3Script {
                     hookSalt,
                     bytes.concat(
                         type(BunniHook).creationCode,
-                        abi.encode(
-                            poolManager,
-                            hub,
-                            floodPlain,
-                            weth,
-                            zone,
-                            owner,
-                            hookFeeRecipient,
-                            hookFeeModifier,
-                            referralRewardModifier,
-                            k
-                        )
+                        abi.encode(poolManager, hub, floodPlain, weth, zone, owner, hookFeeRecipientController, k)
                     )
                 )
             )

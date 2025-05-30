@@ -93,6 +93,7 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
     uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
     address internal constant HOOK_FEE_RECIPIENT = address(0xfee);
+    address internal constant HOOK_FEE_RECIPIENT_CONTROLLER = address(0xf00d);
     uint24 internal constant TWAP_SECONDS_AGO = 1 days;
     uint16 internal constant SURGE_HALFLIFE = 1 minutes;
     uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
@@ -201,18 +202,7 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         unchecked {
             bytes memory hookCreationCode = abi.encodePacked(
                 type(BunniHook).creationCode,
-                abi.encode(
-                    poolManager,
-                    hub,
-                    floodPlain,
-                    weth,
-                    zone,
-                    address(this),
-                    HOOK_FEE_RECIPIENT,
-                    HOOK_FEE_MODIFIER,
-                    REFERRAL_REWARD_MODIFIER,
-                    K
-                )
+                abi.encode(poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_RECIPIENT_CONTROLLER, K)
             );
             for (uint256 offset; offset < 100000; offset++) {
                 hookSalt = bytes32(offset);
@@ -224,16 +214,7 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
             }
         }
         bunniHook = new BunniHook{salt: hookSalt}(
-            poolManager,
-            hub,
-            floodPlain,
-            weth,
-            zone,
-            address(this),
-            HOOK_FEE_RECIPIENT,
-            HOOK_FEE_MODIFIER,
-            REFERRAL_REWARD_MODIFIER,
-            K
+            poolManager, hub, floodPlain, weth, zone, address(this), HOOK_FEE_RECIPIENT_CONTROLLER, K
         );
         vm.label(address(bunniHook), "BunniHook");
 

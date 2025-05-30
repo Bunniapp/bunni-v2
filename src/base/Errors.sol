@@ -40,7 +40,9 @@ error BunniHook__Unauthorized();
 error BunniHook__InvalidModifier();
 error BunniHook__InvalidActiveBlock();
 error BunniHook__InsufficientOutput();
+error BunniHook__HookFeeRecipientNotSet();
 error BunniHook__InvalidRebalanceOrderHash();
+error BunniHook__HookFeeRecipientAlreadySet();
 error BunniHook__PrehookPostConditionFailed();
 error BunniHook__RequestedOutputExceedsBalance();
 
