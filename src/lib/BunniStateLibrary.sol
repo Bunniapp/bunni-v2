@@ -52,6 +52,6 @@ library BunniStateLibrary {
     }
 
     function _getVaultSharePricesSlot(PoolId poolId) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(PoolId.unwrap(poolId), VAULT_SHARE_PRICES_SLOT));
+        return keccak256(abi.encode(PoolId.unwrap(poolId), VAULT_SHARE_PRICES_SLOT));
     }
 }

@@ -215,7 +215,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
         // decode input
         (HookUnlockCallbackType t, bytes memory callbackData) = abi.decode(data, (HookUnlockCallbackType, bytes));
 
-        if (uint8(t) <= uint8(HookUnlockCallbackType.REBALANCE_POSTHOOK)) {
+        if (t == HookUnlockCallbackType.REBALANCE_PREHOOK || t == HookUnlockCallbackType.REBALANCE_POSTHOOK) {
             // rebalance prehook or posthook
             _rebalanceHookCallback(t == HookUnlockCallbackType.REBALANCE_PREHOOK, callbackData);
         } else if (t == HookUnlockCallbackType.CLAIM_FEES) {
@@ -502,7 +502,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IBunniHook
-    function rebalanceOrderHook(bool isPreHook, RebalanceOrderHookArgs calldata hookArgs) external override {
+    function rebalanceOrderHook(bool isPreHook, RebalanceOrderHookArgs calldata hookArgs)
+        external
+        override
+        nonReentrant
+    {
         // verify call came from Flood
         if (msg.sender != address(floodPlain)) {
             revert BunniHook__Unauthorized();
@@ -642,23 +646,12 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
     }
 
     function _amAmmEnabled(PoolId id) internal view virtual override returns (bool) {
-        bytes memory hookParams = hub.hookParams(id);
-        bytes32 firstWord;
-        /// @solidity memory-safe-assembly
-        assembly {
-            firstWord := mload(add(hookParams, 32))
-        }
-        return uint8(bytes1(firstWord << 248)) != 0;
+        return uint8(bytes1(_getHookParamsFirstWord(id) << 248)) != 0;
     }
 
     function _payloadIsValid(PoolId id, bytes6 payload) internal view virtual override returns (bool) {
         // use feeMax from hookParams
-        bytes memory hookParams = hub.hookParams(id);
-        bytes32 firstWord;
-        /// @solidity memory-safe-assembly
-        assembly {
-            firstWord := mload(add(hookParams, 32))
-        }
+        bytes32 firstWord = _getHookParamsFirstWord(id);
         uint24 maxAmAmmFee = uint24(bytes3(firstWord << 96));
 
         // payload is valid if swapFee0For1 and swapFee1For0 are at most maxAmAmmFee
@@ -680,5 +673,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
 
     function _transferFeeToken(Currency currency, address to, uint256 amount) internal virtual override {
         poolManager.transfer(to, currency.toId(), amount);
+    }
+
+    function _getHookParamsFirstWord(PoolId id) internal view returns (bytes32 firstWord) {
+        bytes memory hookParams = hub.hookParams(id);
+        /// @solidity memory-safe-assembly
+        assembly {
+            firstWord := mload(add(hookParams, 32))
+        }
     }
 }

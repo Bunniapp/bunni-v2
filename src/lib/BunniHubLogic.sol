@@ -872,11 +872,4 @@ library BunniHubLogic {
             }
         }
     }
-
-    function _getBunniTokenOfPool(HubStorage storage s, PoolId poolId) internal view returns (IBunniToken bunniToken) {
-        address ptr = s.poolState[poolId].immutableParamsPointer;
-        if (ptr == address(0)) return IBunniToken(address(0));
-        bytes memory rawValue = ptr.read({start: 20, end: 40});
-        bunniToken = IBunniToken(address(bytes20(rawValue)));
-    }
 }

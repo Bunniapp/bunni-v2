@@ -205,8 +205,11 @@ interface IBunniHook is IBaseHook, IOwnable, IUnlockCallback, IERC1271, IAmAmm, 
     /// Rebalance functions
     /// -----------------------------------------------------------------------
 
-    /// @notice Called by the FloodPlain contract prior to and after executing a rebalance order.
+    /// @notice Contains the logic for both the rebalance order prehook and posthook.
+    /// Called by the FloodPlain contract prior to and after executing a rebalance order.
     /// Prehook should ensure the hook has at least `hookArgs.preHookArgs.amount` tokens of `hookArgs.preHookArgs.currency` upon return.
+    /// Posthook should transfer any output tokens from the order to BunniHub (as ERC-6909 claim tokens) and update pool balances.
+    /// @param isPreHook True if the hook is being called before the order execution (i.e. the prehook), false if it's being called after (i.e. the posthook)
     /// @param hookArgs The rebalance order hook arguments
     function rebalanceOrderHook(bool isPreHook, RebalanceOrderHookArgs calldata hookArgs) external;
 }
