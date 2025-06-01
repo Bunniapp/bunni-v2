@@ -416,7 +416,7 @@ library BunniHubLogic {
         PoolState memory state = getPoolState(s, poolId);
         IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
 
-        IAmAmm.Bid memory topBid = hook.getTopBidWrite(poolId);
+        IAmAmm.Bid memory topBid = hook.getBidWrite(poolId, true);
         if (hook.getAmAmmEnabled(poolId) && topBid.manager != address(0) && !params.useQueuedWithdrawal) {
             revert BunniHub__NeedToUseQueuedWithdrawal();
         }

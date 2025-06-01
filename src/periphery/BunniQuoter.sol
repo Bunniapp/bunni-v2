@@ -210,7 +210,7 @@ contract BunniQuoter is IBunniQuoter {
         address amAmmManager;
         if (hookParams.amAmmEnabled) {
             bytes6 payload;
-            IAmAmm.Bid memory topBid = hook.getTopBid(id);
+            IAmAmm.Bid memory topBid = hook.getBid(id, true);
             (amAmmManager, payload) = (topBid.manager, topBid.payload);
             uint24 swapFee0For1;
             uint24 swapFee1For0;
@@ -392,7 +392,7 @@ contract BunniQuoter is IBunniQuoter {
         IBunniHook hook = IBunniHook(address(params.poolKey.hooks));
 
         if (!params.useQueuedWithdrawal) {
-            IAmAmm.Bid memory topBid = hook.getTopBid(poolId);
+            IAmAmm.Bid memory topBid = hook.getBid(poolId, true);
             if (topBid.manager != address(0) && hook.getAmAmmEnabled(poolId)) {
                 return (false, 0, 0);
             }

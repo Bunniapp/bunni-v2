@@ -20,8 +20,8 @@ contract CustomHook {
         (sqrtPriceX96, tick, lastSwapTimestamp, lastSurgeTimestamp) = (TickMath.getSqrtPriceAtTick(tick), tick, 0, 0);
     }
 
-    function getTopBidWrite(PoolId id) external view returns (IAmAmm.Bid memory topBid) {
-        topBid = IAmAmm.Bid({manager: address(0), blockIdx: 0, payload: 0, rent: 0, deposit: 0});
+    function getBidWrite(PoolId id, bool isTopBid) external view returns (IAmAmm.Bid memory) {
+        return IAmAmm.Bid({manager: address(0), blockIdx: 0, payload: 0, rent: 0, deposit: 0});
     }
 
     function getAmAmmEnabled(PoolId id) external view returns (bool) {
@@ -204,7 +204,7 @@ contract RebalanceAttackTest is BaseTest {
 
         // 4. Wait for attacker to become the am-AMM manager
         skipBlocks(K);
-        assertEq(bunniHook.getTopBid(id).manager, address(attacker), "not manager yet");
+        assertEq(bunniHook.getBid(id, true).manager, address(attacker), "not manager yet");
 
         // 5. Execute re-entrancy to arbitrage rebalance of legitimate pool
         test_rebalance_arb_rebalance(bunniToken, key, ldf, address(attacker));

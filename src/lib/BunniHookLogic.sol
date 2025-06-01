@@ -350,7 +350,7 @@ library BunniHookLogic {
         uint24 amAmmSwapFee;
         if (hookParams.amAmmEnabled) {
             bytes6 payload;
-            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getTopBidWrite(id);
+            IAmAmm.Bid memory topBid = IAmAmm(address(this)).getBidWrite(id, true);
             (amAmmManager, payload) = (topBid.manager, topBid.payload);
             (uint24 swapFee0For1, uint24 swapFee1For0) = decodeAmAmmPayload(payload);
             amAmmSwapFee = params.zeroForOne ? swapFee0For1 : swapFee1For0;

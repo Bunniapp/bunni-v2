@@ -48,7 +48,7 @@ contract BunniZone is IBunniZone, Ownable {
 
         // query the hook for the am-AMM manager
         IAmAmm amAmm = IAmAmm(address(key.hooks));
-        IAmAmm.Bid memory topBid = amAmm.getTopBid(id);
+        IAmAmm.Bid memory topBid = amAmm.getBid(id, true);
 
         // allow fulfiller if they are whitelisted or if they are the am-AMM manager
         return isWhitelisted[fulfiller] || topBid.manager == fulfiller;
