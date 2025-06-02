@@ -195,7 +195,7 @@ abstract contract BaseTest is Test, Permit2Deployer, FloodDeployer {
         hub = new BunniHub(poolManager, weth, PERMIT2, new BunniToken(), address(this), address(this), hookWhitelist);
 
         // deploy zone
-        zone = new BunniZone(address(this));
+        zone = new BunniZone(address(this), new address[](0));
 
         // initialize bunni hook
         bytes32 hookSalt;

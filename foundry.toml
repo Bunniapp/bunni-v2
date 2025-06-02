@@ -18,7 +18,7 @@ verbosity = 4
 
 [profile.gas]
 optimizer_runs = 100_000_000
-solc_version = "0.8.28"
+solc_version = "0.8.30"
 
 [rpc_endpoints]
 arbitrum = "${RPC_URL_ARBITRUM}"

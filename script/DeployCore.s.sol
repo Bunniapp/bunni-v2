@@ -32,6 +32,8 @@ contract DeployCoreScript is CREATE3Script {
         address owner = vm.envAddress("OWNER");
         address hookFeeRecipientController = vm.envAddress("HOOK_FEE_RECIPIENT_CONTROLLER");
         uint48 k = vm.envUint(string.concat("AMAMM_K_", block.chainid.toString())).toUint48();
+        address[] memory initialZoneWhitelist =
+            vm.envAddress(string.concat("FULFILLER_LIST_", block.chainid.toString()), ",");
 
         hubSalt = getCreate3SaltFromEnv("BunniHub");
         zoneSalt = getCreate3SaltFromEnv("BunniZone");
@@ -56,8 +58,13 @@ contract DeployCoreScript is CREATE3Script {
             )
         );
 
-        zone =
-            BunniZone(payable(create3.deploy(zoneSalt, bytes.concat(type(BunniZone).creationCode, abi.encode(owner)))));
+        zone = BunniZone(
+            payable(
+                create3.deploy(
+                    zoneSalt, bytes.concat(type(BunniZone).creationCode, abi.encode(owner, initialZoneWhitelist))
+                )
+            )
+        );
 
         uint256 hookFlags = Hooks.AFTER_INITIALIZE_FLAG + Hooks.BEFORE_ADD_LIQUIDITY_FLAG + Hooks.BEFORE_SWAP_FLAG
             + Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG;

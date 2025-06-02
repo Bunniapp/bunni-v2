@@ -231,7 +231,7 @@ contract BunniQuoter is IBunniQuoter {
         // that sets the Bunni swap fee to 0 during such swaps and charging swap fees
         // independently
         uint24 hookFeesBaseSwapFee = feeOverridden
-            ? feeOverride
+            ? uint24(FixedPointMathLib.max(feeOverride, computeSurgeFee(lastSurgeTimestamp, hookParams.surgeFeeHalfLife)))
             : computeDynamicSwapFee(
                 updatedSqrtPriceX96,
                 feeMeanTick,

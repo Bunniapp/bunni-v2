@@ -19,8 +19,13 @@ contract BunniZone is IBunniZone, Ownable {
 
     mapping(address => bool) public isWhitelisted;
 
-    constructor(address initialOwner) {
+    constructor(address initialOwner, address[] memory initialWhitelist) {
         _initializeOwner(initialOwner);
+
+        for (uint256 i; i < initialWhitelist.length; i++) {
+            isWhitelisted[initialWhitelist[i]] = true;
+            emit SetIsWhitelisted(initialWhitelist[i], true);
+        }
     }
 
     /// -----------------------------------------------------------------------
