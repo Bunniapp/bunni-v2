@@ -32,12 +32,12 @@ sepolia = "${RPC_URL_SEPOLIA}"
 unichain = "${RPC_URL_UNICHAIN}"
 
 [etherscan]
-arbitrum = {key = "${ARBISCAN_KEY}", url = "https://api.arbiscan.io/api"}
-avalanche = {key = "${SNOWTRACE_KEY}", url = "https://api.snowtrace.io/api"}
-base = {key = "${BASESCAN_KEY}", url = "https://api.basescan.org/api"}
-bsc = {key = "${BSCSCAN_KEY}", url = "https://api.bscscan.com/api"}
+arbitrum = {key = "${ETHERSCAN_KEY}"}
+avalanche = {key = "${ETHERSCAN_KEY}"}
+base = {key = "${ETHERSCAN_KEY}"}
+bsc = {key = "${ETHERSCAN_KEY}"}
 mainnet = {key = "${ETHERSCAN_KEY}"}
-optimism = {key = "${OPTIMISM_ETHERSCAN_KEY}", url = "https://api-optimistic.etherscan.io/api"}
-polygon = {key = "${POLYGONSCAN_KEY}", url = "https://api.polygonscan.com/api"}
-sepolia = {key = "${ETHERSCAN_KEY}", url = "https://api-sepolia.etherscan.io/api"}
-unichain = {key = "${UNISCAN_KEY}", url = "https://api.uniscan.xyz/api"}
+optimism = {key = "${ETHERSCAN_KEY}"}
+polygon = {key = "${ETHERSCAN_KEY}"}
+sepolia = {key = "${ETHERSCAN_KEY}"}
+unichain = {key = "${ETHERSCAN_KEY}"}
