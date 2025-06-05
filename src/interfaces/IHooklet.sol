@@ -264,4 +264,16 @@ interface IHooklet {
         IPoolManager.SwapParams calldata params,
         SwapReturnData calldata returnData
     ) external view returns (bytes4 selector);
+
+    /// @notice Called after a rebalance order execution.
+    /// @param key The Uniswap v4 pool's key.
+    /// @param orderOutputIsCurrency0 True if the currency0 is the output token of the Flood order (thus the Bunni pool received currency0), false otherwise.
+    /// @param orderInputAmount The amount of the input token of the Flood order, i.e. the amount the pool is selling.
+    /// @param orderOutputAmount The amount of the output token of the Flood order, i.e. the amount the pool is buying.
+    function afterRebalance(
+        PoolKey calldata key,
+        bool orderOutputIsCurrency0,
+        uint256 orderInputAmount,
+        uint256 orderOutputAmount
+    ) external returns (bytes4 selector);
 }

@@ -529,8 +529,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
             RebalanceOrderPreHookArgs calldata args = hookArgs.preHookArgs;
 
             // cache the order input balance before the order execution
-            uint256 inputBalanceBefore =
-                args.currency.isAddressZero() ? weth.balanceOf(address(this)) : args.currency.balanceOfSelf();
+            uint256 inputBalanceBefore = args.currency.balanceOfSelf();
 
             // store the order output balance before the order execution in transient storage
             // this is used to compute the order output amount
@@ -604,15 +603,13 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
 
             // call hooklet
             IHooklet hooklet = hub.hookletOfPool(id);
-            if (hooklet.hasPermission(HookletLib.AFTER_SWAP_FLAG)) {
-                hooklet.hookletAfterRebalance({
-                    sender: msg.sender,
-                    key: hookArgs.key,
-                    zeroForOne: hookArgs.key.currency0 == args.currency,
-                    orderInputAmount: hookArgs.preHookArgs.amount,
-                    orderOutputAmount: orderOutputAmount
-                });
-            }
+            hooklet.hookletAfterRebalance({
+                sender: msg.sender,
+                key: hookArgs.key,
+                orderOutputIsCurrency0: hookArgs.key.currency0 == args.currency,
+                orderInputAmount: hookArgs.preHookArgs.amount,
+                orderOutputAmount: orderOutputAmount
+            });
         }
     }
 
