@@ -154,6 +154,15 @@ contract HookletMock is IHooklet {
         return IHooklet.afterSwapView.selector;
     }
 
+    function afterRebalance(
+        PoolKey calldata, /* key */
+        bool, /* orderOutputIsCurrency0 */
+        uint256, /* orderInputAmount */
+        uint256 /* orderOutputAmount */
+    ) external pure returns (bytes4 selector) {
+        return IHooklet.afterRebalance.selector;
+    }
+
     function setBeforeSwapOverride(bool feeOverridden_, uint24 fee_, bool priceOverridden_, uint160 sqrtPriceX96_)
         external
     {
