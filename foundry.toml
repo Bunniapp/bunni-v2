@@ -1,6 +1,6 @@
 [profile.default]
 optimizer = true
-optimizer_runs = 7500
+optimizer_runs = 2500
 remappings = [
   "@uniswap/v4-core/=lib/v4-core/",
   "solmate/src/=lib/solmate/src/",
@@ -17,6 +17,18 @@ verbosity = 4
 
 [profile.gas]
 optimizer_runs = 100_000_000
+
+[profile.hub_logic]
+optimizer_runs = 5000 # optimal
+
+[profile.hook_logic]
+optimizer_runs = 2500 # optimal
+
+[profile.hub]
+optimizer_runs = 100_000_000 # optimal
+
+[profile.hook]
+optimizer_runs = 2000 # optimal
 
 [rpc_endpoints]
 arbitrum = "${RPC_URL_ARBITRUM}"

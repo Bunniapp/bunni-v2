@@ -81,21 +81,31 @@ The Create3 salts for the following contracts are required in the `.env` file:
 - `CarpetedDoubleGeometricDistribution`
 - `UniformDistribution`
 - `BuyTheDipGeometricDistribution`
+- `BunniHubLogic`
+- `BunniHookLogic`
 
 #### Dryrun
 
-```
+```bash
+FOUNDRY_PROFILE=hub_logic forge script script/DeployHubLogic.s.sol -f [network]
+FOUNDRY_PROFILE=hook_logic forge script script/DeployHookLogic.s.sol -f [network]
+FOUNDRY_PROFILE=hub forge script script/DeployHub.s.sol -f [network] --libraries src/lib/BunniHubLogic.sol:BunniHubLogic:[hubLogicLibAddress]
 FOUNDRY_PROFILE=gas forge script script/DeployLibraries.s.sol -f [network]
 FOUNDRY_PROFILE=gas forge script script/DeployLDFs.s.sol -f [network]
-forge script script/DeployCore.s.sol -f [network] --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress]
+FOUNDRY_PROFILE=hook forge script script/DeployHook.s.sol -f [network] --libraries src/lib/BunniHookLogic.sol:BunniHookLogic:[hookLogicLibAddress] --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress]
+FOUNDRY_PROFILE=zone forge script script/DeployZone.s.sol -f [network]
 forge script script/DeployBunniQuoter.s.sol -f [network] --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress] --libraries src/lib/BunniHookLogic.sol:BunniHookLogic:[hookLogicLibAddress]
 ```
 
 ### Live
 
-```
+```bash
+FOUNDRY_PROFILE=hub_logic forge script script/DeployHubLogic.s.sol -f [network] --verify --broadcast --slow
+FOUNDRY_PROFILE=hook_logic forge script script/DeployHookLogic.s.sol -f [network] --verify --broadcast --slow
+FOUNDRY_PROFILE=hub forge script script/DeployHub.s.sol -f [network] --verify --broadcast --slow --libraries src/lib/BunniHubLogic.sol:BunniHubLogic:[hubLogicLibAddress]
 FOUNDRY_PROFILE=gas forge script script/DeployLibraries.s.sol -f [network] --verify --broadcast --slow
 FOUNDRY_PROFILE=gas forge script script/DeployLDFs.s.sol -f [network] --verify --broadcast --slow
-forge script script/DeployCore.s.sol -f [network] --verify --broadcast --slow --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress]
+FOUNDRY_PROFILE=hook forge script script/DeployHook.s.sol -f [network] --verify --broadcast --slow --libraries src/lib/BunniHookLogic.sol:BunniHookLogic:[hookLogicLibAddress] --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress]
+FOUNDRY_PROFILE=zone forge script script/DeployZone.s.sol -f [network] --verify --broadcast --slow
 forge script script/DeployBunniQuoter.s.sol -f [network] --verify --broadcast --slow --libraries src/lib/BunniSwapMath.sol:BunniSwapMath:[swapMathLibAddress] --libraries src/lib/RebalanceLogic.sol:RebalanceLogic:[rebalanceLibAddress] --libraries src/lib/BunniHookLogic.sol:BunniHookLogic:[hookLogicLibAddress]
 ```
