@@ -1,5 +1,4 @@
 [profile.default]
-evm_version = "cancun"
 optimizer = true
 optimizer_runs = 7500
 remappings = [
@@ -7,7 +6,7 @@ remappings = [
   "solmate/src/=lib/solmate/src/",
   "solmate/utils/=lib/solmate/src/utils/",
 ]
-solc_version = "0.8.25"
+solc_version = "0.8.30"
 verbosity = 1
 via_ir = true
 
@@ -18,7 +17,6 @@ verbosity = 4
 
 [profile.gas]
 optimizer_runs = 100_000_000
-solc_version = "0.8.30"
 
 [rpc_endpoints]
 arbitrum = "${RPC_URL_ARBITRUM}"
