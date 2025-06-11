@@ -26,3 +26,4 @@ uint16 constant MAX_REBALANCE_MAX_SLIPPAGE = 0.25e5; // max value for rebalanceM
 uint16 constant MAX_REBALANCE_TWAP_SECONDS_AGO = 3 hours;
 uint16 constant MAX_REBALANCE_ORDER_TTL = 1 hours;
 uint256 constant CURATOR_FEE_BASE = 1e5;
+uint256 constant MAX_CURATOR_FEE = 0.3e5;

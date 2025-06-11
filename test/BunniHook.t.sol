@@ -1940,7 +1940,7 @@ contract BunniHookTest is BaseTest {
     }
 
     function test_curatorFees_happyPath(uint16 feeRate) public {
-        vm.assume(feeRate != 0);
+        vm.assume(feeRate != 0 && feeRate <= MAX_CURATOR_FEE);
 
         // set hook fee recipient
         vm.prank(HOOK_FEE_RECIPIENT_CONTROLLER);
@@ -2015,7 +2015,7 @@ contract BunniHookTest is BaseTest {
     }
 
     function test_curatorFees_authChecks(uint16 feeRate) public {
-        vm.assume(feeRate != 0);
+        vm.assume(feeRate != 0 && feeRate <= MAX_CURATOR_FEE);
 
         // create new bunni token
         (Currency currency0, Currency currency1) = (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
@@ -2025,6 +2025,11 @@ contract BunniHookTest is BaseTest {
         // transfer bunni token ownership to new curator
         address curator = address(0xabcd);
         bunniToken.transferOwnership(curator);
+
+        // can't set fee rate to too high
+        vm.expectRevert(BunniHook__InvalidCuratorFee.selector);
+        vm.prank(curator);
+        bunniHook.curatorSetFeeRate(key.toId(), 0.4e5);
 
         // set fee rate
         vm.prank(curator);

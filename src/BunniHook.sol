@@ -440,6 +440,7 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
 
     /// @inheritdoc IBunniHook
     function curatorSetFeeRate(PoolId id, uint16 newFeeRate) external nonReentrant onlyCurator(id) {
+        if (newFeeRate > MAX_CURATOR_FEE) revert BunniHook__InvalidCuratorFee();
         s.curatorFees[id].feeRate = newFeeRate;
         emit CuratorSetFeeRate(id, newFeeRate);
     }
