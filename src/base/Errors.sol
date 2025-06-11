@@ -41,6 +41,7 @@ error BunniHook__InvalidModifier();
 error BunniHook__InvalidCuratorFee();
 error BunniHook__InvalidActiveBlock();
 error BunniHook__InsufficientOutput();
+error BunniHook__RebalanceInProgress();
 error BunniHook__HookFeeRecipientNotSet();
 error BunniHook__InvalidRebalanceOrderHash();
 error BunniHook__HookFeeRecipientAlreadySet();

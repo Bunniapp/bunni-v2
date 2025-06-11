@@ -3,6 +3,8 @@ pragma solidity ^0.8.4;
 
 import {Ownable} from "solady/auth/Ownable.sol";
 
+import {IAmAmm} from "biddog/interfaces/IAmAmm.sol";
+
 import "./BaseTest.sol";
 import {BunniStateLibrary} from "../src/lib/BunniStateLibrary.sol";
 
@@ -1638,6 +1640,52 @@ contract BunniHookTest is BaseTest {
         // fulfill order
         _mint(Currency.wrap(address(weth)), address(this), order.consideration.amount);
         floodPlain.fulfillOrder(signedOrder);
+    }
+
+    function test_cannotBidAmAmmIfNotEnabled() public {
+        // deploy pool with amAmm disabled
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)),
+            Currency.wrap(address(token1)),
+            ERC4626(address(0)),
+            ERC4626(address(0)),
+            new MockLDF(address(hub), address(bunniHook), address(quoter)),
+            IHooklet(address(0)),
+            bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), ALPHA)),
+            abi.encodePacked(
+                FEE_MIN,
+                FEE_MAX,
+                FEE_QUADRATIC_MULTIPLIER,
+                FEE_TWAP_SECONDS_AGO,
+                POOL_MAX_AMAMM_FEE,
+                SURGE_HALFLIFE,
+                SURGE_AUTOSTART_TIME,
+                VAULT_SURGE_THRESHOLD_0,
+                VAULT_SURGE_THRESHOLD_1,
+                REBALANCE_THRESHOLD,
+                REBALANCE_MAX_SLIPPAGE,
+                REBALANCE_TWAP_SECONDS_AGO,
+                REBALANCE_ORDER_TTL,
+                false, // amAmmEnabled
+                ORACLE_MIN_INTERVAL,
+                MIN_RENT_MULTIPLIER
+            ),
+            bytes32(0)
+        );
+
+        // try to bid
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        bunniHook.bid(key.toId(), address(this), bytes6(abi.encodePacked(uint24(1e3), uint24(2e3))), 1e18, 1e18);
+
+        // other functions
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        bunniHook.depositIntoBid(key.toId(), 1e18, true);
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        bunniHook.withdrawFromBid(key.toId(), 1e18, address(this), true);
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        bunniHook.claimRefund(key.toId(), address(this));
+        vm.expectRevert(IAmAmm.AmAmm__NotEnabled.selector);
+        bunniHook.increaseBidRent(key.toId(), 1e18, 1e18, true, address(this));
     }
 
     function test_avoidTransferringBidTokensDuringRebalance() public {

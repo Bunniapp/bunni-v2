@@ -77,6 +77,9 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
     uint256 internal constant REBALANCE_OUTPUT_BALANCE_SLOT =
         0x07bd55ea91cddb9c2c27beeba6deadeb8f557caeb242f82d756cf1d33154a78c;
 
+    /// @dev Equal to uint256(keccak256("REBALANCE_ACTIVE_SLOT")) - 1
+    uint256 internal constant REBALANCE_ACTIVE_SLOT = 0x81033a18d648f105cf4834b06051c94a8095dbf3ba7aa3cb9e7baead1658f20a;
+
     /// -----------------------------------------------------------------------
     /// Storage variables
     /// -----------------------------------------------------------------------
@@ -585,6 +588,11 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
         }
 
         if (isPreHook) {
+            // mark the rebalance as active
+            assembly ("memory-safe") {
+                tstore(REBALANCE_ACTIVE_SLOT, 1)
+            }
+
             RebalanceOrderPreHookArgs calldata args = hookArgs.preHookArgs;
 
             // cache the order input balance before the order execution
@@ -683,12 +691,105 @@ contract BunniHook is BaseHook, Ownable, IBunniHook, ReentrancyGuard, AmAmm, Ext
                 orderInputAmount: hookArgs.preHookArgs.amount,
                 orderOutputAmount: orderOutputAmount
             });
+
+            // mark the rebalance as inactive
+            assembly ("memory-safe") {
+                tstore(REBALANCE_ACTIVE_SLOT, 0)
+            }
         }
     }
 
     /// -----------------------------------------------------------------------
     /// AmAmm support
     /// -----------------------------------------------------------------------
+
+    modifier notDuringRebalance() {
+        _checkNotDuringRebalance();
+        _;
+    }
+
+    function _checkNotDuringRebalance() internal view {
+        uint256 rebalanceActive;
+        assembly ("memory-safe") {
+            rebalanceActive := tload(REBALANCE_ACTIVE_SLOT)
+        }
+        if (rebalanceActive != 0) revert BunniHook__RebalanceInProgress();
+    }
+
+    /// @inheritdoc IAmAmm
+    function bid(PoolId id, address manager, bytes6 payload, uint128 rent, uint128 deposit)
+        public
+        virtual
+        override(AmAmm, IAmAmm)
+        nonReentrant
+        notDuringRebalance
+    {
+        super.bid(id, manager, payload, rent, deposit);
+    }
+
+    /// @inheritdoc IAmAmm
+    function depositIntoBid(PoolId id, uint128 amount, bool isTopBid)
+        public
+        virtual
+        override(AmAmm, IAmAmm)
+        nonReentrant
+        notDuringRebalance
+    {
+        super.depositIntoBid(id, amount, isTopBid);
+    }
+
+    /// @inheritdoc IAmAmm
+    function withdrawFromBid(PoolId id, uint128 amount, address recipient, bool isTopBid)
+        public
+        virtual
+        override(AmAmm, IAmAmm)
+        nonReentrant
+        notDuringRebalance
+    {
+        super.withdrawFromBid(id, amount, recipient, isTopBid);
+    }
+
+    /// @inheritdoc IAmAmm
+    function claimRefund(PoolId id, address recipient)
+        public
+        virtual
+        override(AmAmm, IAmAmm)
+        nonReentrant
+        notDuringRebalance
+        returns (uint256 refund)
+    {
+        return super.claimRefund(id, recipient);
+    }
+
+    /// @inheritdoc IAmAmm
+    function claimFees(Currency currency, address recipient)
+        public
+        virtual
+        override(AmAmm, IAmAmm)
+        nonReentrant
+        notDuringRebalance
+        returns (uint256 fees)
+    {
+        return super.claimFees(currency, recipient);
+    }
+
+    /// @inheritdoc IAmAmm
+    function increaseBidRent(
+        PoolId id,
+        uint128 additionalRent,
+        uint128 updatedDeposit,
+        bool isTopBid,
+        address withdrawRecipient
+    )
+        public
+        virtual
+        override(AmAmm, IAmAmm)
+        nonReentrant
+        notDuringRebalance
+        returns (uint128 amountDeposited, uint128 amountWithdrawn)
+    {
+        return super.increaseBidRent(id, additionalRent, updatedDeposit, isTopBid, withdrawRecipient);
+    }
 
     function K(PoolId) internal view virtual override returns (uint48) {
         // load storage vars from single slot
