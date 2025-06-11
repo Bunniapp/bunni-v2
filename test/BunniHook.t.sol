@@ -613,25 +613,27 @@ contract BunniHookTest is BaseTest {
         assertLeDecimal(secondSwapOutputAmount, firstSwapInputAmount, 18, "arb has profit");
     }
 
-    function test_fuzz_swapNoArb_exactOut(
-        uint256 swapAmount,
-        bool zeroForOneFirstSwap,
-        bool useVault0,
-        bool useVault1,
-        uint256 waitTime,
-        uint32 alpha,
-        uint24 feeMin,
-        uint24 feeMax,
-        uint24 feeQuadraticMultiplier
-    ) external {
-        swapAmount = bound(swapAmount, 1e6, 1e30);
-        waitTime = bound(waitTime, 10, SURGE_AUTOSTART_TIME * 6);
-        feeMin = uint24(bound(feeMin, 2e5, 1e6 - 1));
-        feeMax = uint24(bound(feeMax, feeMin, 1e6 - 1));
-        alpha = uint32(bound(alpha, 1e3, 12e8));
+    struct SwapNoArbExactOutParams {
+        uint256 swapAmount;
+        bool zeroForOneFirstSwap;
+        bool useVault0;
+        bool useVault1;
+        uint256 waitTime;
+        uint32 alpha;
+        uint24 feeMin;
+        uint24 feeMax;
+        uint24 feeQuadraticMultiplier;
+    }
+
+    function test_fuzz_swapNoArb_exactOut(SwapNoArbExactOutParams memory params) external {
+        params.swapAmount = bound(params.swapAmount, 1e6, 1e30);
+        params.waitTime = bound(params.waitTime, 10, SURGE_AUTOSTART_TIME * 6);
+        params.feeMin = uint24(bound(params.feeMin, 2e5, 1e6 - 1));
+        params.feeMax = uint24(bound(params.feeMax, params.feeMin, 1e6 - 1));
+        params.alpha = uint32(bound(params.alpha, 1e3, 12e8));
 
         GeometricDistribution ldf_ = new GeometricDistribution(address(hub), address(bunniHook), address(quoter));
-        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), alpha));
+        bytes32 ldfParams = bytes32(abi.encodePacked(ShiftMode.BOTH, int24(-3) * TICK_SPACING, int16(6), params.alpha));
         {
             PoolKey memory key_;
             key_.tickSpacing = TICK_SPACING;
@@ -640,16 +642,16 @@ contract BunniHookTest is BaseTest {
         (, PoolKey memory key) = _deployPoolAndInitLiquidity(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
-            useVault0 ? vault0 : ERC4626(address(0)),
-            useVault1 ? vault1 : ERC4626(address(0)),
-            swapAmount * 100,
-            swapAmount * 100,
+            params.useVault0 ? vault0 : ERC4626(address(0)),
+            params.useVault1 ? vault1 : ERC4626(address(0)),
+            params.swapAmount * 100,
+            params.swapAmount * 100,
             ldf_,
             ldfParams,
             abi.encodePacked(
-                feeMin,
-                feeMax,
-                feeQuadraticMultiplier,
+                params.feeMin,
+                params.feeMax,
+                params.feeQuadraticMultiplier,
                 FEE_TWAP_SECONDS_AGO,
                 POOL_MAX_AMAMM_FEE,
                 SURGE_HALFLIFE,
@@ -668,22 +670,22 @@ contract BunniHookTest is BaseTest {
 
         // execute first swap
         (Currency firstSwapInputToken, Currency firstSwapOutputToken) =
-            zeroForOneFirstSwap ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: zeroForOneFirstSwap,
-            amountSpecified: int256(swapAmount),
-            sqrtPriceLimitX96: zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+            params.zeroForOneFirstSwap ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+            zeroForOne: params.zeroForOneFirstSwap,
+            amountSpecified: int256(params.swapAmount),
+            sqrtPriceLimitX96: params.zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         (,,, uint256 firstSwapInputAmount, uint256 firstSwapOutputAmount,,) =
-            quoter.quoteSwap(address(this), key, params);
-        if (firstSwapOutputToken.balanceOf(address(poolManager)) >= swapAmount) {
-            assertApproxEqAbs(firstSwapOutputAmount, swapAmount, 10, "firstSwapOutputAmount incorrect");
+            quoter.quoteSwap(address(this), key, swapParams);
+        if (firstSwapOutputToken.balanceOf(address(poolManager)) >= params.swapAmount) {
+            assertApproxEqAbs(firstSwapOutputAmount, params.swapAmount, 10, "firstSwapOutputAmount incorrect");
         }
         _mint(firstSwapInputToken, address(this), firstSwapInputAmount);
         {
             uint256 beforeInputTokenBalance = firstSwapInputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapOutputToken.balanceOfSelf();
-            _swap(key, params, 0, "");
+            _swap(key, swapParams, 0, "");
             firstSwapInputAmount = beforeInputTokenBalance - firstSwapInputToken.balanceOfSelf();
             firstSwapOutputAmount = firstSwapOutputToken.balanceOfSelf() - beforeOutputTokenBalance;
         }
@@ -692,20 +694,20 @@ contract BunniHookTest is BaseTest {
         console2.log("firstSwapOutputAmount", firstSwapOutputAmount);
 
         // wait for some time
-        skip(waitTime);
+        skip(params.waitTime);
 
         // execute second swap
-        params = IPoolManager.SwapParams({
-            zeroForOne: !zeroForOneFirstSwap,
+        swapParams = IPoolManager.SwapParams({
+            zeroForOne: !params.zeroForOneFirstSwap,
             amountSpecified: -int256(firstSwapOutputAmount),
-            sqrtPriceLimitX96: !zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+            sqrtPriceLimitX96: !params.zeroForOneFirstSwap ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         });
         uint256 secondSwapInputAmount;
         uint256 secondSwapOutputAmount;
         {
             uint256 beforeInputTokenBalance = firstSwapOutputToken.balanceOfSelf();
             uint256 beforeOutputTokenBalance = firstSwapInputToken.balanceOfSelf();
-            _swap(key, params, 0, "");
+            _swap(key, swapParams, 0, "");
             secondSwapInputAmount = beforeInputTokenBalance - firstSwapOutputToken.balanceOfSelf();
             secondSwapOutputAmount = firstSwapInputToken.balanceOfSelf() - beforeOutputTokenBalance;
         }
