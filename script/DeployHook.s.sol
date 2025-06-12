@@ -11,6 +11,7 @@ import {CREATE3Script} from "./base/CREATE3Script.sol";
 import {BunniHub} from "../src/BunniHub.sol";
 import {BunniZone} from "../src/BunniZone.sol";
 import {BunniHook} from "../src/BunniHook.sol";
+import {ArbSysMock} from "./mocks/ArbSysMock.sol";
 
 contract DeployNewHookScript is CREATE3Script {
     using LibString for uint256;
@@ -34,6 +35,15 @@ contract DeployNewHookScript is CREATE3Script {
         BunniZone zone = BunniZone(payable(getCreate3ContractFromEnvSalt("BunniZone")));
 
         hookSalt = getCreate3SaltFromEnv("BunniHook");
+
+        // override ArbSys bytecode with mock
+        // otherwise deployment fails
+        // still need --skip-simulation flag
+        if (block.chainid == 42161) {
+            bytes memory arbSysCode = type(ArbSysMock).runtimeCode;
+            address arbSys = address(100);
+            vm.etch(arbSys, arbSysCode);
+        }
 
         vm.startBroadcast(deployerPrivateKey);
 

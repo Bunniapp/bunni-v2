@@ -30,6 +30,9 @@ optimizer_runs = 100_000_000 # optimal
 [profile.hook]
 optimizer_runs = 2000 # optimal
 
+[profile.quoter]
+optimizer_runs = 10_000
+
 [rpc_endpoints]
 arbitrum = "${RPC_URL_ARBITRUM}"
 avalanche = "${RPC_URL_AVALANCHE}"
