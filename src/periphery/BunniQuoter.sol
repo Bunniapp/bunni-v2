@@ -441,7 +441,7 @@ contract BunniQuoter is IBunniQuoter {
 
         int24 arithmeticMeanTick;
         if (bunniState.twapSecondsAgo != 0) {
-            arithmeticMeanTick = _getTwap(key, bunniState.twapSecondsAgo);
+            arithmeticMeanTick = queryTwap(key, bunniState.twapSecondsAgo);
         }
         bytes32 newLdfState = hook.ldfStates(id);
 
@@ -502,7 +502,7 @@ contract BunniQuoter is IBunniQuoter {
 
         int24 arithmeticMeanTick;
         if (bunniState.twapSecondsAgo != 0) {
-            arithmeticMeanTick = _getTwap(key, bunniState.twapSecondsAgo);
+            arithmeticMeanTick = queryTwap(key, bunniState.twapSecondsAgo);
         }
         bytes32 newLdfState = hook.ldfStates(id);
 
@@ -784,15 +784,5 @@ contract BunniQuoter is IBunniQuoter {
                         || dist(sharePrice1, prevSharePrice1) > prevSharePrice1 / hookParams.vaultSurgeThreshold1
                 )
         );
-    }
-
-    function _getTwap(PoolKey memory poolKey, uint24 twapSecondsAgo) internal view returns (int24 arithmeticMeanTick) {
-        IBunniHook hook = IBunniHook(address(poolKey.hooks));
-        uint32[] memory secondsAgos = new uint32[](2);
-        secondsAgos[0] = twapSecondsAgo;
-        secondsAgos[1] = 0;
-        int56[] memory tickCumulatives = hook.observe(poolKey, secondsAgos);
-        int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-        return int24(tickCumulativesDelta / int56(uint56(twapSecondsAgo)));
     }
 }

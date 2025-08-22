@@ -87,4 +87,109 @@ contract BunniStateLibraryTest is BaseTest {
         assertEq(accruedFee0, 0, "accrued fee 0 should be 0");
         assertGt(accruedFee1, 0, "accrued fee 1 should be greater than 0");
     }
+
+    /// @notice Comprehensive test for BunniStateLibrary::getCardinalityNext() function
+    /// @dev Tests various scenarios including initial state, cardinality increases, edge cases, and boundary conditions
+    function test_getCardinalityNext() public {
+        // Deploy pool and initialize liquidity
+        (, PoolKey memory key) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)), Currency.wrap(address(token1)), bytes32(uint256(1))
+        );
+        PoolId id = key.toId();
+
+        // Test 1: Check initial cardinality next value after pool deployment
+        // The pool should be initialized with a default cardinality next value
+        uint32 initialCardinalityNext = bunniHook.getCardinalityNext(id);
+        assertGt(initialCardinalityNext, 0, "Initial cardinality next should be greater than 0");
+
+        // Test 2: Increase cardinality next to a moderate value
+        uint32 targetCardinality1 = 100;
+        (uint32 oldCardinality1, uint32 newCardinality1) = bunniHook.increaseCardinalityNext(key, targetCardinality1);
+
+        // Verify the returned values from increaseCardinalityNext
+        assertEq(oldCardinality1, initialCardinalityNext, "Old cardinality should match initial value");
+        assertGe(newCardinality1, targetCardinality1, "New cardinality should be at least the target value");
+
+        // Verify getCardinalityNext returns the updated value
+        uint32 retrievedCardinality1 = bunniHook.getCardinalityNext(id);
+        assertEq(retrievedCardinality1, newCardinality1, "Retrieved cardinality should match the new value");
+
+        // Test 3: Attempt to set cardinality to a lower value (should be no-op)
+        uint32 lowerTarget = 50;
+        (uint32 oldCardinality2, uint32 newCardinality2) = bunniHook.increaseCardinalityNext(key, lowerTarget);
+
+        assertEq(oldCardinality2, newCardinality1, "Old cardinality should be the previous new value");
+        assertEq(newCardinality2, newCardinality1, "Cardinality should not decrease");
+
+        uint32 retrievedCardinality2 = bunniHook.getCardinalityNext(id);
+        assertEq(retrievedCardinality2, newCardinality1, "Cardinality should remain unchanged");
+
+        // Test 4: Increase cardinality to a larger value
+        uint32 targetCardinality3 = 1000;
+        (uint32 oldCardinality3, uint32 newCardinality3) = bunniHook.increaseCardinalityNext(key, targetCardinality3);
+
+        assertEq(oldCardinality3, newCardinality1, "Old cardinality should be the previous value");
+        assertGe(newCardinality3, targetCardinality3, "New cardinality should be at least the target");
+        assertGt(newCardinality3, newCardinality1, "New cardinality should be greater than previous");
+
+        uint32 retrievedCardinality3 = bunniHook.getCardinalityNext(id);
+        assertEq(retrievedCardinality3, newCardinality3, "Retrieved cardinality should match the new value");
+
+        // Test 5: Test with maximum safe cardinality value
+        // MAX_CARDINALITY is 2^24 - 1 = 16777215, but we'll test with a large but safe value
+        uint32 largeCardinality = 10000;
+        (uint32 oldCardinality4, uint32 newCardinality4) = bunniHook.increaseCardinalityNext(key, largeCardinality);
+
+        assertEq(oldCardinality4, newCardinality3, "Old cardinality should be the previous value");
+        assertGe(newCardinality4, largeCardinality, "New cardinality should be at least the large target");
+
+        uint32 retrievedCardinality4 = bunniHook.getCardinalityNext(id);
+        assertEq(retrievedCardinality4, newCardinality4, "Retrieved cardinality should match the large value");
+
+        // Test 6: Verify cardinality next persists across multiple operations
+        // Make a swap to trigger oracle updates
+        _mint(key.currency0, address(this), 1 ether);
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(1 ether),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        _swap(key, params, 0, "");
+
+        // Cardinality next should remain unchanged after swap
+        uint32 cardinalityAfterSwap = bunniHook.getCardinalityNext(id);
+        assertEq(cardinalityAfterSwap, newCardinality4, "Cardinality next should persist after swap");
+
+        // Test 7: Test with a different pool to ensure isolation
+        (, PoolKey memory key2) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)), Currency.wrap(address(token1)), bytes32(uint256(2))
+        );
+        PoolId id2 = key2.toId();
+
+        uint32 secondPoolCardinality = bunniHook.getCardinalityNext(id2);
+        assertGt(secondPoolCardinality, 0, "Second pool should have initial cardinality");
+        assertNotEq(secondPoolCardinality, cardinalityAfterSwap, "Different pools should have independent cardinality");
+
+        // Modify second pool's cardinality
+        uint32 targetForSecondPool = 500;
+        bunniHook.increaseCardinalityNext(key2, targetForSecondPool);
+        uint32 secondPoolNewCardinality = bunniHook.getCardinalityNext(id2);
+
+        // Verify first pool's cardinality is unaffected
+        uint32 firstPoolFinalCardinality = bunniHook.getCardinalityNext(id);
+        assertEq(firstPoolFinalCardinality, cardinalityAfterSwap, "First pool cardinality should be unaffected");
+        assertNotEq(secondPoolNewCardinality, firstPoolFinalCardinality, "Pools should have different cardinalities");
+
+        // Test 8: Edge case - cardinality value of 1 (minimum valid cardinality)
+        (, PoolKey memory key3) = _deployPoolAndInitLiquidity(
+            Currency.wrap(address(token0)), Currency.wrap(address(token1)), bytes32(uint256(3))
+        );
+
+        PoolId id3 = key3.toId();
+
+        // Try to set cardinality to 1 (should work as it's the minimum)
+        bunniHook.increaseCardinalityNext(key3, 1);
+        uint32 minCardinality = bunniHook.getCardinalityNext(id3);
+        assertGe(minCardinality, 1, "Cardinality should be at least 1");
+    }
 }

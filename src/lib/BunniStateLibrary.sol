@@ -8,12 +8,20 @@ import {IBunniHook} from "../interfaces/IBunniHook.sol";
 /// @notice A helper library to provide state getters that use extsload
 /// @dev Use `forge inspect [ContractName] storageLayout` to get the slot values
 library BunniStateLibrary {
+    bytes32 public constant OBSERVATION_STATES_SLOT = bytes32(uint256(7));
     bytes32 public constant VAULT_SHARE_PRICES_SLOT = bytes32(uint256(11));
     bytes32 public constant CURATOR_FEES_SLOT = bytes32(uint256(15));
     bytes32 public constant HOOK_FEE_SLOT = bytes32(uint256(16));
 
     bytes32 public constant UINT120_MASK = 0x0000000000000000000000000000000000ffffffffffffffffffffffffffffff;
     bytes32 public constant ADDRESS_MASK = 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff;
+
+    function getCardinalityNext(IBunniHook hook, PoolId poolId) internal view returns (uint32 cardinalityNext) {
+        bytes32 data = hook.extsload(_getObservationStateSlot(poolId));
+        assembly ("memory-safe") {
+            cardinalityNext := and(0xffffffff, shr(64, data))
+        }
+    }
 
     function getVaultSharePricesAtLastSwap(IBunniHook hook, PoolId poolId)
         internal
@@ -59,6 +67,10 @@ library BunniStateLibrary {
             // next 120 bits of data
             accruedFee1 := and(UINT120_MASK, shr(136, data))
         }
+    }
+
+    function _getObservationStateSlot(PoolId poolId) internal pure returns (bytes32) {
+        return keccak256(abi.encode(PoolId.unwrap(poolId), OBSERVATION_STATES_SLOT));
     }
 
     function _getVaultSharePricesSlot(PoolId poolId) internal pure returns (bytes32) {

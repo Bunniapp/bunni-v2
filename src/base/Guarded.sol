@@ -11,8 +11,8 @@ abstract contract Guarded {
     /// @dev The original address of this contract
     address private immutable original;
 
-    address private immutable hub;
-    address private immutable hook;
+    address internal immutable hub;
+    address internal immutable hook;
     address private immutable quoter;
 
     function _guardedCheck() private view {

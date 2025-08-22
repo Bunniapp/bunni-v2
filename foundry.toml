@@ -33,6 +33,9 @@ optimizer_runs = 2000 # optimal
 [profile.quoter]
 optimizer_runs = 10_000
 
+[profile.curated_ldf]
+optimizer_runs = 12_500
+
 [rpc_endpoints]
 arbitrum = "${RPC_URL_ARBITRUM}"
 avalanche = "${RPC_URL_AVALANCHE}"
