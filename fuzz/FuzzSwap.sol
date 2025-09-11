@@ -83,7 +83,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             if (outputAmount0 > 0 && inputAmount0 == 0) {
                 assertWithMsg(false, "Users get free tokens");
             }
-        } catch Panic(uint256) /*errorCode*/ {
+        } catch Panic(uint256) {
             // This is executed in case of a panic,
             // i.e. a serious error like division by zero
             // or overflow. The error code can be used
@@ -218,8 +218,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
             BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
                 tickSpacing,
-                uint64(balance0 + inputAmount0),
-                uint64(balance1 - outputAmount0),
+                zeroForOne ? uint64(balance0 + inputAmount0) : uint64(balance0 - outputAmount0),
+                zeroForOne ? uint64(balance1 - outputAmount0) : uint64(balance1 + inputAmount0),
                 -amountSpecified,
                 input1.sqrtPriceX96, // sqrtPriceLimit
                 updatedTick,
@@ -281,7 +281,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             } else {
                 assertWithMsg(outputAmount0 <= inputAmount1, "Round trips swaps are profitable");
             }
-        } catch Panic(uint256) /*errorCode*/ {
+        } catch Panic(uint256) {
             // This is executed in case of a panic,
             // i.e. a serious error like division by zero
             // or overflow. The error code can be used
@@ -352,8 +352,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
             BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
                 tickSpacing,
-                uint64(balance0 + inputAmount0),
-                uint64(balance1 - outputAmount0),
+                zeroForOne ? uint64(balance0 + inputAmount0) : uint64(balance0 - outputAmount0),
+                zeroForOne ? uint64(balance1 - outputAmount0) : uint64(balance1 + inputAmount0),
                 -amountSpecified,
                 input1.sqrtPriceX96, // sqrtPriceLimit
                 updatedTick,
@@ -415,7 +415,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             } else {
                 assertWithMsg(inputAmount0 + MAX_PROFIT >= outputAmount1, "Round trips swaps are profitable");
             }
-        } catch Panic(uint256) /*errorCode*/ {
+        } catch Panic(uint256) {
             // This is executed in case of a panic,
             // i.e. a serious error like division by zero
             // or overflow. The error code can be used
@@ -497,8 +497,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
             BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
                 tickSpacing,
-                uint64(balance0 + inputAmount0),
-                uint64(balance1 - outputAmount0),
+                zeroForOne ? uint64(balance0 + inputAmount0) : uint64(balance0 - outputAmount0),
+                zeroForOne ? uint64(balance1 - outputAmount0) : uint64(balance1 + inputAmount0),
                 -amountSpecified,
                 !zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1, // sqrtPriceLimit
                 updatedTick,
@@ -560,7 +560,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             } else {
                 assertWithMsg(outputAmount0 <= inputAmount1 + MAX_PROFIT, "Round trips swaps are profitable");
             }
-        } catch Panic(uint256) /*errorCode*/ {
+        } catch Panic(uint256) {
             // This is executed in case of a panic,
             // i.e. a serious error like division by zero
             // or overflow. The error code can be used
@@ -637,8 +637,8 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
 
             BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
                 tickSpacing,
-                uint64(balance0 + inputAmount0),
-                uint64(balance1 - outputAmount0),
+                zeroForOne ? uint64(balance0 + inputAmount0) : uint64(balance0 - outputAmount0),
+                zeroForOne ? uint64(balance1 - outputAmount0) : uint64(balance1 + inputAmount0),
                 -amountSpecified,
                 !zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1, // sqrtPriceLimit
                 updatedTick,
@@ -700,7 +700,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             } else {
                 assertWithMsg(inputAmount0 + MAX_PROFIT >= outputAmount1, "Round trips swaps are profitable");
             }
-        } catch Panic(uint256) /*errorCode*/ {
+        } catch Panic(uint256) {
             // This is executed in case of a panic,
             // i.e. a serious error like division by zero
             // or overflow. The error code can be used
@@ -711,16 +711,6 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             emit LogBytes(reason);
             return;
         }
-    }
-
-    // Internal helper function
-    function swap(BunniSwapMath.BunniComputeSwapInput calldata input)
-        public
-        view
-        returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0)
-    {
-        require(msg.sender == address(this));
-        (updatedSqrtPriceX96, updatedTick, inputAmount0, outputAmount0) = BunniSwapMath.computeSwap(input);
     }
 
     // Invariant: computeSwap in BunniSwapMath should output a valid sqrtPrice of the pool after the swap.
@@ -766,7 +756,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
                 updatedSqrtPriceX96 >= MIN_SQRT_PRICE && updatedSqrtPriceX96 <= MAX_SQRT_PRICE,
                 "sqrtPrice is outside the Limit"
             );
-        } catch Panic(uint256) /*errorCode*/ {
+        } catch Panic(uint256) {
             // This is executed in case of a panic,
             // i.e. a serious error like division by zero
             // or overflow. The error code can be used
@@ -782,7 +772,7 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
     // Invariant: computeSwap in BunniSwapMath should not raise any panics
     //            during a swap on a valid pool state.
     // Issue: TOB-BUNNI-18
-    function test_swap_panics(
+    /* function test_swap_panics(
         int24 tickSpacing,
         uint64 balance0,
         uint64 balance1,
@@ -828,6 +818,101 @@ contract FuzzSwap is FuzzHelper, PropertiesAsserts {
             emit LogBytes(reason);
             return;
         }
+    } */
+
+    function test_total_liquidity_should_increase_after_swap(
+        int24 tickSpacing,
+        uint64 balance0,
+        uint64 balance1,
+        int64 amountSpecified,
+        uint160 sqrtPriceLimit,
+        int24 currentTick,
+        bool zeroForOne,
+        uint24 fee,
+        bytes8 ldfSeed
+    ) public {
+        (tickSpacing, amountSpecified, currentTick) = _processInputs(tickSpacing, amountSpecified, currentTick);
+
+        if (amountSpecified == 0) return;
+
+        fee = uint24(clampBetween(fee, MIN_SWAP_FEE, SWAP_FEE_BASE));
+
+        // Set up LDF
+        _setUpLDF(ldfSeed, tickSpacing);
+
+        // Initialize parameters before swapinng
+        (BunniSwapMath.BunniComputeSwapInput memory input1, IdleBalance idleBalance) =
+            _compute_swap(tickSpacing, balance0, balance1, amountSpecified, sqrtPriceLimit, currentTick, zeroForOne);
+
+        // avoid edge case where the active balance of the output token is 0
+        // or if the output token's balance is less than requested in an exact output swap
+        if (
+            (zeroForOne && input1.currentActiveBalance1 == 0) || (!zeroForOne && input1.currentActiveBalance0 == 0)
+                || input1.totalLiquidity == 0
+                || (
+                    amountSpecified > 0
+                        && uint64(amountSpecified) > (zeroForOne ? input1.currentActiveBalance1 : input1.currentActiveBalance0)
+                )
+        ) {
+            return;
+        }
+
+        try this.swap(input1) returns (
+            uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0
+        ) {
+            // apply fee
+            bool exactIn = amountSpecified < 0;
+            if (exactIn) {
+                inputAmount0 = FixedPointMathLib.max(inputAmount0, uint64(-amountSpecified));
+                uint256 swapFeeAmount = outputAmount0.mulDivUp(fee, SWAP_FEE_BASE);
+                outputAmount0 -= swapFeeAmount;
+            } else {
+                outputAmount0 = FixedPointMathLib.min(outputAmount0, uint64(amountSpecified));
+                uint256 swapFeeAmount = inputAmount0.mulDivUp(fee, SWAP_FEE_BASE - fee);
+                inputAmount0 += swapFeeAmount;
+            }
+
+            if (inputAmount0 != uint64(inputAmount0) || outputAmount0 != uint64(outputAmount0)) return;
+
+            BunniSwapMath.BunniComputeSwapInput memory input2 = _compute_swap(
+                tickSpacing,
+                zeroForOne ? uint64(balance0 + inputAmount0) : uint64(balance0 - outputAmount0),
+                zeroForOne ? uint64(balance1 - outputAmount0) : uint64(balance1 + inputAmount0),
+                -amountSpecified,
+                !zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1, // sqrtPriceLimit
+                updatedTick,
+                !zeroForOne,
+                updatedSqrtPriceX96,
+                idleBalance
+            );
+
+            console2.log("totalLiquidity before swap", input1.totalLiquidity);
+            console2.log("totalLiquidity after swap", input2.totalLiquidity);
+            assertWithMsg(
+                input2.totalLiquidity >= input1.totalLiquidity
+                    || findAbsDiff(input2.totalLiquidity, input1.totalLiquidity) * 1e18 / input1.totalLiquidity < 1e15,
+                "totalLiquidity should increase after swap"
+            );
+        } catch Panic(uint256) {
+            // This is executed in case of a panic,
+            // i.e. a serious error like division by zero
+            // or overflow. The error code can be used
+            // to determine the kind of error.
+            return;
+        } catch (bytes memory reason) {
+            emit LogBytes(reason);
+            return;
+        }
+    }
+
+    // Internal helper function
+    function swap(BunniSwapMath.BunniComputeSwapInput calldata input)
+        public
+        view
+        returns (uint160 updatedSqrtPriceX96, int24 updatedTick, uint256 inputAmount0, uint256 outputAmount0)
+    {
+        require(msg.sender == address(this));
+        (updatedSqrtPriceX96, updatedTick, inputAmount0, outputAmount0) = BunniSwapMath.computeSwap(input);
     }
 
     function _processInputs(int24 tickSpacing, int64 amountSpecified, int24 currentTick)
