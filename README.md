@@ -1,11 +1,15 @@
 # Bunni v2
 
+**Important:** Bunni v2 has been exploited (see post mortem [here](https://blog.bunni.xyz/posts/exploit-post-mortem/)), and this repo does not have the relevant issues addressed. Please do not use this code in production as is.
+
 Bunni v2 is a next-gen decentralized exchange with **shapeshifting liquidity**, the next breakthrough in AMM design after Uniswap v3's concentrated liquidity.
 
 To learn more, see:
 
 - [Bunni v2 whitepaper](https://github.com/Bunniapp/whitepaper/blob/main/bunni-v2.pdf)
 - [Documentation](https://docs.bunni.xyz/)
+
+This repo is licensed under the MIT License, though some files are licensed under AGPL-3.0. See the SPDX license identifier in each file for details.
 
 ## Installation
 
